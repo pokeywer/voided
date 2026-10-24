@@ -174,7 +174,7 @@ async function loadPublicScripts() {
         if (sharedId) openScript(sharedId, false);
     } catch (error) {
         grid.innerHTML = '';
-        const message = document.createElement('div'); message.className = 'info-box'; message.textContent = `${error.message} If this is your first deployment, confirm the Firebase service account is configured on Vercel.`;
+        const message = document.createElement('div'); message.className = 'info-box'; message.textContent = `${error.message} If this is your first deployment, confirm the server credentials are configured on Vercel.`;
         grid.appendChild(message);
     }
 }

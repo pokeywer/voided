@@ -80,7 +80,6 @@
                         <input type="text" id="loadstring-input" readonly>
                         <button id="copy-ls-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy</button>
                     </div>
-                    <p id="loader-token-status" class="field-hint loader-token-status" role="status" aria-live="polite">Preparing loader…</p>
                 </div>
             </div>
         </div>
@@ -106,7 +105,6 @@
         const keyExpiryTag = document.getElementById('key-expiry-tag');
         const loadstringInput = document.getElementById('loadstring-input');
         const copyBtn = document.getElementById('copy-ls-btn');
-        const loaderTokenStatus = document.getElementById('loader-token-status');
         let clearLoaderBinding = null;
 
         function showOnly(el) {
@@ -142,7 +140,7 @@
             if (clearLoaderBinding) clearLoaderBinding();
             loadstringInput.value = '';
             copyBtn.disabled = true;
-            clearLoaderBinding = setEmbeddedTokenLoader({ id: vaultId, key, input: loadstringInput, status: loaderTokenStatus, copyButton: copyBtn });
+            clearLoaderBinding = setEmbeddedTokenLoader({ id: vaultId, key, input: loadstringInput, copyButton: copyBtn });
 
             if (data.expiresAt) {
                 const msLeft = data.expiresAt - Date.now();

@@ -57,7 +57,7 @@ export default async function handler(req, res) {
     if (!mintTokenForBootstrap && !verifyLoaderToken(loaderToken, id, key)) {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        return res.status(410).send('error("[VoidedX] This loader expired. Copy the latest loader from the website and run it again.", 0)');
+        return res.status(410).send('error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.", 0)');
     }
 
     try {
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
         if (!verifyLoaderToken(activeLoaderToken, id, key, vaultData.loaderVersion)) {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return res.status(410).send('error("[VoidedX] This loader is no longer valid. Copy the latest loader from the website and run it again.", 0)');
+            return res.status(410).send('error("[VoidedX] Error: Loader expired or was revoked. Get a new loader from the website and try again.", 0)');
         }
 
         if (vaultData.launchPaused === true) {
@@ -241,6 +241,31 @@ return vxRunPayload(result.token, player and player.UserId or nil)
 function buildPayloadRuntime(origin) {
     const payloadBase = luaString(`${origin}/api/payload?session=`);
     return `
+local vxLastProgress, vxLastProgressStage
+local function vxProgress(percent, stage)
+    percent = math.max(1, math.min(100, math.floor(percent)))
+    if percent == vxLastProgress and stage == vxLastProgressStage then return end
+    vxLastProgress = percent
+    vxLastProgressStage = stage
+    local width = 20
+    local filled = math.floor(width * percent / 100)
+    local line = string.format(
+        "[VoidedX] Loading script [%s%s] %d%% - %s",
+        string.rep("=", filled),
+        string.rep(".", width - filled),
+        percent,
+        stage
+    )
+    local ok = pcall(function()
+        if type(rconsoleprint) == "function" then
+            rconsoleprint("\\r" .. line .. (percent >= 100 and "\\n" or ""))
+        else
+            print(line)
+        end
+    end)
+    if not ok then pcall(print, line) end
+end
+
 local function vxRunPayload(token, userId)
     if type(token) ~= "string" or token == "" then
         return error("[VoidedX] The server did not issue a delivery ticket.", 0)
@@ -248,21 +273,53 @@ local function vxRunPayload(token, userId)
     local payloadUrl = ${payloadBase} .. HttpService:UrlEncode(token)
     if userId ~= nil then payloadUrl = payloadUrl .. "&userId=" .. HttpService:UrlEncode(tostring(userId)) end
 
-    local requestOk, response = pcall(function() return game:HttpGet(payloadUrl) end)
+    local requestOk, response
+    local requestDone = false
+    local progress = 1
+    vxProgress(progress, "Connecting to delivery server")
+
+    local asyncStarted = false
+    if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
+        asyncStarted = pcall(function()
+            task.spawn(function()
+                requestOk, response = pcall(function() return game:HttpGet(payloadUrl) end)
+                requestDone = true
+            end)
+        end)
+    end
+
+    if asyncStarted then
+        while not requestDone do
+            progress = math.min(progress + 5, 85)
+            vxProgress(progress, "Downloading script")
+            task.wait(0.2)
+        end
+    else
+        vxProgress(35, "Downloading script")
+        requestOk, response = pcall(function() return game:HttpGet(payloadUrl) end)
+    end
+
     if not requestOk then
+        vxProgress(progress, "Download failed")
         return error("[VoidedX] Could not download the script: " .. tostring(response), 0)
     end
+    vxProgress(90, "Checking downloaded script")
     local decodeOk, result = pcall(function() return HttpService:JSONDecode(response) end)
     if not decodeOk or type(result) ~= "table" then
+        vxProgress(90, "Invalid server response")
         return error("[VoidedX] The payload server returned a bad response.", 0)
     end
     if not result.ok or type(result.code) ~= "string" then
+        vxProgress(90, "Access denied")
         return error("[VoidedX] " .. tostring(result.message or "The script could not be delivered."), 0)
     end
+    vxProgress(96, "Compiling script")
     local scriptChunk, compileError = loadstring(result.code)
     if not scriptChunk then
+        vxProgress(96, "Compilation failed")
         return error("[VoidedX] " .. tostring(compileError), 0)
     end
+    vxProgress(100, "Starting")
     return scriptChunk()
 end
 `.trim();
@@ -349,7 +406,7 @@ function packGeneratedLoader(source, { id, key = '', origin, token }) {
     if (key) gateUrl.searchParams.set('key', key);
     const encodedSource = encode(source);
     const encodedGate = encode(gateUrl.href);
-    return `local _bsdata0={1,${mask},"${encodedSource}","${encodedGate}"};local _bsdata1={};for _i0=1,#_bsdata0[3] do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;local _bsdata2={};for _i1=1,#_bsdata0[4] do _bsdata2[_i1]=string.char((string.byte(_bsdata0[4],_i1)-_bsdata0[2])%256) end;local _bsok,_bsresponse=pcall(function()return game:HttpGet(table.concat(_bsdata2))end);if not _bsok or _bsresponse~="ok" then return error("[VoidedX] This loader expired. Copy the latest loader from the website.",0)end;local _bscompile=loadstring or load;if type(_bscompile)~="function" then return error("[VoidedX] This executor does not support loadstring.",0)end;local _bschunk,_bserror=_bscompile(table.concat(_bsdata1));if not _bschunk then return error(tostring(_bserror),0)end;return _bschunk()`;
+    return `local _bsdata0={1,${mask},"${encodedSource}","${encodedGate}"};local _bsdata1={};for _i0=1,#_bsdata0[3] do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;local _bsdata2={};for _i1=1,#_bsdata0[4] do _bsdata2[_i1]=string.char((string.byte(_bsdata0[4],_i1)-_bsdata0[2])%256) end;local _bsok,_bsresponse=pcall(function()return game:HttpGet(table.concat(_bsdata2))end);if not _bsok or _bsresponse~="ok" then return error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0)end;local _bscompile=loadstring or load;if type(_bscompile)~="function" then return error("[VoidedX] This executor does not support loadstring.",0)end;local _bschunk,_bserror=_bscompile(table.concat(_bsdata1));if not _bschunk then return error(tostring(_bserror),0)end;return _bschunk()`;
 }
 
 function luaString(str) {

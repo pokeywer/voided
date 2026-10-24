@@ -159,7 +159,7 @@ export default async function handler(req, res) {
         };
         const estimatedDocumentBytes = Buffer.byteLength(JSON.stringify({ ...snap.data(), ...updates }), 'utf8');
         if (estimatedDocumentBytes > MAX_DOCUMENT_ESTIMATE_BYTES) {
-            return json(res, 413, { ok: false, message: 'This vault would exceed the safe Firestore document size. Reduce the source or use a lower obfuscation strength.' });
+            return json(res, 413, { ok: false, message: 'This vault would exceed the maximum database document size. Reduce the source or use a lower obfuscation strength.' });
         }
 
         await ref.update(updates);

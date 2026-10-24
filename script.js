@@ -113,9 +113,9 @@ function friendlyAuthError(err) {
         case 'auth/user-disabled':
             return 'This account has been disabled. Contact support if that seems wrong.';
         case 'auth/operation-not-allowed':
-            return 'Google sign-in is not enabled for this Firebase project yet. Turn on Google in Firebase Authentication settings.';
+            return 'Google sign-in is not enabled yet. Turn it on in your authentication settings.';
         case 'auth/unauthorized-domain':
-            return 'This website domain is not approved for Google sign-in. Add it to Firebase Authentication’s authorized domains.';
+            return 'This website domain is not approved for Google sign-in. Add it to your authorized domains.';
         case 'auth/popup-blocked':
             return 'Your browser blocked the Google sign-in window. Allow popups for this site and try again.';
         case 'auth/popup-closed-by-user':
@@ -276,7 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorSaveStatus = document.getElementById('editor-save-status');
     const editorSaveLabel = document.getElementById('editor-save-label');
     const lsOutput = document.getElementById('ls-output');
-    const loaderTokenStatus = document.getElementById('loader-token-status');
     const copyBtn = document.getElementById('copy-out-btn');
     const getKeyRow = document.getElementById('get-key-row');
     const getKeyOutput = document.getElementById('get-key-output');
@@ -329,14 +328,12 @@ document.addEventListener('DOMContentLoaded', () => {
         clearActiveLoaderBinding = null;
         if (!id) {
             lsOutput.value = '';
-            loaderTokenStatus.textContent = 'Save your vault to prepare a token-free loader URL.';
             copyBtn.disabled = true;
             return;
         }
         lsOutput.value = '';
-        loaderTokenStatus.textContent = 'Preparing loader…';
         copyBtn.disabled = true;
-        clearActiveLoaderBinding = setEmbeddedTokenLoader({ id, key, input: lsOutput, status: loaderTokenStatus, copyButton: copyBtn });
+        clearActiveLoaderBinding = setEmbeddedTokenLoader({ id, key, input: lsOutput, copyButton: copyBtn });
     }
 
     function getObfuscationSettings(code) {

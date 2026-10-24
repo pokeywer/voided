@@ -98,7 +98,6 @@
                         <input type="text" class="loadstring-output" readonly>
                         <button type="button" class="btn-accent copy-ls-btn" disabled><i class="fa-solid fa-copy"></i> Copy</button>
                     </div>
-                    <p class="field-hint loader-token-status" role="status" aria-live="polite">Preparing loader…</p>
                 </div>
                 <a href="#" class="btn-ghost key-open-link open-vault-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open Vault Page</a>
             </div>
@@ -251,7 +250,6 @@
             const copyKeyBtn = node.querySelector('.copy-key-btn');
             const loadstringOutput = node.querySelector('.loadstring-output');
             const copyLsBtn = node.querySelector('.copy-ls-btn');
-            const loaderTokenStatus = node.querySelector('.loader-token-status');
             const openVaultLink = node.querySelector('.open-vault-link');
 
             labelEl.textContent = keyDef.label || 'Public Key';
@@ -391,7 +389,7 @@
                 }
 
                 keyOutput.value = d.key;
-                setEmbeddedTokenLoader({ id: vaultId, key: d.key, input: loadstringOutput, status: loaderTokenStatus, copyButton: copyLsBtn });
+                setEmbeddedTokenLoader({ id: vaultId, key: d.key, input: loadstringOutput, copyButton: copyLsBtn });
                 openVaultLink.href = `/vault.html?id=${encodeURIComponent(vaultId)}&key=${encodeURIComponent(d.key)}`;
                 oneTimeNote.classList.toggle('hidden', !d.unique);
                 oneTimeNote.textContent = 'This key was issued for one custom-link return ticket. The ticket cannot be reused. Copy and save your key now.';
