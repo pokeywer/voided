@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>VoidedX Admin</title>
+    <link rel="icon" type="image/png" sizes="240x240" href="/voidedx-favicon.png?v=2">
+    <link rel="shortcut icon" type="image/png" href="/voidedx-favicon.png?v=2">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script defer src="/i18n.js"></script>
+</head>
+<body class="admin-page">
+    <main class="admin-shell">
+        <header class="admin-topbar">
+            <a class="brand-unit admin-brand" href="/">
+                <img src="logo.png" alt="" class="brand-icon-img">
+                <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">ADMIN</span></span>
+            </a>
+            <a href="/" class="btn-ghost admin-back-link"><i class="fa-solid fa-arrow-left"></i> Back to site</a>
+        </header>
+
+        <section id="admin-login-view" class="admin-card admin-login-card">
+            <div class="auth-header">
+                <i class="fa-solid fa-shield-halved auth-header-icon"></i>
+                <h1>Administrator sign in</h1>
+                <p class="auth-subheading">Use the private admin credentials configured for this Vercel project.</p>
+            </div>
+            <div id="admin-login-error" class="auth-banner error hidden" role="alert"></div>
+            <label class="panel-label" for="admin-username">USERNAME</label>
+            <input id="admin-username" class="input-field" autocomplete="username" maxlength="80" required>
+            <label class="panel-label" for="admin-password">PASSWORD</label>
+            <input id="admin-password" class="input-field" type="password" autocomplete="current-password" maxlength="200" required>
+            <button id="admin-login-btn" class="btn-primary" type="button"><i class="fa-solid fa-right-to-bracket"></i> Sign in</button>
+            <p class="admin-security-note"><i class="fa-solid fa-lock"></i> Login is rate-limited. Your password is checked on the server and is never stored in this page.</p>
+        </section>
+
+        <section id="admin-dashboard-view" class="admin-dashboard hidden">
+            <div class="admin-heading-row">
+                <div>
+                    <p class="admin-eyebrow">CONTROL CENTER</p>
+                    <h1>VoidedX Admin</h1>
+                    <p class="admin-subtitle">Manage announcements, review community ideas, inspect vault source, and check site activity.</p>
+                </div>
+                <div class="admin-heading-actions">
+                    <button id="admin-refresh-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                    <button id="admin-logout-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button>
+                </div>
+            </div>
+
+            <div id="admin-status" class="admin-status hidden" role="status" aria-live="polite"></div>
+
+            <div class="admin-stat-grid">
+                <article class="admin-stat-card"><i class="fa-solid fa-vault"></i><span>Total vaults</span><strong id="admin-stat-vaults">—</strong></article>
+                <article class="admin-stat-card"><i class="fa-solid fa-play"></i><span>Tracked executions</span><strong id="admin-stat-executions">—</strong></article>
+                <article class="admin-stat-card"><i class="fa-solid fa-lightbulb"></i><span>Ideas submitted</span><strong id="admin-stat-ideas">—</strong></article>
+            </div>
+
+            <section class="admin-card admin-vault-manager">
+                <div class="admin-section-heading">
+                    <div><p class="admin-eyebrow">PRIVATE VAULTS</p><h2><i class="fa-solid fa-shield-halved"></i> Vault source manager</h2></div>
+                    <span id="admin-vault-count" class="admin-state-pill">Loading…</span>
+                </div>
+                <p class="admin-help">Browse every saved vault, inspect its original Luau source, edit the title or code, and regenerate its obfuscated execution copy. Saving here changes the live vault used by its loader.</p>
+                <div id="admin-vault-status" class="admin-status hidden" role="status" aria-live="polite"></div>
+                <div class="admin-vault-toolbar">
+                    <input id="admin-vault-search" class="input-field" type="search" placeholder="Search title, vault ID, or owner UID" aria-label="Search vaults">
+                    <button id="admin-vault-refresh-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Reload vaults</button>
+                </div>
+                <div class="admin-vault-layout">
+                    <div id="admin-vault-list" class="admin-vault-list" aria-label="Saved vault list"><div class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading vaults…</p></div></div>
+                    <div class="admin-vault-editor" aria-label="Vault source editor">
+                        <p id="admin-vault-empty" class="admin-vault-empty">Choose a vault to inspect its source.</p>
+                        <div id="admin-vault-edit-fields" class="admin-vault-edit-fields hidden">
+                            <div class="admin-vault-title-row">
+                                <div><label class="panel-label" for="admin-vault-title">VAULT TITLE</label><input id="admin-vault-title" class="input-field" maxlength="80" disabled></div>
+                                <span id="admin-vault-meta" class="admin-vault-meta"></span>
+                            </div>
+                            <label class="panel-label" for="admin-vault-source">READABLE SOURCE</label>
+                            <textarea id="admin-vault-source" class="input-field admin-vault-source" spellcheck="false" wrap="off" disabled placeholder="Select a vault to load its source."></textarea>
+                            <div class="admin-vault-protection">
+                                <label class="admin-check-row" for="admin-vault-obfuscation"><input id="admin-vault-obfuscation" type="checkbox" disabled><span><strong>Obfuscate execution copy</strong><small>Generates a new copy with Prometheus before saving.</small></span></label>
+                                <div class="admin-vault-options">
+                                    <div class="admin-form-field"><label class="panel-label" for="admin-vault-level">STRENGTH</label><select id="admin-vault-level" class="input-field" disabled><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                                    <label class="admin-check-row" for="admin-vault-tamper"><input id="admin-vault-tamper" type="checkbox" disabled><span><strong>Mild tamper check</strong></span></label>
+                                    <label class="admin-check-row" for="admin-vault-vm"><input id="admin-vault-vm" type="checkbox" disabled><span><strong>VM protection</strong></span></label>
+                                    <label class="admin-check-row" for="admin-vault-splitting"><input id="admin-vault-splitting" type="checkbox" disabled><span><strong>More string splitting</strong></span></label>
+                                </div>
+                            </div>
+                            <div class="admin-vault-preview hidden" id="admin-vault-preview-wrap">
+                                <div class="admin-vault-preview-heading"><label class="panel-label" for="admin-vault-obfuscated-output">OBFUSCATED EXECUTION COPY</label><div><button id="admin-vault-copy-output" class="btn-ghost admin-vault-small-btn" type="button" disabled><i class="fa-solid fa-copy"></i> Copy</button><button id="admin-vault-download-output" class="btn-ghost admin-vault-small-btn" type="button" disabled><i class="fa-solid fa-download"></i> Download</button></div></div>
+                                <textarea id="admin-vault-obfuscated-output" class="input-field admin-vault-output" rows="8" readonly spellcheck="false" wrap="off"></textarea>
+                            </div>
+                            <div class="admin-vault-actions">
+                                <button id="admin-vault-copy-source" class="btn-ghost" type="button" disabled><i class="fa-solid fa-copy"></i> Copy source</button>
+                                <button id="admin-vault-download-source" class="btn-ghost" type="button" disabled><i class="fa-solid fa-download"></i> Download source</button>
+                                <button id="admin-vault-preview-btn" class="btn-ghost" type="button" disabled><i class="fa-solid fa-wand-magic-sparkles"></i> Generate preview</button>
+                                <button id="admin-vault-save-btn" class="btn-primary" type="button" disabled><i class="fa-solid fa-floppy-disk"></i> Save changes</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="admin-content-grid">
+                <section class="admin-card admin-announcement-card">
+                    <div class="admin-section-heading">
+                        <div><p class="admin-eyebrow">SITE MESSAGE</p><h2><i class="fa-solid fa-bullhorn"></i> Announcement</h2></div>
+                        <span id="announcement-state" class="admin-state-pill">No active message</span>
+                    </div>
+                    <p class="admin-help">Publish a site-wide banner. It stays visible until you remove it, unless you enable visitor dismissal or set an expiry.</p>
+                    <label class="panel-label" for="announcement-title">TITLE</label>
+                    <input id="announcement-title" class="input-field" maxlength="80" placeholder="Example: Maintenance tonight">
+                    <span class="admin-field-count" id="announcement-title-count">0 / 80</span>
+                    <label class="panel-label" for="announcement-message">MESSAGE</label>
+                    <textarea id="announcement-message" class="input-field admin-textarea" rows="4" maxlength="500" placeholder="Write an update for VoidedX visitors"></textarea>
+                    <span class="admin-field-count" id="announcement-message-count">0 / 500</span>
+                    <div class="admin-form-row">
+                        <div class="admin-form-field">
+                            <label class="panel-label" for="announcement-kind">STYLE</label>
+                            <select id="announcement-kind" class="input-field"><option value="info">Information</option><option value="success">Success</option><option value="warning">Warning</option></select>
+                        </div>
+                        <div class="admin-form-field">
+                            <label class="panel-label" for="announcement-link-label">BUTTON LABEL</label>
+                            <input id="announcement-link-label" class="input-field" maxlength="32" placeholder="Learn more">
+                        </div>
+                    </div>
+                    <label class="panel-label" for="announcement-link">OPTIONAL LINK</label>
+                    <input id="announcement-link" class="input-field" type="url" maxlength="500" placeholder="https://example.com">
+                    <div class="admin-form-row admin-announcement-options">
+                        <div class="admin-form-field">
+                            <label class="panel-label" for="announcement-expires">AUTO-EXPIRE (OPTIONAL)</label>
+                            <input id="announcement-expires" class="input-field" type="datetime-local">
+                            <small class="admin-help">Leave blank to keep it live until you remove it.</small>
+                        </div>
+                        <label class="admin-check-row" for="announcement-dismissible">
+                            <input id="announcement-dismissible" type="checkbox">
+                            <span><strong>Let visitors dismiss this banner</strong><small>Off by default. If enabled, the close button appears and stays dismissed on that device.</small></span>
+                        </label>
+                    </div>
+                    <div class="admin-preview-wrap">
+                        <div class="admin-preview-heading"><strong>LIVE PREVIEW</strong><span>Updates as you type</span></div>
+                        <div id="announcement-preview" class="site-announcement info admin-announcement-preview">
+                            <i id="announcement-preview-icon" class="fa-solid fa-circle-info promo-icon" aria-hidden="true"></i>
+                            <div class="site-announcement-copy"><strong id="announcement-preview-title">Your announcement title</strong><span id="announcement-preview-message">Your message will appear here.</span></div>
+                            <a id="announcement-preview-link" class="site-announcement-link hidden" href="#">Learn more</a>
+                            <button id="announcement-preview-dismiss" class="site-announcement-dismiss hidden" type="button" aria-label="Dismiss preview"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+                    <div class="admin-form-actions">
+                        <button id="announcement-publish-btn" class="btn-primary" type="button"><i class="fa-solid fa-paper-plane"></i> Publish announcement</button>
+                        <button id="announcement-clear-btn" class="btn-danger" type="button"><i class="fa-solid fa-trash"></i> Remove</button>
+                    </div>
+                </section>
+
+                <section class="admin-card admin-ideas-card">
+                    <div class="admin-section-heading">
+                        <div><p class="admin-eyebrow">COMMUNITY</p><h2><i class="fa-solid fa-lightbulb"></i> Feature ideas</h2></div>
+                        <span id="admin-ideas-count" class="admin-state-pill">Loading…</span>
+                    </div>
+                    <p class="admin-help">Review suggestions sent through the Share Your Ideas form.</p>
+                    <div id="admin-ideas-list" class="admin-ideas-list"><div class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading ideas…</p></div></div>
+                </section>
+            </div>
+
+            <section class="admin-card admin-script-review-card">
+                <div class="admin-section-heading">
+                    <div><p class="admin-eyebrow">SCRIPT LIBRARY</p><h2><i class="fa-solid fa-code-branch"></i> Community script review</h2></div>
+                    <span id="admin-script-review-count" class="admin-state-pill">Loading…</span>
+                </div>
+                <p class="admin-help">Read the description and source before approving. Approved scripts appear in the public library. Reported scripts can be hidden from visitors.</p>
+                <div class="admin-script-review-columns">
+                    <section><div class="admin-script-list-heading"><h3>Waiting for review</h3><span id="admin-script-pending-count" class="admin-state-pill">0</span></div><div id="admin-script-pending-list" class="admin-script-list"><div class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading submissions…</p></div></div></section>
+                    <section><div class="admin-script-list-heading"><h3>Reported by users</h3><span id="admin-script-reported-count" class="admin-state-pill">0</span></div><div id="admin-script-reported-list" class="admin-script-list"><div class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading reports…</p></div></div></section>
+                </div>
+                <section class="admin-managed-scripts">
+                    <div class="admin-script-list-heading"><div><h3>Manage existing scripts</h3><p class="admin-help">Search the latest community uploads, change their visibility, or restore hidden scripts.</p></div><span id="admin-managed-script-count" class="admin-state-pill">Loading…</span></div>
+                    <div class="admin-script-manager-toolbar">
+                        <input id="admin-script-search" class="input-field" type="search" placeholder="Search by title, creator, game, or description" aria-label="Search scripts">
+                        <select id="admin-script-status-filter" class="input-field" aria-label="Filter scripts by status">
+                            <option value="all">All statuses</option><option value="approved">Published</option><option value="hidden">Hidden</option><option value="rejected">Rejected</option>
+                        </select>
+                    </div>
+                    <div id="admin-managed-script-list" class="admin-script-list admin-managed-script-list"><div class="info-box"><p>Loading scripts…</p></div></div>
+                </section>
+            </section>
+        </section>
+    </main>
+    <script type="module" src="admin.js"></script>
+</body>
+</html>
