@@ -241,29 +241,22 @@ return vxRunPayload(result.token, player and player.UserId or nil)
 function buildPayloadRuntime(origin) {
     const payloadBase = luaString(`${origin}/api/payload?session=`);
     return `
-local vxLastProgress, vxLastProgressStage
+local vxLastProgressBlocks, vxLastProgressStage
 local function vxProgress(percent, stage)
     percent = math.max(1, math.min(100, math.floor(percent)))
-    if percent == vxLastProgress and stage == vxLastProgressStage then return end
-    vxLastProgress = percent
+    local width = 10
+    local filled = math.max(1, math.floor(width * percent / 100))
+    if filled == vxLastProgressBlocks and stage == vxLastProgressStage then return end
+    vxLastProgressBlocks = filled
     vxLastProgressStage = stage
-    local width = 20
-    local filled = math.floor(width * percent / 100)
     local line = string.format(
-        "[VoidedX] Loading script [%s%s] %d%% - %s",
-        string.rep("=", filled),
-        string.rep(".", width - filled),
+        "[VoidedX] Loading script %s%s %d%% - %s",
+        string.rep("🟩", filled),
+        string.rep("⬛", width - filled),
         percent,
         stage
     )
-    local ok = pcall(function()
-        if type(rconsoleprint) == "function" then
-            rconsoleprint("\\r" .. line .. (percent >= 100 and "\\n" or ""))
-        else
-            print(line)
-        end
-    end)
-    if not ok then pcall(print, line) end
+    pcall(print, line)
 end
 
 local function vxRunPayload(token, userId)
