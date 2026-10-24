@@ -66,9 +66,9 @@
                     <div id="vault-pause-status" class="info-box hidden" role="status"><i class="fa-solid fa-circle-pause text-red"></i><p>This vault is paused. Turn this off to allow launches again.</p></div>
                 </div>
                 <div class="panel-group">
-                    <label class="panel-label">REVOKE COPIED LOADER LINKS</label>
-                    <button type="button" id="revoke-loader-links-btn" class="btn-danger"><i class="fa-solid fa-link-slash"></i> Revoke all current loader links</button>
-                    <div class="info-box"><i class="fa-solid fa-circle-info text-cyan"></i><p>Immediately invalidates existing loader tokens for this vault. New loader links can be copied from the website afterward. This does not stop a script that is already running.</p></div>
+                    <label class="panel-label">REVOKE ACTIVE BOOTSTRAP TOKENS</label>
+                    <button type="button" id="revoke-loader-links-btn" class="btn-danger"><i class="fa-solid fa-link-slash"></i> Revoke active bootstrap tokens</button>
+                    <div class="info-box"><i class="fa-solid fa-circle-info text-cyan"></i><p>Invalidates bootstrap responses already issued. A token-free public loadstring can fetch a new token while this vault remains active. Pause the vault or revoke its key to block future launches. This cannot stop a script that is already running.</p></div>
                 </div>
 
                 <details class="ks-tutorial">

@@ -3,7 +3,7 @@ import { db } from './_admin.js';
 import { recordActiveUser } from './_executionStats.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { getCodeForExecution } from './_deliveryCode.js';
-import { verifyLoaderToken } from './_loaderToken.js';
+import { issueLoaderToken, verifyLoaderToken } from './_loaderToken.js';
 
 function isExecutorRequest(req) {
     const ua = (req.headers['user-agent'] || '').toLowerCase();
@@ -27,6 +27,9 @@ export default async function handler(req, res) {
     const userId = req.query.userId;
     const trackOnly = req.query.trackOnly;
     const loaderToken = String(req.query.token || '');
+    // Executor requests to /api/raw default to a bootstrap response. The outer
+    // loadstring no longer needs a format flag or a token query parameter.
+    const mintTokenForBootstrap = req.query.format !== 'token-check' && !loaderToken;
 
     if (!id) {
         return res.status(400).send('Error: Missing Vault ID');
@@ -51,7 +54,7 @@ export default async function handler(req, res) {
         return res.redirect(302, `/vault.html?id=${encodeURIComponent(id)}${keyParam}`);
     }
 
-    if (!verifyLoaderToken(loaderToken, id, key)) {
+    if (!mintTokenForBootstrap && !verifyLoaderToken(loaderToken, id, key)) {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         return res.status(410).send('error("[VoidedX] This loader expired. Copy the latest loader from the website and run it again.", 0)');
@@ -67,8 +70,22 @@ export default async function handler(req, res) {
         }
 
         const vaultData = docSnap.data();
+        let activeLoaderToken = loaderToken;
 
-        if (!verifyLoaderToken(loaderToken, id, key, vaultData.loaderVersion)) {
+        // Public loadstrings stay stable and token-free. The raw endpoint puts a
+        // fresh signed token inside the returned _bsdata0 bootstrap on every fetch.
+        if (mintTokenForBootstrap) {
+            if (vaultData.requireKey && !vaultData.guiMode) {
+                if (!key || !(await hasUsableKey(db.collection('vaults').doc(id), vaultData, key))) {
+                    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                    return res.status(403).send('error("[VoidedX] Invalid Key Provided!", 2)');
+                }
+            }
+            activeLoaderToken = issueLoaderToken(id, key, vaultData.loaderVersion).token;
+        }
+
+        if (!verifyLoaderToken(activeLoaderToken, id, key, vaultData.loaderVersion)) {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             return res.status(410).send('error("[VoidedX] This loader is no longer valid. Copy the latest loader from the website and run it again.", 0)');
@@ -94,7 +111,7 @@ export default async function handler(req, res) {
         if (vaultData.requireKey && vaultData.guiMode) {
             res.setHeader('Content-Type', 'text/plain');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title, loaderToken));
+            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title, activeLoaderToken));
         }
 
         const executionCode = getCodeForExecution(vaultData);
@@ -106,7 +123,7 @@ export default async function handler(req, res) {
             if (typeof executionCode !== 'string' || !executionCode.trim()) {
                 return res.status(200).send(executionCode);
             }
-            return res.status(200).send(buildTrackedScript(id, getOrigin(req), loaderToken, key));
+            return res.status(200).send(buildTrackedScript(id, getOrigin(req), activeLoaderToken, key));
         }
 
         // Key-in-URL mode: fast-fail on an obviously missing key, otherwise hand off
@@ -118,10 +135,38 @@ error("[VoidedX] Invalid Key Provided!", 2)
             `);
         }
 
-        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req), loaderToken));
+        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req), activeLoaderToken));
     } catch (err) {
         return res.status(500).send(`Error loading script: ${err.message}`);
     }
+}
+
+function getStoredKeys(vaultData) {
+    if (Array.isArray(vaultData.keys) && vaultData.keys.length > 0) return vaultData.keys;
+    if (vaultData.key) return [{ key: vaultData.key, durationDays: null, keyGeneratedAt: vaultData.keyGeneratedAt || null, terminated: false }];
+    return [];
+}
+
+function isStoredKeyExpired(keyData, now) {
+    if (!keyData || !keyData.durationDays || !keyData.keyGeneratedAt) return false;
+    const generatedAt = typeof keyData.keyGeneratedAt === 'number'
+        ? keyData.keyGeneratedAt
+        : keyData.keyGeneratedAt && typeof keyData.keyGeneratedAt.toMillis === 'function'
+            ? keyData.keyGeneratedAt.toMillis()
+            : Number.NaN;
+    const durationDays = Number(keyData.durationDays);
+    if (!Number.isFinite(generatedAt) || !Number.isFinite(durationDays) || durationDays <= 0) return false;
+    return now >= generatedAt + durationDays * 86_400_000;
+}
+
+async function hasUsableKey(vaultRef, vaultData, key) {
+    const storedKeys = getStoredKeys(vaultData);
+    let matched = storedKeys.find(item => item && item.key === key);
+    if (!matched) {
+        const issued = await vaultRef.collection('issuedKeys').where('key', '==', key).limit(1).get();
+        if (!issued.empty) matched = issued.docs[0].data();
+    }
+    return !!matched && !matched.terminated && !isStoredKeyExpired(matched, Date.now());
 }
 
 function buildKeyLoader(id, key, origin, loaderToken) {

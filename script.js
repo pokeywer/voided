@@ -7,7 +7,7 @@ import {
     getFirestore, collection, doc, setDoc, addDoc, getDoc, getDocs, deleteDoc, updateDoc, query, where, serverTimestamp, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES } from './lua-medium.js';
-import { startRotatingLoader } from './loader-ui.js';
+import { setEmbeddedTokenLoader } from './loader-ui.js';
 
 // --- YOUR FIREBASE CONFIG HERE ---
 const firebaseConfig = {
@@ -319,24 +319,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const execCountNum = document.getElementById('exec-count-num');
     const promoShareBtn = document.getElementById('promo-share-btn');
     const editorSourceContext = document.getElementById('editor-source-context');
-    let stopActiveLoaderRotation = null;
+    let clearActiveLoaderBinding = null;
     let obfuscationRevision = 0;
     let obfuscatedPreviewIsCurrent = false;
     let obfuscatedPreviewText = '';
 
     function refreshVaultLoader(id, key = '') {
-        if (stopActiveLoaderRotation) stopActiveLoaderRotation();
-        stopActiveLoaderRotation = null;
+        if (clearActiveLoaderBinding) clearActiveLoaderBinding();
+        clearActiveLoaderBinding = null;
         if (!id) {
             lsOutput.value = '';
-            loaderTokenStatus.textContent = 'Save your vault to prepare a rotating loader.';
+            loaderTokenStatus.textContent = 'Save your vault to prepare a token-free loader URL.';
             copyBtn.disabled = true;
             return;
         }
         lsOutput.value = '';
         loaderTokenStatus.textContent = 'Preparing loader…';
         copyBtn.disabled = true;
-        stopActiveLoaderRotation = startRotatingLoader({ id, key, input: lsOutput, status: loaderTokenStatus, copyButton: copyBtn });
+        clearActiveLoaderBinding = setEmbeddedTokenLoader({ id, key, input: lsOutput, status: loaderTokenStatus, copyButton: copyBtn });
     }
 
     function getObfuscationSettings(code) {

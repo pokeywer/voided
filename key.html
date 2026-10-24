@@ -106,7 +106,7 @@
     </template>
 
     <script type="module">
-        import { startRotatingLoader } from './loader-ui.js';
+        import { setEmbeddedTokenLoader } from './loader-ui.js';
 
         const HOUR_MS = 60 * 60 * 1000;
 
@@ -391,7 +391,7 @@
                 }
 
                 keyOutput.value = d.key;
-                startRotatingLoader({ id: vaultId, key: d.key, input: loadstringOutput, status: loaderTokenStatus, copyButton: copyLsBtn });
+                setEmbeddedTokenLoader({ id: vaultId, key: d.key, input: loadstringOutput, status: loaderTokenStatus, copyButton: copyLsBtn });
                 openVaultLink.href = `/vault.html?id=${encodeURIComponent(vaultId)}&key=${encodeURIComponent(d.key)}`;
                 oneTimeNote.classList.toggle('hidden', !d.unique);
                 oneTimeNote.textContent = 'This key was issued for one custom-link return ticket. The ticket cannot be reused. Copy and save your key now.';

@@ -224,8 +224,8 @@
                             <input type="text" id="ls-output" readonly>
                             <button id="copy-out-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> COPY LOADSTRING</button>
                         </div>
-                        <p id="loader-token-status" class="field-hint loader-token-status" role="status" aria-live="polite">Save your vault to prepare a rotating loader.</p>
-                        <p class="field-hint loadstring-help"><span>The displayed loader refreshes every 40 seconds, and each copy expires after 45 seconds. Copy the latest version before you run it.</span> To show the in-game key popup, add a key, turn on <strong>Key System</strong> and <strong>In-Game Key GUI</strong> in Key System Manager, then click Apply Changes.</p>
+                        <p id="loader-token-status" class="field-hint loader-token-status" role="status" aria-live="polite">Save your vault to prepare a token-free loader URL.</p>
+                        <p class="field-hint loadstring-help"><span>The copied URL has no token parameter. Each fetch gets a fresh short-lived token inside the _bsdata0 bootstrap. The bootstrap expires after 45 seconds; the outer URL fetches a new one when run.</span> To show the in-game key popup, add a key, turn on <strong>Key System</strong> and <strong>In-Game Key GUI</strong> in Key System Manager, then click Apply Changes.</p>
                         <div id="get-key-row" class="url-bar hidden">
                             <input type="text" id="get-key-output" readonly>
                             <button id="copy-key-link-btn" class="btn-accent"><i class="fa-solid fa-key"></i> COPY GET-KEY LINK</button>

@@ -212,18 +212,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     revokeLoaderLinksBtn.addEventListener('click', async () => {
         const confirmed = await customConfirm({
-            title: 'Revoke every current loader link?',
-            message: 'All copied loader tokens for this vault stop working immediately. Players can get a fresh loader from the website. Scripts already running will continue.',
-            confirmLabel: 'Revoke links'
+            title: 'Revoke active bootstrap tokens?',
+            message: 'This invalidates bootstrap responses already issued. A token-free public loadstring can fetch a new token while this vault stays active. Pause the vault or revoke its key to block future launches. Scripts already running will continue.',
+            confirmLabel: 'Revoke tokens'
         });
         if (!confirmed) return;
 
         revokeLoaderLinksBtn.disabled = true;
         try {
             await updateDoc(doc(db, 'vaults', vaultId), { loaderVersion: increment(1) });
-            showToast('Current loader links revoked. Copy a fresh loader from the website.', 'success', 5000);
+            showToast('Active bootstrap tokens revoked. Pause the vault or revoke its key to block new launches.', 'success', 6000);
         } catch (err) {
-            showToast('Could not revoke loader links: ' + err.message, 'error', 6000);
+            showToast('Could not revoke bootstrap tokens: ' + err.message, 'error', 6000);
         } finally {
             revokeLoaderLinksBtn.disabled = false;
         }

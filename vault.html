@@ -90,7 +90,7 @@
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <script type="module">
-        import { startRotatingLoader } from './loader-ui.js';
+        import { setEmbeddedTokenLoader } from './loader-ui.js';
 
         const loadingState = document.getElementById('loading-state');
         const errorState = document.getElementById('error-state');
@@ -107,7 +107,7 @@
         const loadstringInput = document.getElementById('loadstring-input');
         const copyBtn = document.getElementById('copy-ls-btn');
         const loaderTokenStatus = document.getElementById('loader-token-status');
-        let stopLoaderRotation = null;
+        let clearLoaderBinding = null;
 
         function showOnly(el) {
             [loadingState, errorState, keypromptState, securedState].forEach(s => s.classList.add('hidden'));
@@ -139,10 +139,10 @@
         function showSecured(data, key) {
             securedTitle.innerHTML = `<strong>${escapeHtml(data.title || 'Untitled Vault')}</strong> is protected by <strong>VoidedX Vault</strong>.`;
             keyTag.classList.toggle('hidden', !data.requireKey);
-            if (stopLoaderRotation) stopLoaderRotation();
+            if (clearLoaderBinding) clearLoaderBinding();
             loadstringInput.value = '';
             copyBtn.disabled = true;
-            stopLoaderRotation = startRotatingLoader({ id: vaultId, key, input: loadstringInput, status: loaderTokenStatus, copyButton: copyBtn });
+            clearLoaderBinding = setEmbeddedTokenLoader({ id: vaultId, key, input: loadstringInput, status: loaderTokenStatus, copyButton: copyBtn });
 
             if (data.expiresAt) {
                 const msLeft = data.expiresAt - Date.now();
