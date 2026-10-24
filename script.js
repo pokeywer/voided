@@ -6,7 +6,7 @@ import {
 import {
     getFirestore, collection, doc, setDoc, addDoc, getDoc, getDocs, deleteDoc, updateDoc, query, where, serverTimestamp, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES } from './lua-medium.js';
 import { startRotatingLoader } from './loader-ui.js';
 
 // --- YOUR FIREBASE CONFIG HERE ---
@@ -322,6 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let stopActiveLoaderRotation = null;
     let obfuscationRevision = 0;
     let obfuscatedPreviewIsCurrent = false;
+    let obfuscatedPreviewText = '';
 
     function refreshVaultLoader(id, key = '') {
         if (stopActiveLoaderRotation) stopActiveLoaderRotation();
@@ -355,17 +356,21 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function setObfuscatedPreview(output, statusText) {
-        obfuscatedPreview.value = output;
+    function setObfuscatedPreview(output, statusText, outputBytes = getUtf8ByteLength(output)) {
+        obfuscatedPreviewText = output;
+        const inlinePreview = outputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES;
+        obfuscatedPreview.value = inlinePreview ? output : '';
         obfuscatedPreviewPanel.classList.remove('hidden');
-        obfuscatedPreviewStatus.textContent = statusText;
+        obfuscatedPreviewStatus.textContent = inlinePreview
+            ? statusText
+            : `${statusText} This large output is download-only here to keep the page responsive.`;
         obfuscatedPreviewIsCurrent = true;
-        copyObfuscatedBtn.disabled = !output;
+        copyObfuscatedBtn.disabled = !output || !inlinePreview;
         downloadObfuscatedBtn.disabled = !output;
     }
 
     function markObfuscatedPreviewStale() {
-        if (!obfuscatedPreview.value && obfuscatedPreviewPanel.classList.contains('hidden')) return;
+        if (!obfuscatedPreviewText && obfuscatedPreviewPanel.classList.contains('hidden')) return;
         obfuscatedPreviewIsCurrent = false;
         copyObfuscatedBtn.disabled = true;
         downloadObfuscatedBtn.disabled = true;
@@ -373,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearObfuscatedPreview() {
+        obfuscatedPreviewText = '';
         obfuscatedPreview.value = '';
         obfuscatedPreviewPanel.classList.add('hidden');
         obfuscatedPreviewStatus.textContent = 'Generate a preview to inspect the execution copy.';
@@ -1357,10 +1363,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const outputBytes = getUtf8ByteLength(output);
             if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
-                throw new Error('The generated output is over the 8 MiB limit. Try lower strength or reduce the script.');
+                throw new Error('The generated output is over the 32 MiB limit. Try lower strength or reduce the script.');
             }
             const outputKiB = Math.ceil(outputBytes / 1024).toLocaleString();
-            setObfuscatedPreview(output, `Current ${settings.effectiveLevel} output · ${outputKiB} KiB · not saved yet.`);
+            setObfuscatedPreview(output, `Current ${settings.effectiveLevel} output · ${outputKiB} KiB · not saved yet.`, outputBytes);
         } catch (error) {
             if (revision !== obfuscationRevision) {
                 markObfuscatedPreviewStale();
@@ -1378,12 +1384,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     copyObfuscatedBtn.addEventListener('click', async () => {
-        if (!obfuscatedPreviewIsCurrent || !obfuscatedPreview.value) return;
+        if (!obfuscatedPreviewIsCurrent || !obfuscatedPreviewText || copyObfuscatedBtn.disabled) return;
         try {
             let copied = false;
             if (navigator.clipboard && window.isSecureContext) {
                 try {
-                    await navigator.clipboard.writeText(obfuscatedPreview.value);
+                    await navigator.clipboard.writeText(obfuscatedPreviewText);
                     copied = true;
                 } catch { /* Try the selection-based fallback below. */ }
             }
@@ -1400,10 +1406,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     downloadObfuscatedBtn.addEventListener('click', () => {
-        if (!obfuscatedPreviewIsCurrent || !obfuscatedPreview.value) return;
+        if (!obfuscatedPreviewIsCurrent || !obfuscatedPreviewText) return;
         const baseName = String(scriptTitle.value.trim() || activeVaultId.value || 'voidedx-script')
             .replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'voidedx-script';
-        const blobUrl = URL.createObjectURL(new Blob([obfuscatedPreview.value], { type: 'text/plain;charset=utf-8' }));
+        const blobUrl = URL.createObjectURL(new Blob([obfuscatedPreviewText], { type: 'text/plain;charset=utf-8' }));
         const link = document.createElement('a');
         link.href = blobUrl;
         link.download = `${baseName}_obfuscated.lua`;

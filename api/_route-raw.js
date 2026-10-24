@@ -7,7 +7,7 @@ import { verifyLoaderToken } from './_loaderToken.js';
 
 function isExecutorRequest(req) {
     const ua = (req.headers['user-agent'] || '').toLowerCase();
-    if (req.query.format === 'raw' || req.query.trackOnly === '1') return true;
+    if (req.query.format === 'raw' || req.query.format === 'token-check' || req.query.trackOnly === '1') return true;
     const accept = (req.headers.accept || '').toLowerCase();
     if (accept && !accept.includes('text/html') && (accept.includes('*/*') || accept.includes('text/plain'))) return true;
     return ua.includes('roblox') ||
@@ -80,12 +80,21 @@ export default async function handler(req, res) {
             return res.status(423).send('error("[VoidedX] This vault is temporarily paused by its owner.", 0)');
         }
 
+        // The short-lived loader credential is also packed into the returned
+        // _bsdata0 envelope. A copied response body must revalidate it when run,
+        // so copying the decoded bootstrap does not bypass its 45-second expiry.
+        if (req.query.format === 'token-check') {
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            return res.status(200).send('ok');
+        }
+
         // GUI Mode: no key in the URL at all — send an in-game popup instead that
         // asks the player to type their key, then verifies it via /api/verify.
         if (vaultData.requireKey && vaultData.guiMode) {
             res.setHeader('Content-Type', 'text/plain');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title));
+            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title, loaderToken));
         }
 
         const executionCode = getCodeForExecution(vaultData);
@@ -97,7 +106,7 @@ export default async function handler(req, res) {
             if (typeof executionCode !== 'string' || !executionCode.trim()) {
                 return res.status(200).send(executionCode);
             }
-            return res.status(200).send(buildTrackedScript(id, getOrigin(req)));
+            return res.status(200).send(buildTrackedScript(id, getOrigin(req), loaderToken, key));
         }
 
         // Key-in-URL mode: fast-fail on an obviously missing key, otherwise hand off
@@ -109,13 +118,13 @@ error("[VoidedX] Invalid Key Provided!", 2)
             `);
         }
 
-        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req)));
+        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req), loaderToken));
     } catch (err) {
         return res.status(500).send(`Error loading script: ${err.message}`);
     }
 }
 
-function buildKeyLoader(id, key, origin) {
+function buildKeyLoader(id, key, origin, loaderToken) {
     const verifyBase = `${origin}/api/verify`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
@@ -150,10 +159,10 @@ if not result.ok then
 end
 
 return vxRunPayload(result.token, player and player.UserId or nil)
-`));
+`), { id, key, origin, token: loaderToken });
 }
 
-function buildTrackedScript(id, origin) {
+function buildTrackedScript(id, origin, loaderToken, key = '') {
     const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
@@ -181,7 +190,7 @@ if not result.ok then
     error("[VoidedX] " .. tostring(result.message or "Could not load the script."), 0)
 end
 return vxRunPayload(result.token, player and player.UserId or nil)
-`));
+`), { id, key, origin, token: loaderToken });
 }
 
 function buildPayloadRuntime(origin) {
@@ -282,13 +291,20 @@ function compactGeneratedLoader(source) {
     return output.trim();
 }
 
-function packGeneratedLoader(source) {
+function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const mask = randomBytes(1)[0] || 1;
-    const encoded = Array.from(Buffer.from(source, 'utf8'), byte => {
+    const encode = value => Array.from(Buffer.from(value, 'utf8'), byte => {
         const maskedByte = (byte + mask) & 0xff;
         return `\\${String(maskedByte).padStart(3, '0')}`;
     }).join('');
-    return `local _bsdata0={1,${mask},"${encoded}"};local _bsdata1={};for _i0=1,#_bsdata0[3] do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;return assert(loadstring(table.concat(_bsdata1)))()`;
+    const gateUrl = new URL('/api/raw', origin);
+    gateUrl.searchParams.set('id', id);
+    gateUrl.searchParams.set('token', token);
+    gateUrl.searchParams.set('format', 'token-check');
+    if (key) gateUrl.searchParams.set('key', key);
+    const encodedSource = encode(source);
+    const encodedGate = encode(gateUrl.href);
+    return `local _bsdata0={1,${mask},"${encodedSource}","${encodedGate}"};local _bsdata1={};for _i0=1,#_bsdata0[3] do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;local _bsdata2={};for _i1=1,#_bsdata0[4] do _bsdata2[_i1]=string.char((string.byte(_bsdata0[4],_i1)-_bsdata0[2])%256) end;local _bsok,_bsresponse=pcall(function()return game:HttpGet(table.concat(_bsdata2))end);if not _bsok or _bsresponse~="ok" then return error("[VoidedX] This loader expired. Copy the latest loader from the website.",0)end;local _bscompile=loadstring or load;if type(_bscompile)~="function" then return error("[VoidedX] This executor does not support loadstring.",0)end;local _bschunk,_bserror=_bscompile(table.concat(_bsdata1));if not _bschunk then return error(tostring(_bserror),0)end;return _bschunk()`;
 }
 
 function luaString(str) {
@@ -308,7 +324,7 @@ function getOrigin(req) {
     return `${proto}://${host}`;
 }
 
-function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '') {
+function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '', loaderToken) {
     const verifyBase = `${origin}/api/verify`;
     const keyPageUrl = `${origin}/key.html?id=${id}`;
     const appearance = sanitizeGuiAppearance(rawAppearance);
@@ -1433,7 +1449,7 @@ if previouslySavedKey then
     setStatus("Checking the saved key...", COL_MUTED)
     task.defer(function() attemptVerify(true) end)
 end
-`));
+`), { id, origin, token: loaderToken });
 }
 
 function sanitizeGuiAppearance(raw = {}) {

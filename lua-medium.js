@@ -6,15 +6,19 @@ export const AUTO_HIGH_BYTE_THRESHOLD = 10_000;
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const MAX_VAULT_SOURCE_BYTES = 2 * 1024 * 1024;
+export const MAX_OBFUSCATION_SOURCE_BYTES = 4 * 1024 * 1024;
 // Keep ordinary scripts directly readable in Firestore for owner audits.
 // Larger sources stay compressed so the source + execution copy can fit in a document.
 export const MAX_READABLE_VAULT_SOURCE_BYTES = 128 * 1024;
-export const MAX_OBFUSCATION_SOURCE_BYTES = MAX_VAULT_SOURCE_BYTES;
-export const MAX_OBFUSCATED_OUTPUT_BYTES = 8 * 1024 * 1024;
+export const MAX_OBFUSCATED_OUTPUT_BYTES = 32 * 1024 * 1024;
+export const MAX_STORED_OBFUSCATED_OUTPUT_BYTES = 4 * 1024 * 1024;
+export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
 
 const PRESETS = Object.freeze({ low: 'Weak', medium: 'Medium', high: 'Strong' });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
+const MAX_PROMETHEUS_OUTPUT_BYTES = 32 * 1024 * 1024;
+const MAX_STORED_ENCODED_OBFUSCATED_BYTES = 800 * 1024;
 
 export function getUtf8ByteLength(value) {
     const text = typeof value === 'string' ? value : String(value ?? '');
@@ -33,7 +37,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
 
     const sourceBytes = getUtf8ByteLength(source);
     if (sourceBytes > MAX_OBFUSCATION_SOURCE_BYTES) {
-        return Promise.reject(new Error('This script is over the 2 MiB browser obfuscation limit. Reduce its size or save it without Lua obfuscation.'));
+        return Promise.reject(new Error('This script is over the 4 MiB browser obfuscation limit. Reduce its size or save it without Lua obfuscation.'));
     }
 
     const preset = PRESETS[level];
@@ -58,7 +62,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
         const jobId = `voidedx-${Date.now()}-${++nextJobId}`;
         const timeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(MIN_JOB_TIMEOUT_MS, Math.ceil(sourceBytes / 10_240) * 8_000));
 
-        const finish = (error, output) => {
+        const finish = (error, output, outputBytes) => {
             if (settled) return;
             settled = true;
             if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -67,7 +71,12 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                 reject(error);
                 return;
             }
-            lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, output };
+            const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
+            if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
+                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, output };
+            } else {
+                lastSuccessfulObfuscation = null;
+            }
             resolve(output);
         };
 
@@ -78,7 +87,20 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                 const message = event.data;
                 if (!message || message.id !== jobId || message.type !== 'result') return;
                 if (message.result && message.result.ok && typeof message.result.output === 'string') {
-                    finish(null, message.result.output);
+                    try {
+                        const intermediateBytes = getUtf8ByteLength(message.result.output);
+                        if (intermediateBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
+                            throw new Error('Prometheus produced more than 32 MiB. Try a lower strength or a smaller source.');
+                        }
+                        const output = message.result.output;
+                        const outputBytes = intermediateBytes;
+                        if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
+                            throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
+                        }
+                        finish(null, output, outputBytes);
+                    } catch (error) {
+                        finish(error instanceof Error ? error : new Error(String(error)));
+                    }
                 } else {
                     finish(new Error(message.result?.error || 'Prometheus could not obfuscate this script.'));
                 }
@@ -116,11 +138,15 @@ export async function encodeObfuscatedCode(source) {
     if (typeof source !== 'string') throw new Error('Prometheus returned an invalid script.');
 
     const sourceBytes = new TextEncoder().encode(source);
-    if (sourceBytes.byteLength > MAX_OBFUSCATED_OUTPUT_BYTES) {
-        throw new Error('The generated script is larger than the 8 MiB delivery limit. Try Low strength or reduce the source size.');
+    if (sourceBytes.byteLength > MAX_STORED_OBFUSCATED_OUTPUT_BYTES) {
+        throw new Error('This copy is ready to download, but it is over the 4 MiB vault delivery limit. Firestore and Vercel cannot store and serve this larger copy safely.');
     }
 
-    return encodeGzipBase64(source, sourceBytes);
+    const encoded = await encodeGzipBase64(source, sourceBytes);
+    if (getUtf8ByteLength(encoded.value) > MAX_STORED_ENCODED_OBFUSCATED_BYTES) {
+        throw new Error('This copy is ready to download, but its compressed data is too large for a vault document. Download the preview instead.');
+    }
+    return encoded;
 }
 
 export async function encodeVaultSource(source) {
@@ -177,3 +203,4 @@ function bytesToBase64(bytes) {
     }
     return chunks.join('');
 }
+

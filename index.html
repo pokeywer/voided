@@ -148,7 +148,7 @@
                     <button type="button" id="backup-now-btn" class="btn-ghost backup-now-btn"><i class="fa-solid fa-download"></i> Download backup now</button>
                     <div class="protection-hint">
                         <i class="fa-solid fa-shield-halved"></i>
-                        <span>Scripts up to 128 KiB are stored as readable text in Firebase; larger sources are compressed, not encrypted. Anyone who runs a client script can capture its delivered code, so never include passwords or private API keys.</span>
+                        <span>Scripts up to 128 KiB are stored as readable text in Firebase; larger sources are compressed, not encrypted. Preview accepts source up to 4 MiB, but vault saves allow 2 MiB of source. Preview and download support output up to 32 MiB; previews over 1 MiB are download-only to keep the page responsive. A saved vault copy is limited to 4 MiB and may hit the Firestore document limit first. Anyone who runs a client script can capture its delivered code, so never include passwords or private API keys.</span>
                     </div>
                     <div class="obfuscated-preview-tools">
                         <button type="button" id="preview-obfuscated-btn" class="btn-ghost"><i class="fa-solid fa-eye"></i> Generate obfuscated preview</button>

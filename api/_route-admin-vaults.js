@@ -6,7 +6,7 @@ import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
 
 const PAGE_SIZE = 100;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
-const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENT_ESTIMATE_BYTES = 870 * 1024;
 const LEVELS = new Set(['auto', 'low', 'medium', 'high']);
 
@@ -59,7 +59,7 @@ function validateObfuscatedCopy(value, encoding) {
     } else if (encoding !== 'identity') {
         throw new Error('Choose a supported obfuscated script format.');
     }
-    if (Buffer.byteLength(output, 'utf8') > MAX_OUTPUT_BYTES) throw new Error('Obfuscated output is larger than the 8 MiB limit.');
+    if (Buffer.byteLength(output, 'utf8') > MAX_OUTPUT_BYTES) throw new Error('Obfuscated output is larger than the 4 MiB vault-delivery limit.');
 }
 
 export default async function handler(req, res) {

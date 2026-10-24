@@ -1,4 +1,4 @@
-import { obfuscateLua, resolveObfuscationLevel, encodeVaultSource, encodeObfuscatedCode, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, encodeVaultSource, encodeObfuscatedCode, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES } from './lua-medium.js';
 
 const loginView = document.getElementById('admin-login-view');
 const dashboardView = document.getElementById('admin-dashboard-view');
@@ -36,6 +36,7 @@ let adminVaultRevision = 0;
 let adminVaultPreviewIsCurrent = false;
 let adminVaultPreviewSignature = '';
 let adminVaultLoadSequence = 0;
+let adminVaultOutputText = '';
 
 async function requestJson(path, options = {}) {
     const response = await fetch(path, {
@@ -163,6 +164,7 @@ function currentAdminVaultSignature() {
 
 function clearAdminVaultPreview() {
     adminVaultRevision += 1;
+    adminVaultOutputText = '';
     adminVaultOutput.value = '';
     adminVaultPreviewWrap.classList.add('hidden');
     adminVaultPreviewIsCurrent = false;
@@ -173,7 +175,7 @@ function clearAdminVaultPreview() {
 
 function invalidateAdminVaultPreview() {
     adminVaultRevision += 1;
-    if (!adminVaultOutput.value) return;
+    if (!adminVaultOutputText) return;
     adminVaultPreviewIsCurrent = false;
     document.getElementById('admin-vault-copy-output').disabled = true;
     document.getElementById('admin-vault-download-output').disabled = true;
@@ -183,7 +185,7 @@ function invalidateAdminVaultPreview() {
 function markAdminVaultDirty() {
     adminVaultDirty = true;
     invalidateAdminVaultPreview();
-    setVaultStatus(`Unsaved changes to ${activeAdminVault?.title || 'this vault'}. Saving replaces the live source.${adminVaultOutput.value ? ' The old preview is stale.' : ''}`, 'info');
+    setVaultStatus(`Unsaved changes to ${activeAdminVault?.title || 'this vault'}. Saving replaces the live source.${adminVaultOutputText ? ' The old preview is stale.' : ''}`, 'info');
 }
 
 function getAdminVaultObfuscationSettings() {
@@ -374,14 +376,16 @@ async function generateAdminVaultPreview() {
         const output = await obfuscateLua(adminVaultSource.value, settings.effectiveLevel, settings.protection);
         if (revision !== adminVaultRevision) return;
         const outputBytes = getUtf8ByteLength(output);
-        if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) throw new Error('The obfuscated output is over the 8 MiB limit.');
-        adminVaultOutput.value = output;
+        if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) throw new Error('The obfuscated output is over the 32 MiB limit.');
+        const inlinePreview = outputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES;
+        adminVaultOutputText = output;
+        adminVaultOutput.value = inlinePreview ? output : '';
         adminVaultPreviewWrap.classList.remove('hidden');
         adminVaultPreviewIsCurrent = true;
         adminVaultPreviewSignature = signature;
-        document.getElementById('admin-vault-copy-output').disabled = false;
+        document.getElementById('admin-vault-copy-output').disabled = !inlinePreview;
         document.getElementById('admin-vault-download-output').disabled = false;
-        setVaultStatus(`Preview ready · ${settings.effectiveLevel} strength · ${(outputBytes / 1024).toFixed(1)} KiB.`, 'success');
+        setVaultStatus(`Preview ready · ${settings.effectiveLevel} strength · ${(outputBytes / 1024).toFixed(1)} KiB.${inlinePreview ? '' : ' This large output is download-only to keep the page responsive.'}`, 'success');
     } catch (error) {
         if (revision === adminVaultRevision) setVaultStatus(`Could not obfuscate this source: ${error.message}`, 'error');
     } finally {
@@ -408,13 +412,15 @@ async function saveAdminVault() {
     const originalHtml = saveButton.innerHTML;
     saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> SAVING…';
     let generatedOutput = null;
+    let generatedOutputBytes = 0;
     try {
         setVaultStatus(settings.enabled ? 'Generating and saving the execution copy…' : 'Saving readable source…', 'info');
         const encodedSource = await encodeVaultSource(source);
         let encodedOutput = null;
         if (settings.enabled) {
             generatedOutput = await obfuscateLua(source, settings.effectiveLevel, settings.protection);
-            if (getUtf8ByteLength(generatedOutput) > MAX_OBFUSCATED_OUTPUT_BYTES) throw new Error('The obfuscated output is over the 8 MiB limit.');
+            generatedOutputBytes = getUtf8ByteLength(generatedOutput);
+            if (generatedOutputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) throw new Error('The obfuscated output is over the 32 MiB limit.');
             encodedOutput = await encodeObfuscatedCode(generatedOutput);
         }
         const payload = {
@@ -449,11 +455,13 @@ async function saveAdminVault() {
         adminVaultDirty = false;
         renderAdminVaultList();
         if (generatedOutput) {
-            adminVaultOutput.value = generatedOutput;
+            const inlinePreview = generatedOutputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES;
+            adminVaultOutputText = generatedOutput;
+            adminVaultOutput.value = inlinePreview ? generatedOutput : '';
             adminVaultPreviewWrap.classList.remove('hidden');
             adminVaultPreviewIsCurrent = true;
             adminVaultPreviewSignature = currentAdminVaultSignature();
-            document.getElementById('admin-vault-copy-output').disabled = false;
+            document.getElementById('admin-vault-copy-output').disabled = !inlinePreview;
             document.getElementById('admin-vault-download-output').disabled = false;
         } else {
             clearAdminVaultPreview();
@@ -722,12 +730,13 @@ document.getElementById('admin-vault-download-source').addEventListener('click',
 });
 document.getElementById('admin-vault-copy-output').addEventListener('click', async () => {
     if (!adminVaultPreviewIsCurrent || adminVaultPreviewSignature !== currentAdminVaultSignature()) return;
+    if (!adminVaultOutput.value) return;
     const copied = await copyAdminText(adminVaultOutput.value, adminVaultOutput);
     setVaultStatus(copied ? 'Obfuscated execution copy copied.' : 'Copy was blocked. Select the output and copy it manually.', copied ? 'success' : 'error');
 });
 document.getElementById('admin-vault-download-output').addEventListener('click', () => {
     if (!activeAdminVault || !adminVaultPreviewIsCurrent || adminVaultPreviewSignature !== currentAdminVaultSignature()) return;
-    downloadAdminText(`${safeVaultFilename(adminVaultTitle.value || activeAdminVault.id)}_obfuscated.lua`, adminVaultOutput.value);
+    downloadAdminText(`${safeVaultFilename(adminVaultTitle.value || activeAdminVault.id)}_obfuscated.lua`, adminVaultOutputText);
 });
 document.getElementById('admin-logout-btn').addEventListener('click', async () => {
     try { await requestJson('/api/admin-auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) }); }
