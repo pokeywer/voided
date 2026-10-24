@@ -313,6 +313,12 @@ local function vxRunPayload(token, userId)
         return error("[VoidedX] " .. tostring(compileError), 0)
     end
     vxProgress(100, "Starting")
+    -- Some executors invoke a fetched payload from a parallel Actor context.
+    -- Roblox service lookups such as game:GetService are unsafe there, so
+    -- return to serial execution when this scheduler API is available.
+    if type(task) == "table" and type(task.synchronize) == "function" then
+        pcall(task.synchronize)
+    end
     return scriptChunk()
 end
 `.trim();

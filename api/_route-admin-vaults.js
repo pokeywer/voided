@@ -147,7 +147,7 @@ export default async function handler(req, res) {
             code: body.code,
             codeEncoding,
             obfuscationEnabled,
-            obfuscationProfileVersion: 3,
+            obfuscationProfileVersion: 4,
             obfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

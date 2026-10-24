@@ -944,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 3) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 4) {
             showToast('This vault has an older Luau obfuscation copy. Save it again to regenerate with the current profile.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1561,7 +1561,7 @@ document.addEventListener('DOMContentLoaded', () => {
             code: encodedSourceCode.value,
             codeEncoding: encodedSourceCode.encoding,
             obfuscationEnabled,
-            obfuscationProfileVersion: 3,
+            obfuscationProfileVersion: 4,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

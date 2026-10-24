@@ -1,7 +1,9 @@
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
 
-export const AUTO_HIGH_BYTE_THRESHOLD = 10_000;
+// Prefer High for small and medium-sized scripts so Auto does not reduce
+// obfuscation strength for ordinary client scripts in the 10-64 KiB range.
+export const AUTO_HIGH_BYTE_THRESHOLD = 64 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
