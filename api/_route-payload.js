@@ -79,6 +79,11 @@ export default async function handler(req, res) {
     if (requestedUserId && !/^\d{1,20}$/.test(requestedUserId)) {
         return json(res, 400, { ok: false, message: 'Invalid player ID.' });
     }
+    const cacheRequested = req.query?.cache === '1';
+    const cacheHash = String(req.query?.cacheHash || '').toLowerCase();
+    if (cacheHash && !/^[a-f0-9]{64}$/.test(cacheHash)) {
+        return json(res, 400, { ok: false, message: 'Invalid cached payload hash.' });
+    }
 
     try {
         const sessionRef = db.collection('sessions').doc(sessionToken);
@@ -128,6 +133,14 @@ export default async function handler(req, res) {
         const executionCode = getCodeForExecution(vault);
         if (typeof executionCode !== 'string' || !executionCode.trim()) {
             return json(res, 500, { ok: false, message: 'Vault payload is unavailable.' });
+        }
+
+        if (cacheRequested && vault.fastLoadCacheEnabled === true) {
+            const hash = createHash('sha256').update(executionCode, 'utf8').digest('hex');
+            if (cacheHash && cacheHash === hash) {
+                return json(res, 200, { ok: true, version: 3, cached: true, hash });
+            }
+            return json(res, 200, { ok: true, version: 3, code: executionCode, hash });
         }
 
         return json(res, 200, { ok: true, version: 3, code: executionCode });

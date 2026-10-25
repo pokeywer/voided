@@ -111,7 +111,7 @@ export default async function handler(req, res) {
         if (vaultData.requireKey && vaultData.guiMode) {
             res.setHeader('Content-Type', 'text/plain');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title, activeLoaderToken));
+            return res.status(200).send(buildGuiLoader(id, getOrigin(req), vaultData.guiAppearance, vaultData.title, activeLoaderToken, vaultData.fastLoadCacheEnabled === true));
         }
 
         const executionCode = getCodeForExecution(vaultData);
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
             if (typeof executionCode !== 'string' || !executionCode.trim()) {
                 return res.status(200).send(executionCode);
             }
-            return res.status(200).send(buildTrackedScript(id, getOrigin(req), activeLoaderToken, key));
+            return res.status(200).send(buildTrackedScript(id, getOrigin(req), activeLoaderToken, key, vaultData.fastLoadCacheEnabled === true));
         }
 
         // Key-in-URL mode: fast-fail on an obviously missing key, otherwise hand off
@@ -135,7 +135,7 @@ error("[VoidedX] Invalid Key Provided!", 2)
             `);
         }
 
-        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req), activeLoaderToken));
+        return res.status(200).send(buildKeyLoader(id, key, getOrigin(req), activeLoaderToken, vaultData.fastLoadCacheEnabled === true));
     } catch (err) {
         return res.status(500).send(`Error loading script: ${err.message}`);
     }
@@ -169,13 +169,13 @@ async function hasUsableKey(vaultRef, vaultData, key) {
     return !!matched && !matched.terminated && !isStoredKeyExpired(matched, Date.now());
 }
 
-function buildKeyLoader(id, key, origin, loaderToken) {
+function buildKeyLoader(id, key, origin, loaderToken, fastLoadCacheEnabled = false) {
     const verifyBase = `${origin}/api/verify`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin)}
+${buildPayloadRuntime(origin, id, fastLoadCacheEnabled)}
 
 local ok, response = pcall(function()
     return game:HttpGet(
@@ -207,13 +207,13 @@ return vxRunPayload(result.token, player and player.UserId or nil)
 `), { id, key, origin, token: loaderToken });
 }
 
-function buildTrackedScript(id, origin, loaderToken, key = '') {
+function buildTrackedScript(id, origin, loaderToken, key = '', fastLoadCacheEnabled = false) {
     const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin)}
+${buildPayloadRuntime(origin, id, fastLoadCacheEnabled)}
 local verifyUrl = ${luaString(verifyUrl)}
 if player then verifyUrl = verifyUrl .. "&userId=" .. HttpService:UrlEncode(tostring(player.UserId)) end
 
@@ -238,9 +238,55 @@ return vxRunPayload(result.token, player and player.UserId or nil)
 `), { id, key, origin, token: loaderToken });
 }
 
-function buildPayloadRuntime(origin) {
+function buildPayloadRuntime(origin, vaultId, fastLoadCacheEnabled = false) {
     const payloadBase = luaString(`${origin}/api/payload?session=`);
+    const cacheFolder = `static_content_${String(vaultId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80)}`;
+    const cachePath = luaString(`${cacheFolder}/payload.lua`);
+    const cacheEnabled = fastLoadCacheEnabled === true;
     return `
+local vxCacheEnabled = ${cacheEnabled ? 'true' : 'false'}
+local vxCacheFolder = ${luaString(cacheFolder)}
+local vxCachePath = ${cachePath}
+
+local function vxSha256(value)
+    if not vxCacheEnabled or type(value) ~= "string" then return nil end
+    local hashers = {}
+    pcall(function()
+        if type(crypt) == "table" and type(crypt.hash) == "function" then
+            table.insert(hashers, function(input) return crypt.hash(input, "sha256") end)
+        end
+    end)
+    pcall(function()
+        if type(syn) == "table" and type(syn.crypt) == "table" and type(syn.crypt.hash) == "function" then
+            table.insert(hashers, function(input) return syn.crypt.hash(input, "sha256") end)
+        end
+    end)
+    for _, hasher in ipairs(hashers) do
+        local ok, digest = pcall(hasher, value)
+        if ok and type(digest) == "string" then
+            digest = string.lower(digest)
+            if #digest == 64 and string.match(digest, "^[%da-f]+$") then return digest end
+        end
+    end
+    return nil
+end
+
+local function vxReadCachedPayload()
+    if not vxCacheEnabled or type(readfile) ~= "function" then return nil, nil end
+    local ok, cached = pcall(function()
+        if type(isfile) == "function" and not isfile(vxCachePath) then return nil end
+        return readfile(vxCachePath)
+    end)
+    if not ok or type(cached) ~= "string" or cached == "" then return nil, nil end
+    return cached, vxSha256(cached)
+end
+
+local function vxWriteCachedPayload(value)
+    if not vxCacheEnabled or type(writefile) ~= "function" then return false end
+    if type(makefolder) == "function" then pcall(makefolder, vxCacheFolder) end
+    return pcall(writefile, vxCachePath, value)
+end
+
 local vxLastProgressBlocks, vxLastProgressStage
 local function vxProgress(percent, stage)
     percent = math.max(1, math.min(100, math.floor(percent)))
@@ -265,6 +311,11 @@ local function vxRunPayload(token, userId)
     end
     local payloadUrl = ${payloadBase} .. HttpService:UrlEncode(token)
     if userId ~= nil then payloadUrl = payloadUrl .. "&userId=" .. HttpService:UrlEncode(tostring(userId)) end
+    local cachedCode, cachedHash = vxReadCachedPayload()
+    if vxCacheEnabled then
+        payloadUrl = payloadUrl .. "&cache=1"
+        if cachedHash then payloadUrl = payloadUrl .. "&cacheHash=" .. HttpService:UrlEncode(cachedHash) end
+    end
 
     local requestOk, response
     local requestDone = false
@@ -302,12 +353,34 @@ local function vxRunPayload(token, userId)
         vxProgress(90, "Invalid server response")
         return error("[VoidedX] The payload server returned a bad response.", 0)
     end
-    if not result.ok or type(result.code) ~= "string" then
+    if not result.ok then
         vxProgress(90, "Access denied")
         return error("[VoidedX] " .. tostring(result.message or "The script could not be delivered."), 0)
     end
+
+    local executionCode
+    if result.cached == true then
+        local currentHash = vxSha256(cachedCode)
+        if type(cachedCode) ~= "string" or not currentHash or currentHash ~= result.hash or currentHash ~= cachedHash then
+            vxProgress(90, "Cached copy failed integrity check")
+            return error("[VoidedX] Cached script integrity check failed. Run the loader again to download a fresh copy.", 0)
+        end
+        executionCode = cachedCode
+        vxProgress(94, "Using server-verified local cache")
+    else
+        if type(result.code) ~= "string" then
+            vxProgress(90, "Invalid payload")
+            return error("[VoidedX] The payload server returned no script.", 0)
+        end
+        executionCode = result.code
+        local receivedHash = vxSha256(executionCode)
+        if receivedHash and receivedHash == result.hash then
+            vxWriteCachedPayload(executionCode)
+        end
+    end
+
     vxProgress(96, "Compiling script")
-    local scriptChunk, compileError = loadstring(result.code)
+    local scriptChunk, compileError = loadstring(executionCode)
     if not scriptChunk then
         vxProgress(96, "Compilation failed")
         return error("[VoidedX] " .. tostring(compileError), 0)
@@ -425,7 +498,7 @@ function getOrigin(req) {
     return `${proto}://${host}`;
 }
 
-function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '', loaderToken) {
+function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '', loaderToken, fastLoadCacheEnabled = false) {
     const verifyBase = `${origin}/api/verify`;
     const keyPageUrl = `${origin}/key.html?id=${id}`;
     const appearance = sanitizeGuiAppearance(rawAppearance);
@@ -455,7 +528,7 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local savedKeyPath = ${luaString(savedKeyFile)}
-${buildPayloadRuntime(origin)}
+${buildPayloadRuntime(origin, id, fastLoadCacheEnabled)}
 
 local function readSavedKey()
     if type(readfile) ~= "function" then return nil end

@@ -34,6 +34,7 @@ function listItem(doc) {
         updatedAt: millis(data.updatedAt),
         executions: Math.max(0, Number(data.executions) || 0),
         obfuscationEnabled: data.obfuscationEnabled === true,
+        fastLoadCacheEnabled: data.fastLoadCacheEnabled === true,
         requireKey: data.requireKey === true
     };
 }
@@ -88,6 +89,7 @@ export default async function handler(req, res) {
                         title: String(data.title || 'Untitled Vault').slice(0, 80),
                         source,
                         obfuscationLevel: LEVELS.has(data.obfuscationLevel) ? data.obfuscationLevel : 'auto',
+                        fastLoadCacheEnabled: data.fastLoadCacheEnabled === true,
                         tamperCheckEnabled: data.tamperCheckEnabled === true,
                         vmProtectionEnabled: data.vmProtectionEnabled === true,
                         expandedTransformsEnabled: data.expandedTransformsEnabled === true
@@ -98,7 +100,7 @@ export default async function handler(req, res) {
             const cursor = queryValue(req.query?.cursor);
             if (cursor && !/^[A-Za-z0-9_-]{1,150}$/.test(cursor)) return json(res, 400, { ok: false, message: 'Invalid vault-list cursor.' });
             let query = db.collection('vaults')
-                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'requireKey')
+                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'fastLoadCacheEnabled', 'requireKey')
                 .orderBy(FieldPath.documentId())
                 .limit(PAGE_SIZE);
             if (cursor) query = query.startAfter(cursor);
@@ -121,7 +123,8 @@ export default async function handler(req, res) {
             await executionRef.update({ executions, autoDeleteAt: FieldValue.delete(), executionsEditedAt: Date.now() });
             return json(res, 200, { ok: true, id, executions });
         }
-        const title = String(body.title || '').trim().slice(0, 80) || 'Untitled Vault';
+        const title = typeof body.title === 'string' ? body.title.trim().slice(0, 80) : '';
+        if (!title) return json(res, 400, { ok: false, message: 'Enter a name for this vault before saving.' });
         let source;
         try {
             source = decodeSubmittedSource(body.code, body.codeEncoding);
@@ -152,12 +155,23 @@ export default async function handler(req, res) {
         const ref = db.collection('vaults').doc(id);
         const snap = await ref.get();
         if (!snap.exists) return json(res, 404, { ok: false, message: 'That vault no longer exists.' });
+        const currentLoaderVersion = Number(snap.data().loaderVersion);
+        const fastLoadCacheEnabled = Object.prototype.hasOwnProperty.call(body, 'fastLoadCacheEnabled')
+            ? body.fastLoadCacheEnabled === true
+            : snap.data().fastLoadCacheEnabled === true;
+        const nextLoaderVersion = Number.isSafeInteger(currentLoaderVersion) && currentLoaderVersion >= 0
+            ? currentLoaderVersion + 1
+            : 1;
         const codeEncoding = body.codeEncoding;
         const updates = {
             title,
             code: body.code,
             codeEncoding,
+            // Revoke copied bootstraps as soon as a vault is saved. Their signed
+            // tokens include loaderVersion and are rejected by /api/raw after this bump.
+            loaderVersion: nextLoaderVersion,
             obfuscationEnabled,
+            fastLoadCacheEnabled,
             obfuscationProfileVersion: 6,
             obfuscationLevel,
             tamperCheckEnabled,
@@ -174,7 +188,7 @@ export default async function handler(req, res) {
         }
 
         await ref.update(updates);
-        return json(res, 200, { ok: true, updatedAt: updates.updatedAt, obfuscationEnabled, obfuscatedCodeLevel });
+        return json(res, 200, { ok: true, updatedAt: updates.updatedAt, obfuscationEnabled, fastLoadCacheEnabled, obfuscatedCodeLevel });
     } catch (error) {
         console.error('Admin vault manager request failed:', error);
         return json(res, 500, { ok: false, message: 'Could not load or update vaults.' });
