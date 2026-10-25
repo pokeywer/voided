@@ -19,6 +19,19 @@
             <a id="site-announcement-link" class="site-announcement-link hidden" target="_blank" rel="noopener noreferrer"></a>
             <button id="site-announcement-dismiss" class="site-announcement-dismiss" type="button" aria-label="Dismiss announcement"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <div id="site-announcement-modal" class="site-announcement-modal hidden" aria-hidden="true">
+                <section id="site-announcement-dialog" class="site-announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="site-announcement-modal-title" aria-describedby="site-announcement-modal-message" tabindex="-1">
+                <div class="site-announcement-modal-heading">
+                    <i id="site-announcement-modal-icon" class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    <button id="site-announcement-modal-dismiss" class="site-announcement-modal-dismiss" type="button" disabled aria-label="Close announcement">
+                        <span id="site-announcement-countdown">Wait 5s…</span>
+                    </button>
+                </div>
+                <h2 id="site-announcement-modal-title"></h2>
+                <p id="site-announcement-modal-message"></p>
+                <a id="site-announcement-modal-link" class="site-announcement-modal-link hidden" target="_blank" rel="noopener noreferrer"></a>
+            </section>
+        </div>
         <div class="promo-banner">
             <i class="fa-solid fa-rocket promo-icon"></i>
             <span class="promo-copy"><strong>VoidedX Script Vault</strong> — Fast, Free Roblox Script Hosting & Key System! Share your scripts safely.</span>
@@ -195,27 +208,13 @@
                 </div>
                 <div class="editor-tools" aria-label="Script editor tools">
                     <span class="editor-language"><span class="language-dot"></span> LUAU</span>
-                    <span class="editor-tools-hint">Syntax colors are a guide; large files use plain text to keep editing responsive.</span>
-                    <button id="check-code-btn" class="check-code-btn" type="button"><i class="fa-solid fa-stethoscope"></i> Check code</button>
+                    <span class="editor-tools-hint">Plain text editor · source is saved as entered.</span>
                 </div>
                 <div id="editor-source-context" class="editor-source-note" role="status">Paste Luau source here. A loaded vault’s saved script appears in this editor; it is separate from the website HTML.</div>
                 <div class="code-editor-wrap">
-                    <div id="line-numbers" class="line-numbers" aria-hidden="true">1</div>
-                    <div class="code-editor-surface">
-                        <pre id="syntax-highlight" class="syntax-highlight" aria-hidden="true"></pre>
-                        <textarea id="source-code" aria-label="Luau script editor" placeholder="-- Paste your obfuscated script here.&#10;-- reminder voidedx isnt safe people may find other ways to bypass.&#10;print('VoidedX')" spellcheck="false" wrap="off"></textarea>
-                    </div>
+                    <textarea id="source-code" aria-label="Luau script editor" placeholder="-- Paste your Luau script here." spellcheck="false" wrap="off"></textarea>
                 </div>
                 <span class="field-error field-error-block hidden" id="code-error"></span>
-                <section id="code-diagnostics" class="code-diagnostics hidden" aria-live="polite" aria-label="Code check results">
-                    <div class="diagnostics-heading">
-                        <strong><i class="fa-solid fa-list-check"></i> Code check</strong>
-                        <span id="diagnostics-summary">No check run yet</span>
-                        <button id="close-diagnostics-btn" class="icon-button" type="button" aria-label="Close code check results"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <p id="diagnostics-hint" class="diagnostics-hint">These quick checks catch common issues; they are not a full Luau compiler.</p>
-                    <ul id="code-diagnostics-list" class="code-diagnostics-list"></ul>
-                </section>
 
                 <div id="result-overlay" class="result-panel hidden">
                     <div class="result-content">

@@ -110,13 +110,18 @@
                         <div><p class="admin-eyebrow">SITE MESSAGE</p><h2><i class="fa-solid fa-bullhorn"></i> Announcement</h2></div>
                         <span id="announcement-state" class="admin-state-pill">No active message</span>
                     </div>
-                    <p class="admin-help">Publish a site-wide banner. It stays visible until you remove it, unless you enable visitor dismissal or set an expiry.</p>
+                    <p class="admin-help">Publish an announcement on the homepage. A center popup can be closed after a five-second wait; banners use the visitor dismissal setting.</p>
                     <label class="panel-label" for="announcement-title">TITLE</label>
                     <input id="announcement-title" class="input-field" maxlength="80" placeholder="Example: Maintenance tonight">
                     <span class="admin-field-count" id="announcement-title-count">0 / 80</span>
                     <label class="panel-label" for="announcement-message">MESSAGE</label>
                     <textarea id="announcement-message" class="input-field admin-textarea" rows="4" maxlength="500" placeholder="Write an update for VoidedX visitors"></textarea>
                     <span class="admin-field-count" id="announcement-message-count">0 / 500</span>
+                    <div class="admin-form-field">
+                        <label class="panel-label" for="announcement-display-mode">DISPLAY</label>
+                        <select id="announcement-display-mode" class="input-field"><option value="banner">Top banner</option><option value="modal">Center popup (5-second wait)</option></select>
+                        <small class="admin-help">Choose a slim banner or a popup centered over the page.</small>
+                    </div>
                     <div class="admin-form-row">
                         <div class="admin-form-field">
                             <label class="panel-label" for="announcement-kind">STYLE</label>
@@ -124,11 +129,12 @@
                         </div>
                         <div class="admin-form-field">
                             <label class="panel-label" for="announcement-link-label">BUTTON LABEL</label>
-                            <input id="announcement-link-label" class="input-field" maxlength="32" placeholder="Learn more">
+                            <input id="announcement-link-label" class="input-field" maxlength="32" placeholder="Join Discord">
                         </div>
                     </div>
                     <label class="panel-label" for="announcement-link">OPTIONAL LINK</label>
-                    <input id="announcement-link" class="input-field" type="url" maxlength="500" placeholder="https://example.com">
+                    <input id="announcement-link" class="input-field" type="url" maxlength="500" placeholder="https://discord.gg/your-invite">
+                    <small class="admin-help">Paste your Discord invite to add a join button to the announcement.</small>
                     <div class="admin-form-row admin-announcement-options">
                         <div class="admin-form-field">
                             <label class="panel-label" for="announcement-expires">AUTO-EXPIRE (OPTIONAL)</label>
@@ -137,16 +143,18 @@
                         </div>
                         <label class="admin-check-row" for="announcement-dismissible">
                             <input id="announcement-dismissible" type="checkbox">
-                            <span><strong>Let visitors dismiss this banner</strong><small>Off by default. If enabled, the close button appears and stays dismissed on that device.</small></span>
+                            <span><strong>Let visitors dismiss this banner</strong><small>For banners, this enables a close button. Center popups always unlock their close button after five seconds.</small></span>
                         </label>
                     </div>
                     <div class="admin-preview-wrap">
                         <div class="admin-preview-heading"><strong>LIVE PREVIEW</strong><span>Updates as you type</span></div>
-                        <div id="announcement-preview" class="site-announcement info admin-announcement-preview">
-                            <i id="announcement-preview-icon" class="fa-solid fa-circle-info promo-icon" aria-hidden="true"></i>
-                            <div class="site-announcement-copy"><strong id="announcement-preview-title">Your announcement title</strong><span id="announcement-preview-message">Your message will appear here.</span></div>
-                            <a id="announcement-preview-link" class="site-announcement-link hidden" href="#">Learn more</a>
-                            <button id="announcement-preview-dismiss" class="site-announcement-dismiss hidden" type="button" aria-label="Dismiss preview"><i class="fa-solid fa-xmark"></i></button>
+                        <div id="announcement-preview-stage" class="admin-announcement-stage">
+                            <div id="announcement-preview" class="site-announcement info admin-announcement-preview">
+                                <i id="announcement-preview-icon" class="fa-solid fa-circle-info promo-icon" aria-hidden="true"></i>
+                                <div class="site-announcement-copy"><strong id="announcement-preview-title">Your announcement title</strong><span id="announcement-preview-message">Your message will appear here.</span></div>
+                                <a id="announcement-preview-link" class="site-announcement-link hidden" href="#">Learn more</a>
+                                <button id="announcement-preview-dismiss" class="site-announcement-dismiss hidden" type="button" aria-label="Dismiss preview"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
                         </div>
                     </div>
                     <div class="admin-form-actions">

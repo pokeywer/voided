@@ -30,6 +30,7 @@ export default async function handler(req, res) {
                     title: data.title || '',
                     message: data.message || '',
                     kind: data.kind || 'info',
+                    displayMode: data.displayMode === 'modal' ? 'modal' : 'banner',
                     link: data.link || '',
                     linkLabel: data.linkLabel || 'Learn more',
                     dismissible: data.dismissible === true,
@@ -62,6 +63,7 @@ export default async function handler(req, res) {
         const link = safeHttpUrl(String(body.link || '').trim());
         const linkLabel = String(body.linkLabel || 'Learn more').trim();
         const kind = String(body.kind || 'info');
+        const displayMode = body.displayMode === 'modal' ? 'modal' : body.displayMode === 'banner' || body.displayMode === undefined ? 'banner' : null;
         const dismissible = body.dismissible === true;
         const expiresAtInput = body.expiresAt;
         const expiresAt = expiresAtInput === undefined || expiresAtInput === null || expiresAtInput === '' ? 0 : Number(expiresAtInput);
@@ -71,9 +73,10 @@ export default async function handler(req, res) {
         if (link === null) return json(res, 400, { ok: false, message: 'Link must be a valid http or https URL.' });
         if (linkLabel.length > 32) return json(res, 400, { ok: false, message: 'Link label must be 32 characters or fewer.' });
         if (!['info', 'success', 'warning'].includes(kind)) return json(res, 400, { ok: false, message: 'Choose a valid announcement style.' });
+        if (!displayMode) return json(res, 400, { ok: false, message: 'Choose a valid announcement display.' });
         if (!Number.isFinite(expiresAt) || (expiresAt !== 0 && expiresAt <= Date.now())) return json(res, 400, { ok: false, message: 'Choose a future expiration time or leave it blank.' });
 
-        const announcement = { title, message, kind, link, linkLabel: link ? (linkLabel || 'Learn more') : '', dismissible, expiresAt, enabled: true, updatedAt: Date.now() };
+        const announcement = { title, message, kind, displayMode, link, linkLabel: link ? (linkLabel || 'Learn more') : '', dismissible, expiresAt, enabled: true, updatedAt: Date.now() };
         await ref.set(announcement);
         return json(res, 200, { ok: true, announcement });
     } catch (err) {

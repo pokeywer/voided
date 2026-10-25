@@ -28,8 +28,6 @@ let isSignUpMode = false;
 const ZERO_EXECUTION_VAULT_TTL_MS = 10 * 60 * 60 * 1000;
 const MAX_USER_VAULTS = 5;
 const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 870 * 1024;
-const MAX_EDITOR_ANALYSIS_BYTES = 100 * 1024;
-const MAX_LINE_NUMBER_GUTTER_LINES = 50_000;
 const vaultExpiryTimers = new Map();
 const vaultExpiryWarningIds = new Set();
 let vaultsLoadedForUid = null;
@@ -140,7 +138,8 @@ async function loadSiteAnnouncement() {
         if (expiresAt && expiresAt <= Date.now()) return;
 
         const dismissalKey = `voidedx-announcement-dismissed-${announcement.updatedAt || announcement.message}`;
-        const dismissible = announcement.dismissible === true;
+        const displayMode = announcement.displayMode === 'modal' ? 'modal' : 'banner';
+        const dismissible = displayMode === 'modal' || announcement.dismissible === true;
         if (dismissible) {
             try { if (localStorage.getItem(dismissalKey) === '1') return; } catch {}
         }
@@ -149,30 +148,122 @@ async function loadSiteAnnouncement() {
         const message = document.getElementById('site-announcement-message');
         const link = document.getElementById('site-announcement-link');
         const dismiss = document.getElementById('site-announcement-dismiss');
-        dismiss.classList.toggle('hidden', !dismissible);
         title.textContent = announcement.title || 'VoidedX update';
         message.textContent = announcement.message;
 
-        banner.classList.remove('info', 'success', 'warning');
-        banner.classList.add(['info', 'success', 'warning'].includes(announcement.kind) ? announcement.kind : 'info');
-        const icon = document.getElementById('site-announcement-icon');
-        icon.className = announcement.kind === 'success'
+        const kind = ['info', 'success', 'warning'].includes(announcement.kind) ? announcement.kind : 'info';
+        const iconClass = announcement.kind === 'success'
             ? 'fa-solid fa-circle-check'
             : announcement.kind === 'warning' ? 'fa-solid fa-triangle-exclamation' : 'fa-solid fa-circle-info';
 
-        link.classList.add('hidden');
-        if (announcement.link) {
-            const parsed = new URL(announcement.link, window.location.origin);
-            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                link.href = parsed.href;
-                link.textContent = announcement.linkLabel || 'Learn more';
-                link.classList.remove('hidden');
+        const setAnnouncementLink = (element) => {
+            element.classList.add('hidden');
+            if (!announcement.link) return;
+            try {
+                const parsed = new URL(announcement.link, window.location.origin);
+                if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                    element.href = parsed.href;
+                    element.textContent = announcement.linkLabel || 'Learn more';
+                    element.classList.remove('hidden');
+                }
+            } catch {
+                // Ignore malformed links and keep the announcement readable.
             }
-        }
-        dismiss.onclick = dismissible ? () => {
+        };
+        const dismissAnnouncement = () => {
             banner.classList.add('hidden');
+            const modal = document.getElementById('site-announcement-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.setAttribute('aria-hidden', 'true');
+            }
             try { localStorage.setItem(dismissalKey, '1'); } catch {}
-        } : null;
+        };
+
+        if (displayMode === 'modal') {
+            const modal = document.getElementById('site-announcement-modal');
+            const dialog = document.getElementById('site-announcement-dialog');
+            const modalTitle = document.getElementById('site-announcement-modal-title');
+            const modalMessage = document.getElementById('site-announcement-modal-message');
+            const modalIcon = document.getElementById('site-announcement-modal-icon');
+            const modalLink = document.getElementById('site-announcement-modal-link');
+            const closeButton = document.getElementById('site-announcement-modal-dismiss');
+            const countdown = document.getElementById('site-announcement-countdown');
+            if (!modal || !dialog || !closeButton || !countdown) return;
+
+            banner.classList.add('hidden');
+            modalTitle.textContent = announcement.title || 'VoidedX update';
+            modalMessage.textContent = announcement.message;
+            modalIcon.className = `${iconClass} site-announcement-modal-icon ${kind}`;
+            dialog.classList.remove('info', 'success', 'warning');
+            dialog.classList.add(kind);
+            setAnnouncementLink(modalLink);
+            closeButton.disabled = true;
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+            dialog.focus();
+
+            const deadline = Date.now() + 5000;
+            let unlocked = false;
+            let timerId = null;
+            const updateCountdown = () => {
+                const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                const portuguese = document.documentElement.lang === 'pt-BR';
+                closeButton.setAttribute('aria-label', unlocked
+                    ? (portuguese ? 'Fechar aviso' : 'Close announcement')
+                    : (portuguese ? 'Aguarde cinco segundos para fechar' : 'Wait five seconds to close'));
+                countdown.textContent = unlocked
+                    ? (portuguese ? 'Fechar' : 'Close')
+                    : (portuguese ? `Aguarde ${seconds}s…` : `Wait ${seconds}s…`);
+                if (seconds === 0 && !unlocked) {
+                    unlocked = true;
+                    closeButton.disabled = false;
+                    closeButton.setAttribute('aria-label', portuguese ? 'Fechar aviso' : 'Close announcement');
+                    countdown.textContent = portuguese ? 'Fechar' : 'Close';
+                }
+                if (unlocked && timerId !== null) {
+                    clearInterval(timerId);
+                    timerId = null;
+                }
+            };
+            const onModalKeydown = event => {
+                if (event.key === 'Escape' && unlocked) {
+                    cleanupModal();
+                    dismissAnnouncement();
+                }
+            };
+            const onBackdropClick = event => {
+                if (event.target === modal && unlocked) {
+                    cleanupModal();
+                    dismissAnnouncement();
+                }
+            };
+            const cleanupModal = () => {
+                if (timerId !== null) clearInterval(timerId);
+                document.removeEventListener('keydown', onModalKeydown);
+                modal.removeEventListener('click', onBackdropClick);
+                document.removeEventListener('voidedx:languagechange', updateCountdown);
+                closeButton.onclick = null;
+            };
+            closeButton.onclick = () => {
+                if (!unlocked) return;
+                cleanupModal();
+                dismissAnnouncement();
+            };
+            document.addEventListener('keydown', onModalKeydown);
+            modal.addEventListener('click', onBackdropClick);
+            document.addEventListener('voidedx:languagechange', updateCountdown);
+            updateCountdown();
+            timerId = setInterval(updateCountdown, 200);
+            return;
+        }
+
+        banner.classList.remove('info', 'success', 'warning');
+        banner.classList.add(kind);
+        document.getElementById('site-announcement-icon').className = iconClass;
+        setAnnouncementLink(link);
+        dismiss.classList.toggle('hidden', !dismissible);
+        dismiss.onclick = dismissible ? dismissAnnouncement : null;
         banner.classList.remove('hidden');
     } catch {
         // Public pages remain usable if announcements are temporarily unavailable.
@@ -260,14 +351,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteBtn = document.getElementById('delete-vault-btn');
     const sourceCode = document.getElementById('source-code');
     const codeError = document.getElementById('code-error');
-    const lineNumbersEl = document.getElementById('line-numbers');
-    const syntaxHighlightEl = document.getElementById('syntax-highlight');
-    const checkCodeBtn = document.getElementById('check-code-btn');
-    const diagnosticsPanel = document.getElementById('code-diagnostics');
-    const diagnosticsSummary = document.getElementById('diagnostics-summary');
-    const diagnosticsHint = document.getElementById('diagnostics-hint');
-    const diagnosticsList = document.getElementById('code-diagnostics-list');
-    const closeDiagnosticsBtn = document.getElementById('close-diagnostics-btn');
     const mobileVaultSettings = document.getElementById('mobile-vault-settings');
     if (mobileVaultSettings && window.matchMedia('(max-width: 768px)').matches) mobileVaultSettings.open = false;
     const scriptTitle = document.getElementById('script-title');
@@ -949,9 +1032,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         syncObfuscationProtectionControls();
         setProtectionKeyStatus(!!data.requireKey);
-        updateLineNumbers();
-        renderSyntaxHighlight();
-        diagnosticsPanel.classList.add('hidden');
         clearFieldError(sourceCode, codeError);
         editingIndicator.classList.remove('hidden');
         deleteBtn.classList.remove('hidden');
@@ -985,299 +1065,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ---------------- Lock / Save Vault ----------------
-
-    // ---------------- Line numbers gutter ----------------
-
-    function updateLineNumbers() {
-        const code = sourceCode.value;
-        let lineCount = 1;
-        for (let index = code.indexOf('\n'); index >= 0; index = code.indexOf('\n', index + 1)) lineCount += 1;
-        if (lineCount > MAX_LINE_NUMBER_GUTTER_LINES) {
-            lineNumbersEl.textContent = '';
-            lineNumbersEl.style.visibility = 'hidden';
-            lineNumbersEl.title = 'Line numbers are hidden for files with more than 50,000 lines.';
-            return;
-        }
-        lineNumbersEl.style.visibility = '';
-        lineNumbersEl.title = '';
-        lineNumbersEl.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n');
-    }
-
-    const luauKeywords = new Set('and break do else elseif end false for function if in local nil not or repeat return then true until while continue type export'.split(' '));
-    const luauBuiltins = new Set('assert collectgarbage error getfenv getmetatable ipairs load loadstring newproxy next pairs pcall print rawequal rawget rawlen rawset select setfenv setmetatable tonumber tostring type typeof unpack xpcall'.split(' '));
-    const luauGlobals = new Set('game workspace script shared _G Enum Instance Vector2 Vector3 Vector2int16 Vector3int16 CFrame Color3 UDim UDim2 BrickColor Ray Region3 TweenInfo Random Axes Faces NumberRange NumberSequence ColorSequence PhysicalProperties OverlapParams RaycastParams PathWaypoint task coroutine table string math bit32 buffer utf8 os debug'.split(' '));
-    const escapeCodeText = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    function scanLuau(code) {
-        let html = '';
-        let index = 0;
-        let line = 1;
-        let column = 1;
-        let previousSignificant = null;
-        const tokens = [];
-        const issues = [];
-
-        function longBracketAt(position) {
-            const match = code.slice(position).match(/^\[(=*)\[/);
-            return match ? { open: match[0], close: `]${match[1]}]` } : null;
-        }
-        function advance(raw) {
-            for (const character of raw) {
-                if (character === '\n') { line += 1; column = 1; }
-                else column += 1;
-            }
-        }
-        function emit(raw, className, type, value = raw) {
-            const tokenLine = line;
-            const tokenColumn = column;
-            if (className) html += `<span class="${className}">${escapeCodeText(raw)}</span>`;
-            else html += escapeCodeText(raw);
-            if (type) {
-                const token = { type, value, line: tokenLine, column: tokenColumn };
-                tokens.push(token);
-                previousSignificant = token;
-            }
-            advance(raw);
-            index += raw.length;
-        }
-
-        while (index < code.length) {
-            const character = code[index];
-            if (/\s/.test(character)) {
-                let end = index + 1;
-                while (end < code.length && /\s/.test(code[end])) end += 1;
-                emit(code.slice(index, end), null, null);
-                continue;
-            }
-
-            if (code.startsWith('--', index)) {
-                const startLine = line;
-                const startColumn = column;
-                const longOpen = longBracketAt(index + 2);
-                let end;
-                if (longOpen) {
-                    const closeAt = code.indexOf(longOpen.close, index + 2 + longOpen.open.length);
-                    end = closeAt < 0 ? code.length : closeAt + longOpen.close.length;
-                    if (closeAt < 0) issues.push({ severity: 'error', line: startLine, column: startColumn, message: 'Long comment is missing its closing bracket.' });
-                } else {
-                    end = code.indexOf('\n', index);
-                    if (end < 0) end = code.length;
-                }
-                emit(code.slice(index, end), 'syntax-comment', null);
-                continue;
-            }
-
-            const longOpen = longBracketAt(index);
-            if (longOpen) {
-                const startLine = line;
-                const startColumn = column;
-                const closeAt = code.indexOf(longOpen.close, index + longOpen.open.length);
-                const end = closeAt < 0 ? code.length : closeAt + longOpen.close.length;
-                if (closeAt < 0) issues.push({ severity: 'error', line: startLine, column: startColumn, message: 'Long string is missing its closing bracket.' });
-                emit(code.slice(index, end), 'syntax-string', 'string');
-                continue;
-            }
-
-            if (character === '"' || character === "'") {
-                const startLine = line;
-                const startColumn = column;
-                let end = index + 1;
-                let closed = false;
-                while (end < code.length) {
-                    if (code[end] === '\\') { end += 2; continue; }
-                    if (code[end] === character) { end += 1; closed = true; break; }
-                    if (code[end] === '\n' || code[end] === '\r') break;
-                    end += 1;
-                }
-                const raw = code.slice(index, Math.min(end, code.length));
-                if (!closed) issues.push({ severity: 'error', line: startLine, column: startColumn, message: 'String is not closed before the line ends.' });
-                emit(raw, 'syntax-string', 'string');
-                continue;
-            }
-
-            const identifier = code.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
-            if (identifier) {
-                const value = identifier[0];
-                const tail = code.slice(index + value.length).match(/^\s*/)[0].length;
-                let className = '';
-                if (luauKeywords.has(value)) className = 'syntax-keyword';
-                else if (luauBuiltins.has(value)) className = 'syntax-builtin';
-                else if (luauGlobals.has(value)) className = 'syntax-global';
-                else if (previousSignificant && (previousSignificant.value === '.' || previousSignificant.value === ':')) className = 'syntax-property';
-                else if (code[index + value.length + tail] === '(') className = 'syntax-function';
-                emit(value, className, luauKeywords.has(value) ? 'keyword' : 'identifier', value);
-                continue;
-            }
-
-            const number = code.slice(index).match(/^(?:0[xX][\da-fA-F]+(?:\.[\da-fA-F]*)?(?:[pP][+-]?\d+)?|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)/);
-            if (number) {
-                emit(number[0], 'syntax-number', 'number');
-                continue;
-            }
-
-            const operator = code.slice(index).match(/^(?:\.\.\.|\.\.=|\/\/=?|==|~=|<=|>=|\+=|-=|\*=|\/=|%=|\^=|\.\.|::|->|[=+*/%^<>#~:-])/);
-            if (operator) {
-                emit(operator[0], 'syntax-operator', 'operator');
-                continue;
-            }
-
-            const punctuation = '(){}[],;.'.includes(character);
-            emit(character, punctuation ? '' : 'syntax-operator', 'punctuation');
-        }
-        return { html, tokens, issues };
-    }
-
-    function renderSyntaxHighlight() {
-        if (!syntaxHighlightEl) return;
-        const code = sourceCode.value;
-        if (getUtf8ByteLength(code) > MAX_EDITOR_ANALYSIS_BYTES) {
-            syntaxHighlightEl.textContent = code + (code.endsWith('\n') ? ' ' : '');
-            syntaxHighlightEl.scrollTop = sourceCode.scrollTop;
-            syntaxHighlightEl.scrollLeft = sourceCode.scrollLeft;
-            return null;
-        }
-        const result = scanLuau(code);
-        syntaxHighlightEl.innerHTML = result.html + (code.endsWith('\n') ? ' ' : '');
-        syntaxHighlightEl.scrollTop = sourceCode.scrollTop;
-        syntaxHighlightEl.scrollLeft = sourceCode.scrollLeft;
-        return result;
-    }
-
-    function checkLuauCode(code) {
-        const scanned = scanLuau(code);
-        const issues = scanned.issues.slice();
-        const tokens = scanned.tokens;
-        const delimiters = [];
-        const matching = { ')': '(', ']': '[', '}': '{' };
-        const opening = new Set(['(', '[', '{']);
-
-        tokens.forEach((token) => {
-            if (token.type !== 'punctuation') return;
-            if (opening.has(token.value)) delimiters.push(token);
-            else if (matching[token.value]) {
-                const last = delimiters.pop();
-                if (!last || last.value !== matching[token.value]) {
-                    issues.push({ severity: 'error', line: token.line, column: token.column, message: `Unexpected “${token.value}”; check the matching bracket.` });
-                }
-            }
-        });
-        delimiters.forEach((token) => issues.push({ severity: 'error', line: token.line, column: token.column, message: `“${token.value}” is not closed.` }));
-
-        const blocks = [];
-        const ifExpressions = new Set(['=', 'return', '(', ',', '{', '[', 'and', 'or']);
-        tokens.forEach((token, position) => {
-            if (token.type !== 'keyword') return;
-            const value = token.value;
-            if (value === 'if') {
-                const previous = tokens[position - 1];
-                if (!previous || !ifExpressions.has(previous.value)) blocks.push({ kind: 'end', token });
-            } else if (value === 'function' || value === 'do') {
-                blocks.push({ kind: 'end', token });
-            } else if (value === 'repeat') {
-                blocks.push({ kind: 'until', token });
-            } else if (value === 'end') {
-                const last = blocks.pop();
-                if (!last) issues.push({ severity: 'warning', line: token.line, column: token.column, message: 'This “end” does not appear to close a block.' });
-                else if (last.kind === 'until') issues.push({ severity: 'error', line: token.line, column: token.column, message: 'A repeat block should close with “until condition”.' });
-            } else if (value === 'until') {
-                const last = blocks.pop();
-                if (!last || last.kind !== 'until') {
-                    if (last) blocks.push(last);
-                    issues.push({ severity: 'warning', line: token.line, column: token.column, message: 'This “until” does not appear to match a repeat block.' });
-                }
-            }
-        });
-        blocks.forEach((block) => issues.push({ severity: 'warning', line: block.token.line, column: block.token.column, message: `This ${block.token.value} block may be missing its closing ${block.kind === 'until' ? 'until' : 'end'}.` }));
-
-        for (let i = 0; i < tokens.length; i += 1) {
-            const token = tokens[i];
-            if (token.type === 'keyword' && token.value === 'if') {
-                let depth = 0;
-                for (let j = i + 1; j < tokens.length; j += 1) {
-                    const current = tokens[j];
-                    if (current.value === '(' || current.value === '[' || current.value === '{') depth += 1;
-                    else if (current.value === ')' || current.value === ']' || current.value === '}') depth = Math.max(0, depth - 1);
-                    if (depth === 0 && current.type === 'keyword' && current.value === 'then') break;
-                    if (depth === 0 && current.type === 'operator' && current.value === '=') {
-                        issues.push({ severity: 'warning', line: current.line, column: current.column, message: 'Did you mean “==” for a comparison in this if condition?' });
-                        break;
-                    }
-                    if (depth === 0 && current.type === 'keyword' && (current.value === 'end' || current.value === 'do')) break;
-                }
-            }
-            if (token.type === 'identifier' && ['wait', 'spawn', 'delay'].includes(token.value) && tokens[i + 1] && tokens[i + 1].value === '(') {
-                const replacements = { wait: 'task.wait()', spawn: 'task.spawn()', delay: 'task.delay()' };
-                issues.push({ severity: 'info', line: token.line, column: token.column, message: `Consider ${replacements[token.value]}; ${token.value}() is an older API.` });
-            }
-        }
-
-        return issues.sort((a, b) => a.line - b.line || a.column - b.column);
-    }
-
-    function runCodeCheck() {
-        const source = sourceCode.value;
-        if (getUtf8ByteLength(source) > MAX_EDITOR_ANALYSIS_BYTES) {
-            diagnosticsList.replaceChildren();
-            diagnosticsSummary.textContent = 'Quick check skipped';
-            diagnosticsHint.textContent = 'Quick checks are limited to 100 KiB so large files stay responsive.';
-            const item = document.createElement('li');
-            item.className = 'code-diagnostic-item diagnostic-info';
-            item.textContent = 'The script is still available to save and obfuscate.';
-            diagnosticsList.appendChild(item);
-            diagnosticsPanel.classList.remove('hidden');
-            return;
-        }
-
-        const issues = checkLuauCode(source);
-        diagnosticsList.replaceChildren();
-        if (!sourceCode.value.trim()) issues.push({ severity: 'info', line: 1, column: 1, message: 'Paste some Luau code into the editor to check it.' });
-        if (issues.length === 0) issues.push({ severity: 'info', line: 1, column: 1, message: 'No common issues found in this quick check.' });
-
-        const errors = issues.filter((issue) => issue.severity === 'error').length;
-        const warnings = issues.filter((issue) => issue.severity === 'warning').length;
-        const suggestions = issues.filter((issue) => issue.severity === 'info').length;
-        diagnosticsSummary.textContent = [errors && `${errors} error${errors === 1 ? '' : 's'}`, warnings && `${warnings} warning${warnings === 1 ? '' : 's'}`, suggestions && `${suggestions} suggestion${suggestions === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
-        diagnosticsHint.textContent = 'These quick checks catch common issues; they are not a full Luau compiler.';
-
-        issues.forEach((issue) => {
-            const item = document.createElement('li');
-            item.className = `code-diagnostic-item diagnostic-${issue.severity}`;
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.innerHTML = `<span class="diagnostic-severity">${issue.severity === 'error' ? '●' : issue.severity === 'warning' ? '▲' : 'ⓘ'}</span><span class="diagnostic-location">${issue.line}:${issue.column}</span>`;
-            const message = document.createElement('span');
-            message.textContent = issue.message;
-            button.appendChild(message);
-            button.addEventListener('click', () => {
-                const lines = sourceCode.value.split('\n');
-                const offset = lines.slice(0, issue.line - 1).reduce((total, entry) => total + entry.length + 1, 0) + Math.max(0, issue.column - 1);
-                sourceCode.focus();
-                sourceCode.setSelectionRange(offset, offset);
-                const lineHeight = parseFloat(getComputedStyle(sourceCode).lineHeight) || 21;
-                sourceCode.scrollTop = Math.max(0, (issue.line - 1) * lineHeight - 70);
-            });
-            item.appendChild(button);
-            diagnosticsList.appendChild(item);
-        });
-        diagnosticsPanel.classList.remove('hidden');
-    }
-
-    sourceCode.addEventListener('input', () => {
-        updateLineNumbers();
-        renderSyntaxHighlight();
-        if (!diagnosticsPanel.classList.contains('hidden')) diagnosticsHint.textContent = 'Code changed since the last check. Select “Check code” to refresh these results.';
-    });
-    sourceCode.addEventListener('scroll', () => {
-        lineNumbersEl.scrollTop = sourceCode.scrollTop;
-        if (syntaxHighlightEl) {
-            syntaxHighlightEl.scrollTop = sourceCode.scrollTop;
-            syntaxHighlightEl.scrollLeft = sourceCode.scrollLeft;
-        }
-    });
-    updateLineNumbers();
-    renderSyntaxHighlight();
-    if (checkCodeBtn) checkCodeBtn.addEventListener('click', runCodeCheck);
-    if (closeDiagnosticsBtn) closeDiagnosticsBtn.addEventListener('click', () => diagnosticsPanel.classList.add('hidden'));
 
     sourceCode.addEventListener('input', () => {
         clearFieldError(sourceCode, codeError);
@@ -1662,9 +1449,6 @@ document.addEventListener('DOMContentLoaded', () => {
         syncObfuscationProtectionControls();
         setEditorDirty(false);
         setProtectionKeyStatus(false);
-        updateLineNumbers();
-        renderSyntaxHighlight();
-        diagnosticsPanel.classList.add('hidden');
         keysystemStatusBadge.textContent = 'OFF';
         keysystemStatusBadge.classList.remove('on');
         keysystemStatusBadge.classList.add('hidden');

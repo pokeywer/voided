@@ -491,16 +491,29 @@ function datetimeLocalValue(timestamp) {
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+function announcementLinkLabel(link, requestedLabel) {
+    const label = String(requestedLabel || '').trim();
+    if (label) return label;
+    try {
+        const host = new URL(link).hostname.toLowerCase();
+        if (host === 'discord.gg' || host === 'discord.com' || host === 'www.discord.com') return 'Join Discord';
+    } catch {}
+    return 'Learn more';
+}
+
 function updateAnnouncementPreview() {
     const title = document.getElementById('announcement-title').value.trim();
     const message = document.getElementById('announcement-message').value.trim();
     const kind = document.getElementById('announcement-kind').value;
     const link = document.getElementById('announcement-link').value.trim();
-    const label = document.getElementById('announcement-link-label').value.trim() || 'Learn more';
+    const label = announcementLinkLabel(link, document.getElementById('announcement-link-label').value);
+    const displayMode = document.getElementById('announcement-display-mode').value;
     const dismissible = document.getElementById('announcement-dismissible').checked;
     const preview = document.getElementById('announcement-preview');
+    document.getElementById('announcement-preview-stage').classList.toggle('is-modal-preview', displayMode === 'modal');
     preview.classList.remove('info', 'success', 'warning');
     preview.classList.add(['info', 'success', 'warning'].includes(kind) ? kind : 'info');
+    preview.classList.toggle('modal-preview-card', displayMode === 'modal');
     document.getElementById('announcement-preview-icon').className = kind === 'success'
         ? 'fa-solid fa-circle-check promo-icon'
         : kind === 'warning' ? 'fa-solid fa-triangle-exclamation promo-icon' : 'fa-solid fa-circle-info promo-icon';
@@ -510,7 +523,7 @@ function updateAnnouncementPreview() {
     previewLink.textContent = label;
     previewLink.classList.toggle('hidden', !link);
     previewLink.href = link || '#';
-    document.getElementById('announcement-preview-dismiss').classList.toggle('hidden', !dismissible);
+    document.getElementById('announcement-preview-dismiss').classList.toggle('hidden', !dismissible && displayMode !== 'modal');
     document.getElementById('announcement-title-count').textContent = `${title.length} / 80`;
     document.getElementById('announcement-message-count').textContent = `${message.length} / 500`;
 }
@@ -646,10 +659,14 @@ async function loadAnnouncement() {
     const data = await requestJson('/api/announcements');
     const announcement = data.announcement;
     const expired = announcement?.expiresAt && Number(announcement.expiresAt) <= Date.now();
-    document.getElementById('announcement-state').textContent = expired ? 'Expired' : announcement ? (announcement.dismissible ? 'Published · dismissible' : 'Published · persistent') : 'No active message';
+    const displayMode = announcement?.displayMode === 'modal' ? 'modal' : 'banner';
+    document.getElementById('announcement-state').textContent = expired ? 'Expired' : announcement
+        ? (displayMode === 'modal' ? 'Published · center popup' : announcement.dismissible ? 'Published · dismissible' : 'Published · persistent')
+        : 'No active message';
     document.getElementById('announcement-title').value = announcement?.title || '';
     document.getElementById('announcement-message').value = announcement?.message || '';
     document.getElementById('announcement-kind').value = announcement?.kind || 'info';
+    document.getElementById('announcement-display-mode').value = displayMode;
     document.getElementById('announcement-link').value = announcement?.link || '';
     document.getElementById('announcement-link-label').value = announcement?.linkLabel || '';
     document.getElementById('announcement-dismissible').checked = announcement?.dismissible === true;
@@ -759,17 +776,20 @@ document.getElementById('announcement-publish-btn').addEventListener('click', as
         title: document.getElementById('announcement-title').value.trim(),
         message: document.getElementById('announcement-message').value.trim(),
         kind: document.getElementById('announcement-kind').value,
+        displayMode: document.getElementById('announcement-display-mode').value,
         link: document.getElementById('announcement-link').value.trim(),
-        linkLabel: document.getElementById('announcement-link-label').value.trim() || 'Learn more',
+        linkLabel: announcementLinkLabel(document.getElementById('announcement-link').value.trim(), document.getElementById('announcement-link-label').value),
         dismissible: document.getElementById('announcement-dismissible').checked,
         expiresAt
     };
     setLoading(button, true, 'PUBLISHING…');
     try {
         await requestJson('/api/announcements', { method: 'POST', body: JSON.stringify(payload) });
-        setStatus(payload.dismissible
-            ? 'Announcement published. Visitors can dismiss it on their device.'
-            : 'Announcement published. It stays visible until it expires or you remove it.', 'success');
+        setStatus(payload.displayMode === 'modal'
+            ? 'Center popup published. Visitors can close it after five seconds.'
+            : payload.dismissible
+                ? 'Announcement published. Visitors can dismiss it on their device.'
+                : 'Announcement published. It stays visible until it expires or you remove it.', 'success');
         await loadAnnouncement();
     } catch (error) {
         setStatus(error.message, 'error');
@@ -827,7 +847,7 @@ document.querySelector('.admin-script-review-card').addEventListener('click', as
 
 checkSession();
 
-['announcement-title', 'announcement-message', 'announcement-kind', 'announcement-link-label', 'announcement-link', 'announcement-dismissible'].forEach(id => {
+['announcement-title', 'announcement-message', 'announcement-kind', 'announcement-display-mode', 'announcement-link-label', 'announcement-link', 'announcement-dismissible'].forEach(id => {
     const element = document.getElementById(id);
     element.addEventListener('input', updateAnnouncementPreview);
     element.addEventListener('change', updateAnnouncementPreview);
