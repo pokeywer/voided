@@ -12,6 +12,8 @@ const pendingScriptsList = document.getElementById('admin-script-pending-list');
 const reportedScriptsList = document.getElementById('admin-script-reported-list');
 const managedScriptsList = document.getElementById('admin-managed-script-list');
 let managedScripts = [];
+let announcements = [];
+let selectedAnnouncementId = null;
 const adminVaultList = document.getElementById('admin-vault-list');
 const adminVaultStatus = document.getElementById('admin-vault-status');
 const adminVaultSearch = document.getElementById('admin-vault-search');
@@ -496,7 +498,7 @@ function announcementLinkLabel(link, requestedLabel) {
     if (label) return label;
     try {
         const host = new URL(link).hostname.toLowerCase();
-        if (host === 'discord.gg' || host === 'discord.com' || host === 'www.discord.com') return 'Join Discord';
+        if (host === 'discord.gg' || host === 'discord.com' || host.endsWith('.discord.com')) return 'Join our Discord';
     } catch {}
     return 'Learn more';
 }
@@ -655,23 +657,88 @@ function renderManagedScripts() {
     });
 }
 
-async function loadAnnouncement() {
-    const data = await requestJson('/api/announcements');
-    const announcement = data.announcement;
-    const expired = announcement?.expiresAt && Number(announcement.expiresAt) <= Date.now();
-    const displayMode = announcement?.displayMode === 'modal' ? 'modal' : 'banner';
-    document.getElementById('announcement-state').textContent = expired ? 'Expired' : announcement
-        ? (displayMode === 'modal' ? 'Published · center popup' : announcement.dismissible ? 'Published · dismissible' : 'Published · persistent')
-        : 'No active message';
+function fillAnnouncementForm(announcement = null) {
+    selectedAnnouncementId = announcement?.id || null;
     document.getElementById('announcement-title').value = announcement?.title || '';
     document.getElementById('announcement-message').value = announcement?.message || '';
     document.getElementById('announcement-kind').value = announcement?.kind || 'info';
-    document.getElementById('announcement-display-mode').value = displayMode;
+    document.getElementById('announcement-display-mode').value = announcement?.displayMode === 'modal' ? 'modal' : 'banner';
     document.getElementById('announcement-link').value = announcement?.link || '';
     document.getElementById('announcement-link-label').value = announcement?.linkLabel || '';
     document.getElementById('announcement-dismissible').checked = announcement?.dismissible === true;
+    const expired = announcement?.expiresAt && Number(announcement.expiresAt) <= Date.now();
     document.getElementById('announcement-expires').value = expired ? '' : datetimeLocalValue(Number(announcement?.expiresAt) || 0);
+    document.getElementById('announcement-clear-btn').disabled = !announcement;
+    document.getElementById('announcement-publish-btn').innerHTML = announcement
+        ? '<i class="fa-solid fa-floppy-disk"></i> Save changes'
+        : '<i class="fa-solid fa-paper-plane"></i> Publish announcement';
     updateAnnouncementPreview();
+}
+
+function renderAnnouncements() {
+    const list = document.getElementById('announcement-list');
+    const activeCount = announcements.filter(item => item.enabled !== false && (!Number(item.expiresAt) || Number(item.expiresAt) > Date.now())).length;
+    const portuguese = document.documentElement.lang === 'pt-BR';
+    document.getElementById('announcement-state').textContent = portuguese
+        ? `${activeCount} ativos · ${announcements.length} salvos`
+        : `${activeCount} active · ${announcements.length} saved`;
+    list.replaceChildren();
+    if (!announcements.length) {
+        const empty = document.createElement('div');
+        empty.className = 'info-box';
+        const message = document.createElement('p');
+        message.textContent = 'No announcements yet. Create one to show it on the homepage.';
+        empty.appendChild(message);
+        list.appendChild(empty);
+        return;
+    }
+    announcements.forEach(item => {
+        const expired = item.expiresAt && Number(item.expiresAt) <= Date.now();
+        const row = document.createElement('article');
+        row.className = `admin-announcement-item${item.id === selectedAnnouncementId ? ' selected' : ''}`;
+        const select = document.createElement('button');
+        select.type = 'button';
+        select.className = 'admin-announcement-select';
+        select.dataset.announcementAction = 'select';
+        select.dataset.announcementId = item.id;
+        const title = document.createElement('strong');
+        title.textContent = item.title || 'Untitled announcement';
+        const meta = document.createElement('span');
+        const modeText = item.displayMode === 'modal' ? (portuguese ? 'Janela central' : 'Center popup') : (portuguese ? 'Banner superior' : 'Top banner');
+        const stateText = expired ? (portuguese ? 'Expirado' : 'Expired') : item.enabled === false ? (portuguese ? 'Pausado' : 'Paused') : (portuguese ? 'Ativo' : 'Active');
+        meta.textContent = `${modeText} · ${stateText}`;
+        select.append(title, meta);
+        const actions = document.createElement('div');
+        actions.className = 'admin-announcement-item-actions';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'btn-ghost admin-announcement-item-action';
+        toggle.dataset.announcementAction = 'toggle';
+        toggle.dataset.announcementId = item.id;
+        toggle.setAttribute('aria-label', item.enabled === false ? (portuguese ? 'Ativar aviso' : 'Activate announcement') : (portuguese ? 'Pausar aviso' : 'Pause announcement'));
+        toggle.innerHTML = item.enabled === false
+            ? `<i class="fa-solid fa-play"></i><span>${portuguese ? 'Ativar' : 'Activate'}</span>`
+            : `<i class="fa-solid fa-pause"></i><span>${portuguese ? 'Pausar' : 'Pause'}</span>`;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn-danger admin-announcement-item-action';
+        remove.dataset.announcementAction = 'delete';
+        remove.dataset.announcementId = item.id;
+        remove.setAttribute('aria-label', portuguese ? 'Excluir aviso' : 'Delete announcement');
+        remove.innerHTML = `<i class="fa-solid fa-trash"></i><span>${portuguese ? 'Excluir' : 'Delete'}</span>`;
+        actions.append(toggle, remove);
+        row.append(select, actions);
+        list.appendChild(row);
+    });
+}
+
+async function loadAnnouncements(selectId = selectedAnnouncementId) {
+    const data = await requestJson('/api/announcements');
+    announcements = Array.isArray(data.announcements) ? data.announcements : data.announcement ? [data.announcement] : [];
+    const selected = announcements.find(item => item.id === selectId) || announcements[0] || null;
+    renderAnnouncements();
+    fillAnnouncementForm(selected);
+    renderAnnouncements();
 }
 
 async function refreshDashboard() {
@@ -695,7 +762,7 @@ async function refreshDashboard() {
         document.getElementById('admin-script-review-count').textContent = `${(scriptReviews.pending || []).length} pending · ${(scriptReviews.reported || []).length} reported`;
         await loadAdminVaults();
         try {
-            await loadAnnouncement();
+            await loadAnnouncements();
             statusBox.classList.add('hidden');
         } catch (error) {
             setStatus(`Dashboard loaded, but the announcement could not be loaded: ${error.message}`, 'error');
@@ -764,6 +831,54 @@ document.getElementById('admin-logout-btn').addEventListener('click', async () =
     showLoginError('You are signed out.');
 });
 
+document.getElementById('announcement-new-btn').addEventListener('click', () => {
+    fillAnnouncementForm(null);
+    renderAnnouncements();
+    document.getElementById('announcement-title').focus();
+});
+
+document.getElementById('announcement-list').addEventListener('click', async event => {
+    const button = event.target.closest('button[data-announcement-action]');
+    if (!button) return;
+    const item = announcements.find(announcement => announcement.id === button.dataset.announcementId);
+    if (!item) return;
+    const action = button.dataset.announcementAction;
+    if (action === 'select') {
+        fillAnnouncementForm(item);
+        renderAnnouncements();
+        return;
+    }
+    if (action === 'delete') {
+        if (!window.confirm(`Delete “${item.title}”?`)) return;
+        setLoading(button, true, 'DELETING…');
+        try {
+            await requestJson('/api/announcements', { method: 'DELETE', body: JSON.stringify({ id: item.id }) });
+            await loadAnnouncements(selectedAnnouncementId === item.id ? null : selectedAnnouncementId);
+            setStatus('Announcement deleted.', 'success');
+        } catch (error) {
+            setStatus(error.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+        return;
+    }
+    if (action === 'toggle') {
+        setLoading(button, true, 'SAVING…');
+        try {
+            const result = await requestJson('/api/announcements', {
+                method: 'POST',
+                body: JSON.stringify({ ...item, enabled: item.enabled === false })
+            });
+            await loadAnnouncements(selectedAnnouncementId);
+            setStatus(item.enabled === false ? 'Announcement activated.' : 'Announcement paused.', 'success');
+        } catch (error) {
+            setStatus(error.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+    }
+});
+
 document.getElementById('announcement-publish-btn').addEventListener('click', async event => {
     const button = event.currentTarget;
     const expiresValue = document.getElementById('announcement-expires').value;
@@ -773,6 +888,7 @@ document.getElementById('announcement-publish-btn').addEventListener('click', as
         return;
     }
     const payload = {
+        ...(selectedAnnouncementId ? { id: selectedAnnouncementId } : {}),
         title: document.getElementById('announcement-title').value.trim(),
         message: document.getElementById('announcement-message').value.trim(),
         kind: document.getElementById('announcement-kind').value,
@@ -780,32 +896,34 @@ document.getElementById('announcement-publish-btn').addEventListener('click', as
         link: document.getElementById('announcement-link').value.trim(),
         linkLabel: announcementLinkLabel(document.getElementById('announcement-link').value.trim(), document.getElementById('announcement-link-label').value),
         dismissible: document.getElementById('announcement-dismissible').checked,
-        expiresAt
+        expiresAt,
+        enabled: announcements.find(item => item.id === selectedAnnouncementId)?.enabled !== false
     };
     setLoading(button, true, 'PUBLISHING…');
     try {
-        await requestJson('/api/announcements', { method: 'POST', body: JSON.stringify(payload) });
-        setStatus(payload.displayMode === 'modal'
-            ? 'Center popup published. Visitors can close it after five seconds.'
-            : payload.dismissible
-                ? 'Announcement published. Visitors can dismiss it on their device.'
-                : 'Announcement published. It stays visible until it expires or you remove it.', 'success');
-        await loadAnnouncement();
+        const result = await requestJson('/api/announcements', { method: 'POST', body: JSON.stringify(payload) });
+        setStatus(payload.enabled === false ? 'Announcement saved and paused.' : 'Announcement saved and active.', 'success');
+        await loadAnnouncements(result.announcement?.id || selectedAnnouncementId);
     } catch (error) {
         setStatus(error.message, 'error');
     } finally {
         setLoading(button, false);
+        button.innerHTML = selectedAnnouncementId
+            ? '<i class="fa-solid fa-floppy-disk"></i> Save changes'
+            : '<i class="fa-solid fa-paper-plane"></i> Publish announcement';
     }
 });
 
 document.getElementById('announcement-clear-btn').addEventListener('click', async event => {
     const button = event.currentTarget;
-    if (!window.confirm('Remove the active announcement from the website?')) return;
+    if (!selectedAnnouncementId) return;
+    const item = announcements.find(announcement => announcement.id === selectedAnnouncementId);
+    if (!window.confirm(`Delete “${item?.title || 'this announcement'}”?`)) return;
     setLoading(button, true, 'REMOVING…');
     try {
-        await requestJson('/api/announcements', { method: 'DELETE' });
-        await loadAnnouncement();
-        setStatus('The active announcement was removed.', 'success');
+        await requestJson('/api/announcements', { method: 'DELETE', body: JSON.stringify({ id: selectedAnnouncementId }) });
+        await loadAnnouncements(null);
+        setStatus('Announcement deleted.', 'success');
     } catch (error) {
         setStatus(error.message, 'error');
     } finally {

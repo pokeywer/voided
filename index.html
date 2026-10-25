@@ -13,12 +13,7 @@
 </head>
 <body>
     <div class="shell">
-        <div id="site-announcement" class="site-announcement hidden" role="status" aria-live="polite">
-            <i id="site-announcement-icon" class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <div class="site-announcement-copy"><strong id="site-announcement-title"></strong><span id="site-announcement-message"></span></div>
-            <a id="site-announcement-link" class="site-announcement-link hidden" target="_blank" rel="noopener noreferrer"></a>
-            <button id="site-announcement-dismiss" class="site-announcement-dismiss" type="button" aria-label="Dismiss announcement"><i class="fa-solid fa-xmark"></i></button>
-        </div>
+        <div id="site-announcements" class="site-announcement-list" aria-live="polite"></div>
         <div id="site-announcement-modal" class="site-announcement-modal hidden" aria-hidden="true">
                 <section id="site-announcement-dialog" class="site-announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="site-announcement-modal-title" aria-describedby="site-announcement-modal-message" tabindex="-1">
                 <div class="site-announcement-modal-heading">

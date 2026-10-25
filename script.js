@@ -126,145 +126,139 @@ function friendlyAuthError(err) {
 }
 
 async function loadSiteAnnouncement() {
-    const banner = document.getElementById('site-announcement');
-    if (!banner) return;
+    const bannerList = document.getElementById('site-announcements');
+    if (!bannerList) return;
     try {
         const response = await fetch('/api/announcements');
         if (!response.ok) return;
         const data = await response.json();
-        const announcement = data && data.announcement;
-        if (!announcement || !announcement.message) return;
-        const expiresAt = Number(announcement.expiresAt) || 0;
-        if (expiresAt && expiresAt <= Date.now()) return;
+        const items = Array.isArray(data?.announcements)
+            ? data.announcements
+            : data?.announcement ? [data.announcement] : [];
+        const current = items.filter(item => item && item.message && item.enabled !== false && (!Number(item.expiresAt) || Number(item.expiresAt) > Date.now()));
+        const dismissalKey = item => `voidedx-announcement-dismissed-${item.id || 'legacy'}-${item.updatedAt || item.message}`;
+        const isDismissed = item => {
+            try { return localStorage.getItem(dismissalKey(item)) === '1'; } catch { return false; }
+        };
+        const markDismissed = item => {
+            try { localStorage.setItem(dismissalKey(item), '1'); } catch {}
+        };
+        const visible = current.filter(item => !(item.displayMode === 'modal' || item.dismissible) || !isDismissed(item));
+        const banners = visible.filter(item => item.displayMode !== 'modal');
+        bannerList.replaceChildren();
 
-        const dismissalKey = `voidedx-announcement-dismissed-${announcement.updatedAt || announcement.message}`;
-        const displayMode = announcement.displayMode === 'modal' ? 'modal' : 'banner';
-        const dismissible = displayMode === 'modal' || announcement.dismissible === true;
-        if (dismissible) {
-            try { if (localStorage.getItem(dismissalKey) === '1') return; } catch {}
-        }
-
-        const title = document.getElementById('site-announcement-title');
-        const message = document.getElementById('site-announcement-message');
-        const link = document.getElementById('site-announcement-link');
-        const dismiss = document.getElementById('site-announcement-dismiss');
-        title.textContent = announcement.title || 'VoidedX update';
-        message.textContent = announcement.message;
-
-        const kind = ['info', 'success', 'warning'].includes(announcement.kind) ? announcement.kind : 'info';
-        const iconClass = announcement.kind === 'success'
-            ? 'fa-solid fa-circle-check'
-            : announcement.kind === 'warning' ? 'fa-solid fa-triangle-exclamation' : 'fa-solid fa-circle-info';
-
-        const setAnnouncementLink = (element) => {
-            element.classList.add('hidden');
-            if (!announcement.link) return;
+        const announcementKind = item => ['info', 'success', 'warning'].includes(item.kind) ? item.kind : 'info';
+        const iconFor = kind => kind === 'success' ? 'fa-solid fa-circle-check'
+            : kind === 'warning' ? 'fa-solid fa-triangle-exclamation' : 'fa-solid fa-circle-info';
+        const setLink = (element, item) => {
+            if (!item.link) return;
             try {
-                const parsed = new URL(announcement.link, window.location.origin);
-                if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                    element.href = parsed.href;
-                    element.textContent = announcement.linkLabel || 'Learn more';
-                    element.classList.remove('hidden');
-                }
-            } catch {
-                // Ignore malformed links and keep the announcement readable.
-            }
-        };
-        const dismissAnnouncement = () => {
-            banner.classList.add('hidden');
-            const modal = document.getElementById('site-announcement-modal');
-            if (modal) {
-                modal.classList.add('hidden');
-                modal.setAttribute('aria-hidden', 'true');
-            }
-            try { localStorage.setItem(dismissalKey, '1'); } catch {}
+                const parsed = new URL(item.link, window.location.origin);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+                element.href = parsed.href;
+                element.textContent = item.linkLabel || 'Learn more';
+                element.classList.remove('hidden');
+            } catch {}
         };
 
-        if (displayMode === 'modal') {
-            const modal = document.getElementById('site-announcement-modal');
-            const dialog = document.getElementById('site-announcement-dialog');
-            const modalTitle = document.getElementById('site-announcement-modal-title');
-            const modalMessage = document.getElementById('site-announcement-modal-message');
-            const modalIcon = document.getElementById('site-announcement-modal-icon');
-            const modalLink = document.getElementById('site-announcement-modal-link');
-            const closeButton = document.getElementById('site-announcement-modal-dismiss');
-            const countdown = document.getElementById('site-announcement-countdown');
-            if (!modal || !dialog || !closeButton || !countdown) return;
+        banners.forEach(item => {
+            const kind = announcementKind(item);
+            const card = document.createElement('div');
+            card.className = `site-announcement ${kind}`;
+            card.setAttribute('role', 'status');
+            const icon = document.createElement('i');
+            icon.className = iconFor(kind);
+            icon.setAttribute('aria-hidden', 'true');
+            const copy = document.createElement('div');
+            copy.className = 'site-announcement-copy';
+            const title = document.createElement('strong');
+            title.textContent = item.title || 'VoidedX update';
+            const message = document.createElement('span');
+            message.textContent = item.message;
+            copy.append(title, message);
+            card.append(icon, copy);
+            const link = document.createElement('a');
+            link.className = 'site-announcement-link hidden';
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            setLink(link, item);
+            if (!link.classList.contains('hidden')) card.appendChild(link);
+            if (item.dismissible === true) {
+                const dismiss = document.createElement('button');
+                dismiss.className = 'site-announcement-dismiss';
+                dismiss.type = 'button';
+                dismiss.setAttribute('aria-label', document.documentElement.lang === 'pt-BR' ? 'Dispensar aviso' : 'Dismiss announcement');
+                dismiss.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+                dismiss.addEventListener('click', () => { markDismissed(item); card.remove(); });
+                card.appendChild(dismiss);
+            }
+            bannerList.appendChild(card);
+        });
 
-            banner.classList.add('hidden');
-            modalTitle.textContent = announcement.title || 'VoidedX update';
-            modalMessage.textContent = announcement.message;
-            modalIcon.className = `${iconClass} site-announcement-modal-icon ${kind}`;
+        const modalItems = visible.filter(item => item.displayMode === 'modal');
+        const modal = document.getElementById('site-announcement-modal');
+        const dialog = document.getElementById('site-announcement-dialog');
+        const closeButton = document.getElementById('site-announcement-modal-dismiss');
+        const countdown = document.getElementById('site-announcement-countdown');
+        if (!modal || !dialog || !closeButton || !countdown) return;
+
+        for (const item of modalItems) {
+            const kind = announcementKind(item);
+            document.getElementById('site-announcement-modal-title').textContent = item.title || 'VoidedX update';
+            document.getElementById('site-announcement-modal-message').textContent = item.message;
+            document.getElementById('site-announcement-modal-icon').className = `${iconFor(kind)} site-announcement-modal-icon ${kind}`;
             dialog.classList.remove('info', 'success', 'warning');
             dialog.classList.add(kind);
-            setAnnouncementLink(modalLink);
+            const link = document.getElementById('site-announcement-modal-link');
+            link.classList.add('hidden');
+            setLink(link, item);
             closeButton.disabled = true;
             modal.classList.remove('hidden');
             modal.setAttribute('aria-hidden', 'false');
             dialog.focus();
 
-            const deadline = Date.now() + 5000;
-            let unlocked = false;
-            let timerId = null;
-            const updateCountdown = () => {
-                const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-                const portuguese = document.documentElement.lang === 'pt-BR';
-                closeButton.setAttribute('aria-label', unlocked
-                    ? (portuguese ? 'Fechar aviso' : 'Close announcement')
-                    : (portuguese ? 'Aguarde cinco segundos para fechar' : 'Wait five seconds to close'));
-                countdown.textContent = unlocked
-                    ? (portuguese ? 'Fechar' : 'Close')
-                    : (portuguese ? `Aguarde ${seconds}s…` : `Wait ${seconds}s…`);
-                if (seconds === 0 && !unlocked) {
-                    unlocked = true;
-                    closeButton.disabled = false;
-                    closeButton.setAttribute('aria-label', portuguese ? 'Fechar aviso' : 'Close announcement');
-                    countdown.textContent = portuguese ? 'Fechar' : 'Close';
-                }
-                if (unlocked && timerId !== null) {
-                    clearInterval(timerId);
-                    timerId = null;
-                }
-            };
-            const onModalKeydown = event => {
-                if (event.key === 'Escape' && unlocked) {
-                    cleanupModal();
-                    dismissAnnouncement();
-                }
-            };
-            const onBackdropClick = event => {
-                if (event.target === modal && unlocked) {
-                    cleanupModal();
-                    dismissAnnouncement();
-                }
-            };
-            const cleanupModal = () => {
-                if (timerId !== null) clearInterval(timerId);
-                document.removeEventListener('keydown', onModalKeydown);
-                modal.removeEventListener('click', onBackdropClick);
-                document.removeEventListener('voidedx:languagechange', updateCountdown);
-                closeButton.onclick = null;
-            };
-            closeButton.onclick = () => {
-                if (!unlocked) return;
-                cleanupModal();
-                dismissAnnouncement();
-            };
-            document.addEventListener('keydown', onModalKeydown);
-            modal.addEventListener('click', onBackdropClick);
-            document.addEventListener('voidedx:languagechange', updateCountdown);
-            updateCountdown();
-            timerId = setInterval(updateCountdown, 200);
-            return;
+            await new Promise(resolve => {
+                const deadline = Date.now() + 5000;
+                let unlocked = false;
+                let timerId = null;
+                let finished = false;
+                const finish = () => {
+                    if (finished) return;
+                    finished = true;
+                    if (timerId !== null) clearInterval(timerId);
+                    document.removeEventListener('keydown', onModalKeydown);
+                    modal.removeEventListener('click', onBackdropClick);
+                    document.removeEventListener('voidedx:languagechange', updateCountdown);
+                    closeButton.onclick = null;
+                    markDismissed(item);
+                    modal.classList.add('hidden');
+                    modal.setAttribute('aria-hidden', 'true');
+                    resolve();
+                };
+                const updateCountdown = () => {
+                    const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                    const portuguese = document.documentElement.lang === 'pt-BR';
+                    countdown.textContent = unlocked ? (portuguese ? 'Fechar' : 'Close')
+                        : (portuguese ? `Aguarde ${seconds}s…` : `Wait ${seconds}s…`);
+                    closeButton.setAttribute('aria-label', unlocked
+                        ? (portuguese ? 'Fechar aviso' : 'Close announcement')
+                        : (portuguese ? 'Aguarde cinco segundos para fechar' : 'Wait five seconds to close'));
+                    if (seconds === 0 && !unlocked) {
+                        unlocked = true;
+                        closeButton.disabled = false;
+                        if (timerId !== null) { clearInterval(timerId); timerId = null; }
+                    }
+                };
+                const onModalKeydown = event => { if (event.key === 'Escape' && unlocked) finish(); };
+                const onBackdropClick = event => { if (event.target === modal && unlocked) finish(); };
+                closeButton.onclick = () => { if (unlocked) finish(); };
+                document.addEventListener('keydown', onModalKeydown);
+                modal.addEventListener('click', onBackdropClick);
+                document.addEventListener('voidedx:languagechange', updateCountdown);
+                updateCountdown();
+                timerId = setInterval(updateCountdown, 200);
+            });
         }
-
-        banner.classList.remove('info', 'success', 'warning');
-        banner.classList.add(kind);
-        document.getElementById('site-announcement-icon').className = iconClass;
-        setAnnouncementLink(link);
-        dismiss.classList.toggle('hidden', !dismissible);
-        dismiss.onclick = dismissible ? dismissAnnouncement : null;
-        banner.classList.remove('hidden');
     } catch {
         // Public pages remain usable if announcements are temporarily unavailable.
     }
