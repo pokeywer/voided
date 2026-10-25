@@ -28,10 +28,11 @@ export default async function handler(req, res) {
             return json(res, 200, { ok: true });
         }
 
-        const [vaultsSnap, ideasSnap, ideasCountSnap] = await Promise.all([
+        const [vaultsSnap, ideasSnap, ideasCountSnap, sourceRequestsSnap] = await Promise.all([
             db.collection('vaults').select('executions').get(),
             db.collection('feature_requests').orderBy('createdAt', 'desc').limit(50).get(),
-            db.collection('feature_requests').count().get()
+            db.collection('feature_requests').count().get(),
+            db.collection('sourceAccessRequests').where('status', '==', 'pending').orderBy('createdAt', 'asc').limit(50).get()
         ]);
         const totalExecutions = vaultsSnap.docs.reduce((sum, doc) => sum + (Number(doc.data().executions) || 0), 0);
         const ideas = ideasSnap.docs.map(doc => {
@@ -48,6 +49,20 @@ export default async function handler(req, res) {
             };
         });
 
+        const sourceAccessRequests = sourceRequestsSnap.docs.map(doc => {
+            const item = doc.data();
+            return {
+                id: doc.id,
+                staffUid: String(item.staffUid || ''),
+                staffEmail: String(item.staffEmail || ''),
+                vaultId: String(item.vaultId || ''),
+                vaultTitle: String(item.vaultTitle || 'Untitled Vault'),
+                reason: String(item.reason || ''),
+                status: String(item.status || 'pending'),
+                createdAt: Number(item.createdAt) || 0
+            };
+        });
+
         return json(res, 200, {
             ok: true,
             stats: {
@@ -55,7 +70,8 @@ export default async function handler(req, res) {
                 executions: totalExecutions,
                 ideas: ideasCountSnap.data().count
             },
-            ideas
+            ideas,
+            sourceAccessRequests
         });
     } catch (err) {
         console.error('Admin dashboard request failed:', err);

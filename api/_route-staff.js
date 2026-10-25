@@ -198,6 +198,40 @@ async function handleStaffAction(req, res, user, scopes) {
         return json(res, 200, { ok: true, id, status });
     }
 
+    if (action === 'request_source_access') {
+        if (!scopes.includes('vaultSource')) return json(res, 403, { ok: false, message: 'Your grant does not allow source access requests.' });
+        const vaultId = String(body.vaultId || '');
+        const reason = String(body.reason || '').trim().slice(0, 500);
+        if (!/^[A-Za-z0-9_-]{1,150}$/.test(vaultId)) return json(res, 400, { ok: false, message: 'Choose a valid vault.' });
+        if (reason.length < 8) return json(res, 400, { ok: false, message: 'Provide a reason for needing source access (at least 8 characters).' });
+        // Check for an already-pending request for this staff+vault
+        const existingSnap = await db.collection('sourceAccessRequests')
+            .where('staffUid', '==', user.uid)
+            .where('vaultId', '==', vaultId)
+            .where('status', '==', 'pending')
+            .limit(1)
+            .get();
+        if (!existingSnap.empty) return json(res, 200, { ok: true, requestId: existingSnap.docs[0].id, alreadyRequested: true });
+        // Look up vault title for the admin panel display
+        const vaultSnap = await db.collection('vaults').doc(vaultId).get();
+        if (!vaultSnap.exists) return json(res, 404, { ok: false, message: 'That vault no longer exists.' });
+        const vaultTitle = String(vaultSnap.data().title || 'Untitled Vault').slice(0, 80);
+        const ref = db.collection('sourceAccessRequests').doc();
+        await ref.create({
+            staffUid: user.uid,
+            staffEmail: email,
+            vaultId,
+            vaultTitle,
+            reason,
+            status: 'pending',
+            createdAt: Date.now(),
+            handledAt: null,
+            adminNote: '',
+            expiresAt: null
+        });
+        return json(res, 201, { ok: true, requestId: ref.id });
+    }
+
     return json(res, 400, { ok: false, message: 'Choose a supported staff action.' });
 }
 
@@ -267,14 +301,52 @@ export default async function handler(req, res) {
                 daily: daily.docs.map(doc => ({ date: String(doc.data().date || doc.id), executions: Math.max(0, Number(doc.data().executions) || 0) }))
             };
         }
+        // Staff cannot access vault source directly — they must request it and have it approved by an admin.
         const requestedVaultId = String(req.query?.vaultId || '');
         if (scopes.includes('vaultSource') && requestedVaultId) {
             if (!/^[A-Za-z0-9_-]{1,150}$/.test(requestedVaultId)) return json(res, 400, { ok: false, message: 'Choose a valid vault.' });
+            // Only serve source if there is an active admin-approved grant for this staff member + vault
+            const approvedSnap = await db.collection('sourceAccessRequests')
+                .where('staffUid', '==', user.uid)
+                .where('vaultId', '==', requestedVaultId)
+                .where('status', '==', 'approved')
+                .limit(1)
+                .get();
+            if (approvedSnap.empty) {
+                return json(res, 403, { ok: false, message: 'Source access for this vault has not been approved. Submit a request and wait for an administrator to approve it.', needsApproval: true });
+            }
+            const grantData = approvedSnap.docs[0].data();
+            if (grantData.expiresAt && Number(grantData.expiresAt) <= Date.now()) {
+                return json(res, 403, { ok: false, message: 'Your approved source access for this vault has expired. Submit a new request.', needsApproval: true });
+            }
             const sourceSnap = await db.collection('vaults').doc(requestedVaultId).get();
             if (sourceSnap.exists) {
                 const sourceData = sourceSnap.data();
                 data.vaultSource = { id: sourceSnap.id, title: String(sourceData.title || 'Untitled Vault').slice(0, 80), source: getSourceForEditor(sourceData) };
             }
+        }
+
+        // Return this staff member's own source access requests so the panel can show statuses
+        if (scopes.includes('vaultSource')) {
+            const myRequestsSnap = await db.collection('sourceAccessRequests')
+                .where('staffUid', '==', user.uid)
+                .orderBy('createdAt', 'desc')
+                .limit(20)
+                .get();
+            data.sourceAccessRequests = myRequestsSnap.docs.map(doc => {
+                const item = doc.data();
+                return {
+                    id: doc.id,
+                    vaultId: String(item.vaultId || ''),
+                    vaultTitle: String(item.vaultTitle || 'Untitled Vault'),
+                    reason: String(item.reason || ''),
+                    status: String(item.status || 'pending'),
+                    adminNote: String(item.adminNote || ''),
+                    createdAt: Number(item.createdAt) || 0,
+                    handledAt: Number(item.handledAt) || 0,
+                    expiresAt: Number(item.expiresAt) || 0
+                };
+            });
         }
         if (scopes.includes('communityScripts') && req.query?.communityScriptId) {
             const scriptId = String(req.query.communityScriptId);

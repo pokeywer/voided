@@ -192,6 +192,10 @@
                     <div class="admin-section-heading"><div><p class="admin-eyebrow">RECOVERY</p><h2><i class="fa-solid fa-clock-rotate-left"></i> Vault & script backups</h2></div><button id="admin-operations-refresh" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button></div>
                     <p class="admin-help">Vaults are backed up before saves and deletes. Community scripts are backed up before removal or moderation changes. Owners can request a restore for an administrator to review.</p>
                     <div id="admin-operations-status" class="admin-status hidden" role="status" aria-live="polite"></div>
+                    <h3 class="admin-operations-subheading">Source access requests</h3>
+                    <p class="admin-help">Staff members with the <strong>vaultSource</strong> scope cannot view vault source directly — they must submit a request below. Approve to grant temporary access, or deny with a reason.</p>
+                    <div id="admin-source-access-requests" class="admin-operation-list"><div class="info-box"><p>Loading source access requests…</p></div></div>
+                    <span id="admin-source-access-count" class="admin-state-pill" style="margin-bottom:0.75rem;display:inline-block"></span>
                     <h3 class="admin-operations-subheading">Restore requests</h3>
                     <div id="admin-restore-requests" class="admin-operation-list"><div class="info-box"><p>Loading restore requests…</p></div></div>
                     <h3 class="admin-operations-subheading">Recent backups</h3>

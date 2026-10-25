@@ -263,9 +263,12 @@ local function vxSha256(value)
     end)
     for _, hasher in ipairs(hashers) do
         local ok, digest = pcall(hasher, value)
-        if ok and type(digest) == "string" then
-            digest = string.lower(digest)
-            if #digest == 64 and string.match(digest, "^[%da-f]+$") then return digest end
+        if ok and digest ~= nil then
+            local coerced = tostring(digest)
+            if type(coerced) == "string" then
+                coerced = string.lower(coerced)
+                if #coerced == 64 and string.match(coerced, "^[%da-f]+$") then return coerced end
+            end
         end
     end
     return nil

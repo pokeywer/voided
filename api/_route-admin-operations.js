@@ -234,6 +234,34 @@ export default async function handler(req, res) {
             return json(res, 200, { ok: true });
         }
 
+        if (action === 'approve_source_request') {
+            const requestId = String(body.requestId || '');
+            const adminNote = String(body.adminNote || '').trim().slice(0, 300);
+            // How long the approval lasts — default 24 hours, max 7 days
+            const accessHours = Math.min(Math.max(1, Number(body.accessHours) || 24), 168);
+            if (!/^[A-Za-z0-9_-]{10,40}$/.test(requestId)) return json(res, 400, { ok: false, message: 'Choose a valid source access request.' });
+            const ref = db.collection('sourceAccessRequests').doc(requestId);
+            const snap = await ref.get();
+            if (!snap.exists) return json(res, 404, { ok: false, message: 'That source access request no longer exists.' });
+            if (snap.data().status !== 'pending') return json(res, 409, { ok: false, message: 'That request is already closed.' });
+            const now = Date.now();
+            const expiresAt = now + accessHours * 60 * 60 * 1000;
+            await ref.update({ status: 'approved', adminNote, handledAt: now, handledBy: 'admin', expiresAt });
+            return json(res, 200, { ok: true, requestId, expiresAt });
+        }
+
+        if (action === 'deny_source_request') {
+            const requestId = String(body.requestId || '');
+            const adminNote = String(body.adminNote || '').trim().slice(0, 300);
+            if (!/^[A-Za-z0-9_-]{10,40}$/.test(requestId)) return json(res, 400, { ok: false, message: 'Choose a valid source access request.' });
+            const ref = db.collection('sourceAccessRequests').doc(requestId);
+            const snap = await ref.get();
+            if (!snap.exists) return json(res, 404, { ok: false, message: 'That source access request no longer exists.' });
+            if (snap.data().status !== 'pending') return json(res, 409, { ok: false, message: 'That request is already closed.' });
+            await ref.update({ status: 'denied', adminNote, handledAt: Date.now(), handledBy: 'admin', expiresAt: null });
+            return json(res, 200, { ok: true, requestId });
+        }
+
         return json(res, 400, { ok: false, message: 'Choose a supported admin action.' });
     } catch (error) {
         console.error('Admin operations request failed:', error);

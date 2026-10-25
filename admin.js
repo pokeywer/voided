@@ -711,6 +711,31 @@ function updateAnnouncementPreview() {
     document.getElementById('announcement-message-count').textContent = `${message.length} / 500`;
 }
 
+function renderSourceAccessRequests(requests) {
+    const container = document.getElementById('admin-source-access-requests');
+    if (!container) return;
+    const badge = document.getElementById('admin-source-access-count');
+    if (badge) badge.textContent = requests.length ? `${requests.length} pending` : 'None pending';
+    container.replaceChildren();
+    if (!requests.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-help';
+        empty.textContent = 'No pending source access requests.';
+        container.appendChild(empty);
+        return;
+    }
+    for (const req of requests) {
+        container.appendChild(operationLine(
+            `${req.staffEmail || req.staffUid} → Vault "${req.vaultTitle}" (${req.vaultId})`,
+            `Reason: ${req.reason} · Requested ${formatDate(req.createdAt)}`,
+            [
+                { action: 'approve-source-request', label: 'Approve', icon: 'fa-check', requestId: req.id },
+                { action: 'deny-source-request', label: 'Deny', icon: 'fa-xmark', requestId: req.id, danger: true }
+            ]
+        ));
+    }
+}
+
 function renderIdeas(ideas) {
     ideasList.innerHTML = '';
     if (!ideas.length) {
@@ -934,6 +959,7 @@ async function refreshDashboard() {
         document.getElementById('admin-stat-ideas').textContent = Number(dashboard.stats.ideas || 0).toLocaleString();
         document.getElementById('admin-ideas-count').textContent = `${dashboard.ideas.length} recent`;
         renderIdeas(dashboard.ideas || []);
+        renderSourceAccessRequests(dashboard.sourceAccessRequests || []);
         renderScriptReviews(scriptReviews.pending || [], pendingScriptsList);
         renderScriptReviews(scriptReviews.reported || [], reportedScriptsList, true);
         managedScripts = Array.isArray(scriptReviews.managed) ? scriptReviews.managed : [];
@@ -1039,6 +1065,18 @@ document.querySelector('.admin-operations-grid').addEventListener('click', async
         } else if (action === 'revoke-staff') {
             await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'revoke_staff', uid: button.dataset.uid }) });
             setOperationsStatus('Staff access revoked.', 'success');
+        } else if (action === 'approve-source-request') {
+            const adminNote = (prompt('Optional note to staff member (shown with approval):') || '').trim();
+            const hoursInput = prompt('How many hours should this access last? (default: 24, max: 168)', '24');
+            const accessHours = Math.min(Math.max(1, parseInt(hoursInput) || 24), 168);
+            await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'approve_source_request', requestId: button.dataset.requestId, adminNote, accessHours }) });
+            setOperationsStatus(`Source access approved for ${accessHours} hour(s).`, 'success');
+            await refreshDashboard();
+        } else if (action === 'deny-source-request') {
+            const adminNote = (prompt('Reason for denying (shown to staff member):') || '').trim();
+            await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'deny_source_request', requestId: button.dataset.requestId, adminNote }) });
+            setOperationsStatus('Source access request denied.', 'success');
+            await refreshDashboard();
         }
         await loadAdminOperations();
     } catch (error) { setOperationsStatus(error.message, 'error'); }
