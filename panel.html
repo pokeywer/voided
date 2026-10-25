@@ -20,6 +20,7 @@
             <nav class="creator-panel-nav-actions" aria-label="Main navigation">
                 <a class="btn-ghost" href="/"><i class="fa-solid fa-code"></i> Script editor</a>
                 <a class="btn-ghost" href="/scripts"><i class="fa-solid fa-compass"></i> Script library</a>
+                <a class="btn-ghost" href="/staff.html"><i class="fa-solid fa-user-shield"></i> Staff panel</a>
                 <button id="panel-logout-btn" class="btn-ghost hidden" type="button"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button>
             </nav>
         </header>
@@ -73,6 +74,7 @@
             <div class="creator-panel-auth-actions">
                 <button id="panel-sign-in-btn" class="btn-primary" type="button"><i class="fa-solid fa-right-to-bracket"></i> Sign in</button>
                 <button id="panel-sign-up-btn" class="btn-ghost" type="button"><i class="fa-solid fa-user-plus"></i> Create account</button>
+                <button id="panel-guest-btn" class="btn-ghost" type="button"><i class="fa-solid fa-user-clock"></i> Continue as guest</button>
             </div>
         </section>
 
@@ -86,6 +88,14 @@
                 <article class="creator-stat"><span><i class="fa-solid fa-play"></i> EXECUTIONS</span><strong id="panel-stat-executions">0</strong></article>
                 <article class="creator-stat"><span><i class="fa-solid fa-key"></i> VERIFICATION ENABLED</span><strong id="panel-stat-protected">0</strong></article>
             </div>
+            <section class="admin-card creator-recovery-card" aria-labelledby="panel-recovery-title">
+                <div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">SCRIPT RECOVERY</span><h2 id="panel-recovery-title">Backups & restore requests</h2></div><button id="panel-backups-refresh" class="btn-ghost" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button></div>
+                <p class="creator-panel-muted">VoidedX backs up vaults before edits or deletes, and community uploads before removal or moderation changes. Request a restore and an administrator can review it.</p>
+                <div id="panel-backup-feedback" class="admin-status hidden" role="status" aria-live="polite"></div>
+                <div id="panel-backup-list" class="creator-recovery-list"><div class="creator-loading"><i class="fa-solid fa-spinner fa-spin"></i><span>Loading your backups…</span></div></div>
+                <h3 class="creator-recovery-subheading">Your restore requests</h3>
+                <div id="panel-restore-request-list" class="creator-recovery-list"><p class="creator-panel-muted">Sign in to see restore requests.</p></div>
+            </section>
             <div id="panel-feedback" class="admin-status hidden" role="status" aria-live="polite"></div>
             <div id="panel-vault-list" class="creator-vault-grid"><div class="info-box"><p>Loading your scripts…</p></div></div>
             <aside class="creator-panel-note"><i class="fa-solid fa-circle-info"></i><p>Client scripts can be inspected by the people who run them. Obfuscation and verification can add friction, but they cannot make delivered client code impossible to recover. Keep secrets and private service credentials on a trusted server.</p></aside>

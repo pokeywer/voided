@@ -44,6 +44,7 @@
                     <p class="admin-subtitle">Manage announcements, review community ideas, inspect vault source, and check site activity.</p>
                 </div>
                 <div class="admin-heading-actions">
+                    <a href="/staff.html" class="btn-ghost admin-action-btn"><i class="fa-solid fa-user-shield"></i> Staff workspace</a>
                     <a href="/discord.html" class="btn-ghost admin-action-btn"><i class="fa-brands fa-discord"></i> Discord Control</a>
                     <button id="admin-refresh-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button>
                     <button id="admin-logout-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button>
@@ -88,13 +89,13 @@
                             <div class="admin-vault-protection">
                                 <label class="admin-check-row" for="admin-vault-obfuscation"><input id="admin-vault-obfuscation" type="checkbox" disabled><span><strong>Obfuscate execution copy</strong><small>Generates a new copy with Prometheus before saving.</small></span></label>
                                 <div class="admin-vault-options">
-                                    <div class="admin-form-field"><label class="panel-label" for="admin-vault-level">STRENGTH</label><select id="admin-vault-level" class="input-field" disabled><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="absolute">Absolute (slowest · experimental VM)</option></select></div>
+                                    <div class="admin-form-field"><label class="panel-label" for="admin-vault-level">STRENGTH</label><select id="admin-vault-level" class="input-field" disabled><option value="auto">Auto</option><option value="low">Low · 1 VM layer</option><option value="medium">Medium · 2 VM layers</option><option value="high">High · 3 VM layers</option><option value="absolute">Absolute · 4 VM layers (slowest)</option></select></div>
                                     <label class="admin-check-row" for="admin-vault-tamper"><input id="admin-vault-tamper" type="checkbox" disabled><span><strong>Mild tamper check</strong></span></label>
-                                    <label class="admin-check-row" for="admin-vault-vm"><input id="admin-vault-vm" type="checkbox" disabled><span><strong>VM protection</strong></span></label>
+                                    <label class="admin-check-row" for="admin-vault-vm"><input id="admin-vault-vm" type="checkbox" disabled><span><strong>VM protection (always on)</strong></span></label>
                                     <label class="admin-check-row" for="admin-vault-splitting"><input id="admin-vault-splitting" type="checkbox" disabled><span><strong>More string splitting</strong></span></label>
                                 </div>
-                                <p class="admin-help"><strong>VM warning:</strong> VM mode applies only the compatible selected transforms before compiling. It is experimental and can slow down or break scripts. Keep a readable backup and test the generated copy in a private place first. A failed VM compile stops saving, leaving the existing live vault unchanged. Large previews are download-only; saving still follows the vault and document size limits.</p>
-                                <p class="admin-help"><strong>Absolute:</strong> Uses the strongest preset and forces VM protection, tamper checking, and maximum string splitting. It is slower, may break scripts, and may create output too large to save; test it before updating a live vault.</p>
+                                <p class="admin-help"><strong>VM protection:</strong> Every obfuscated copy uses a custom VM. Higher strengths add nested VM layers and compatible transforms, increasing resistance to static recovery while also increasing output size and runtime cost. A failed compile stops saving, leaving the live vault unchanged.</p>
+                                <p class="admin-help"><strong>Absolute:</strong> Uses four nested VM layers, tamper checking, and maximum string splitting. It is the slowest option and may break scripts or exceed storage limits.</p>
                             </div>
                             <div class="admin-vault-preview hidden" id="admin-vault-preview-wrap">
                                 <div class="admin-vault-preview-heading"><label class="panel-label" for="admin-vault-obfuscated-output">OBFUSCATED EXECUTION COPY</label><div><button id="admin-vault-copy-output" class="btn-ghost admin-vault-small-btn" type="button" disabled><i class="fa-solid fa-copy"></i> Copy</button><button id="admin-vault-download-output" class="btn-ghost admin-vault-small-btn" type="button" disabled><i class="fa-solid fa-download"></i> Download</button></div></div>
@@ -182,6 +183,43 @@
                     </div>
                     <p class="admin-help">Review suggestions sent through the Share Your Ideas form.</p>
                     <div id="admin-ideas-list" class="admin-ideas-list"><div class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading ideas…</p></div></div>
+                </section>
+            </div>
+
+            <div class="admin-content-grid admin-operations-grid">
+                <section class="admin-card admin-operations-card">
+                    <div class="admin-section-heading"><div><p class="admin-eyebrow">RECOVERY</p><h2><i class="fa-solid fa-clock-rotate-left"></i> Vault & script backups</h2></div><button id="admin-operations-refresh" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button></div>
+                    <p class="admin-help">Vaults are backed up before saves and deletes. Community scripts are backed up before removal or moderation changes. Owners can request a restore for an administrator to review.</p>
+                    <div id="admin-operations-status" class="admin-status hidden" role="status" aria-live="polite"></div>
+                    <h3 class="admin-operations-subheading">Restore requests</h3>
+                    <div id="admin-restore-requests" class="admin-operation-list"><div class="info-box"><p>Loading restore requests…</p></div></div>
+                    <h3 class="admin-operations-subheading">Recent backups</h3>
+                    <div id="admin-backup-list" class="admin-operation-list"><div class="info-box"><p>Loading backups…</p></div></div>
+                </section>
+
+                <section class="admin-card admin-operations-card">
+                    <div class="admin-section-heading"><div><p class="admin-eyebrow">TEAM ACCESS</p><h2><i class="fa-solid fa-user-shield"></i> Staff access</h2></div></div>
+                    <p class="admin-help">Grant read-only access to a signed-in VoidedX account. Access is tied to its Firebase account ID, not a hardware ID. Choose a time limit and exactly which pages they can see.</p>
+                    <form id="admin-staff-form" class="admin-staff-form">
+                        <label class="panel-label" for="admin-staff-uid">ACCOUNT ID (UID)</label>
+                        <input id="admin-staff-uid" class="input-field" maxlength="128" autocomplete="off" placeholder="Copy this from the staff panel">
+                        <label class="panel-label" for="admin-staff-email">EMAIL (OPTIONAL)</label>
+                        <input id="admin-staff-email" class="input-field" type="email" maxlength="254" autocomplete="off" placeholder="Use UID for guest accounts">
+                        <label class="panel-label" for="admin-staff-hours">ACCESS TIME IN HOURS</label>
+                        <input id="admin-staff-hours" class="input-field" type="number" min="1" max="8760" value="24" required>
+                        <div class="admin-staff-permissions" aria-label="Staff viewing permissions">
+                            <label><input type="checkbox" name="staff-scope" value="vaults"><span>Vault list and settings</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="vaultSource"><span>Readable vault source (also grants vault list)</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="executions"><span>Execution totals and activity</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="announcements"><span>Announcements</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="ideas"><span>Feature ideas</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="restoreRequests"><span>Restore request status</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="communityScripts"><span>Pending community scripts</span></label>
+                        </div>
+                        <button class="btn-primary" type="submit"><i class="fa-solid fa-user-plus"></i> Grant staff access</button>
+                    </form>
+                    <h3 class="admin-operations-subheading">Current staff grants</h3>
+                    <div id="admin-staff-list" class="admin-operation-list"><div class="info-box"><p>Loading staff…</p></div></div>
                 </section>
             </div>
 

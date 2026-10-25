@@ -1,4 +1,5 @@
 import { db, FieldValue, getAdminAuth } from './_admin.js';
+import { createCommunityScriptBackup } from './_communityScriptBackups.js';
 
 const MAX_CODE_LENGTH = 40000;
 const CATEGORIES = new Set(['Universal', 'Simulator', 'Combat', 'Utility', 'Other']);
@@ -86,6 +87,7 @@ export default async function handler(req, res) {
             const snap = await ref.get();
             if (!snap.exists) return json(res, 404, { ok: false, message: 'This upload could not be found.' });
             if (snap.data().ownerUid !== token.uid) return json(res, 403, { ok: false, message: 'You can only remove your own uploads.' });
+            await createCommunityScriptBackup(id, snap.data(), 'before_delete', token.uid);
             await ref.delete();
             return json(res, 200, { ok: true });
         }

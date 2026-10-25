@@ -3,6 +3,7 @@ import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { db } from './_admin.js';
 import { getSourceForEditor } from './_deliveryCode.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
+import { createVaultBackup } from './_vaultBackups.js';
 
 const PAGE_SIZE = 100;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
@@ -135,7 +136,7 @@ export default async function handler(req, res) {
         const obfuscationEnabled = body.obfuscationEnabled === true;
         const obfuscationLevel = LEVELS.has(body.obfuscationLevel) ? body.obfuscationLevel : 'auto';
         const absoluteMode = obfuscationEnabled && obfuscationLevel === 'absolute';
-        const vmProtectionEnabled = obfuscationEnabled && (absoluteMode || body.vmProtectionEnabled === true);
+        const vmProtectionEnabled = obfuscationEnabled;
         const tamperCheckEnabled = obfuscationEnabled && (absoluteMode || body.tamperCheckEnabled === true);
         const expandedTransformsEnabled = obfuscationEnabled && (absoluteMode || body.expandedTransformsEnabled === true);
         let obfuscatedCode = null;
@@ -173,7 +174,7 @@ export default async function handler(req, res) {
             loaderVersion: nextLoaderVersion,
             obfuscationEnabled,
             fastLoadCacheEnabled,
-            obfuscationProfileVersion: 6,
+            obfuscationProfileVersion: 7,
             obfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,
@@ -188,6 +189,7 @@ export default async function handler(req, res) {
             return json(res, 413, { ok: false, message: 'This vault would exceed the maximum database document size. Reduce the source or use a lower obfuscation strength.' });
         }
 
+        await createVaultBackup(id, snap.data(), 'before_save', 'admin');
         await ref.update(updates);
         return json(res, 200, { ok: true, updatedAt: updates.updatedAt, obfuscationEnabled, fastLoadCacheEnabled, obfuscatedCodeLevel });
     } catch (error) {

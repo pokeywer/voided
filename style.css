@@ -1186,3 +1186,39 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 @media (max-width: 760px) { .creator-panel-hero { grid-template-columns: minmax(0,1fr) 230px; min-height: 330px; padding: 34px 28px 58px; } .creator-panel-hero-mark { width: 220px; height: 220px; } .creator-panel-hero-mark img { width: 145px; height: 145px; } .creator-panel-orbit { width: 185px; height: 185px; } .creator-panel-orbit.orbit-two { width: 218px; height: 145px; } .creator-vault-grid { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .creator-panel-shell { width: calc(100% - 24px); gap: 15px; padding-top: 12px; } .creator-panel-nav { align-items: flex-start; flex-direction: column; gap: 10px; } .creator-panel-nav-actions { width: 100%; flex-wrap: wrap; } .creator-panel-nav-actions a, .creator-panel-nav-actions button { flex: 1 1 28%; min-width: 0; padding: 7px 5px; font-size: 9px; } .creator-panel-nav-actions .site-language-control { flex: 1 1 100%; justify-content: flex-end; margin-left: 0; } .creator-panel-hero { grid-template-columns: 1fr; min-height: 530px; padding: 28px 22px 59px; } .creator-panel-hero-copy { align-self: start; } .creator-panel-hero h1 { font-size: 43px; } .creator-panel-hero-copy > p { font-size: 12px; } .creator-panel-hero-mark { width: 220px; height: 190px; margin-top: -5px; } .creator-panel-hero-mark img { width: 130px; height: 130px; } .creator-panel-orbit { width: 178px; height: 178px; } .creator-panel-orbit.orbit-two { width: 205px; height: 135px; } .creator-panel-hero-foot { right: 17px; left: 17px; gap: 5px; font-size: 6.5px; letter-spacing: .08em; } .creator-panel-stats { grid-template-columns: 1fr; gap: 7px; } .creator-stat { flex-direction: row; align-items: center; justify-content: space-between; padding: 11px 13px; } .creator-stat strong { font-size: 18px; } .creator-panel-section-heading { align-items: flex-end; } .creator-panel-section-heading h2 { font-size: 19px; } .creator-panel-section-heading > button { min-height: 36px; padding: 7px 9px; font-size: 10px; } .creator-brand-grid { grid-template-columns: minmax(0,1fr); } .creator-brand-card { grid-template-columns: 100px minmax(0,1fr); } .creator-brand-banner-preview { grid-row: span 2; } .creator-vault-card { padding: 12px; } .creator-vault-actions { flex-direction: column; } .creator-vault-actions a { min-height: 40px; font-size: 10px; } .creator-panel-footer { flex-direction: column; gap: 5px; } }
 @media (prefers-reduced-motion: reduce) { .creator-panel-hero::before, .creator-panel-hero-mark img, .creator-panel-orbit, .creator-panel-spark { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+
+/* ---------- Vault recovery and account-bound staff workspace ---------- */
+.admin-operations-grid { align-items: start; }
+.admin-operations-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.admin-operations-subheading, .creator-recovery-subheading { margin-top: 7px; color: #dce5f4; font-size: 12px; }
+.admin-operation-list, .creator-recovery-list { display: flex; flex-direction: column; gap: 7px; min-width: 0; max-height: 340px; overflow: auto; }
+.admin-operation-item, .creator-recovery-item { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-width: 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-panel); }
+.admin-operation-copy, .creator-recovery-item > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.admin-operation-copy strong, .creator-recovery-item strong { color: var(--text-primary); font-size: 11px; overflow-wrap: anywhere; }
+.admin-operation-copy span, .creator-recovery-item span { color: var(--text-muted); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.admin-operation-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.admin-operation-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: auto; min-height: 30px; padding: 5px 8px; font-size: 9px; white-space: nowrap; }
+.admin-staff-form { display: flex; flex-direction: column; gap: 8px; }
+.admin-staff-permissions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; margin: 4px 0; }
+.admin-staff-permissions label { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-panel); color: #c7d2e0; font-size: 10px; cursor: pointer; }
+.admin-staff-permissions input { width: 15px; height: 15px; flex: 0 0 auto; accent-color: var(--cyan); }
+.admin-staff-form > button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.creator-recovery-card { display: flex; flex-direction: column; gap: 10px; }
+.creator-recovery-item { background: rgba(10,12,17,.85); }
+.creator-recovery-item button { flex: 0 0 auto; width: auto; min-height: 32px; padding: 6px 9px; font-size: 9px; }
+.creator-recovery-item button:disabled { opacity: .65; cursor: not-allowed; }
+.staff-hero { min-height: 300px; }
+.staff-account-card { display: flex; flex-direction: column; gap: 12px; }
+.staff-account-card h2 { margin-top: 5px; font-size: 19px; }
+.staff-big-stat { display: block; color: #f8fafc; font-size: 32px; }
+.staff-source-list { display: flex; flex-direction: column; gap: 8px; }
+.staff-source-detail { min-width: 0; border: 1px solid var(--border-color); border-radius: 8px; background: #090b10; }
+.staff-source-detail summary { padding: 9px 11px; color: #67e8f9; font-size: 10px; font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
+.staff-source-detail pre { max-height: 560px; overflow: auto; padding: 12px; border-top: 1px solid var(--border-color); color: #9ddfe9; font: 10px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+    .admin-staff-permissions { grid-template-columns: 1fr; }
+    .admin-operation-item, .creator-recovery-item { align-items: flex-start; flex-direction: column; }
+    .admin-operation-actions { justify-content: flex-start; }
+    .creator-recovery-item button { width: 100%; }
+    .staff-hero { min-height: 420px; }
+}

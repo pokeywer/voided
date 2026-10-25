@@ -41,6 +41,10 @@ let adminVaultPreviewIsCurrent = false;
 let adminVaultPreviewSignature = '';
 let adminVaultLoadSequence = 0;
 let adminVaultOutputText = '';
+const adminOperationsStatus = document.getElementById('admin-operations-status');
+const adminRestoreRequests = document.getElementById('admin-restore-requests');
+const adminBackupList = document.getElementById('admin-backup-list');
+const adminStaffList = document.getElementById('admin-staff-list');
 
 async function requestJson(path, options = {}) {
     const response = await fetch(path, {
@@ -135,6 +139,105 @@ function formatDate(value) {
     }
 }
 
+function setOperationsStatus(message, kind = 'info') {
+    adminOperationsStatus.textContent = message;
+    adminOperationsStatus.className = `admin-status ${kind}`;
+}
+
+function operationLine(titleText, detailText, actions = []) {
+    const row = document.createElement('article');
+    row.className = 'admin-operation-item';
+    const copy = document.createElement('div');
+    copy.className = 'admin-operation-copy';
+    const title = document.createElement('strong');
+    title.textContent = titleText;
+    const detail = document.createElement('span');
+    detail.textContent = detailText;
+    copy.append(title, detail);
+    row.appendChild(copy);
+    if (actions.length) {
+        const group = document.createElement('div');
+        group.className = 'admin-operation-actions';
+        for (const action of actions) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = action.danger ? 'btn-danger admin-operation-action' : 'btn-ghost admin-operation-action';
+            button.dataset.operationAction = action.action;
+            if (action.backupId) button.dataset.backupId = action.backupId;
+            if (action.backupType) button.dataset.backupType = action.backupType;
+            if (action.requestId) button.dataset.requestId = action.requestId;
+            if (action.uid) button.dataset.uid = action.uid;
+            button.innerHTML = action.icon ? `<i class="fa-solid ${action.icon}"></i> ${action.label}` : action.label;
+            group.appendChild(button);
+        }
+        row.appendChild(group);
+    }
+    return row;
+}
+
+function renderAdminOperations(result) {
+    adminRestoreRequests.replaceChildren();
+    if (!result.requests?.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-help';
+        empty.textContent = 'No restore requests yet.';
+        adminRestoreRequests.appendChild(empty);
+    } else {
+        for (const item of result.requests) {
+            const actions = item.status === 'pending' ? [
+                { action: 'restore-request', label: 'Restore', icon: 'fa-rotate-left', backupId: item.backupId, backupType: item.backupType, requestId: item.id },
+                { action: 'dismiss-request', label: 'Decline', icon: 'fa-xmark', requestId: item.id, danger: true }
+            ] : [];
+            const isScript = item.backupType === 'communityScript';
+            adminRestoreRequests.appendChild(operationLine(
+                item.title || (isScript ? 'Untitled script' : 'Untitled Vault'),
+                `${item.ownerEmail || item.ownerUid} · ${isScript ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`} · ${item.status} · ${formatDate(item.createdAt)}`,
+                actions
+            ));
+        }
+    }
+
+    adminBackupList.replaceChildren();
+    if (!result.backups?.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-help';
+        empty.textContent = 'Backups will appear here after a vault is saved or a community script is changed or removed.';
+        adminBackupList.appendChild(empty);
+    } else {
+        for (const item of result.backups) {
+            const isScript = item.backupType === 'communityScript';
+            adminBackupList.appendChild(operationLine(
+                item.title || (isScript ? 'Untitled script' : 'Untitled Vault'),
+                `${isScript ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`} · ${item.reason.replaceAll('_', ' ')} · ${formatDate(item.createdAt)} · ${item.ownerUid}`,
+                [{ action: 'restore-backup', label: 'Restore', icon: 'fa-rotate-left', backupId: item.id, backupType: item.backupType }]
+            ));
+        }
+    }
+
+    adminStaffList.replaceChildren();
+    if (!result.staff?.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-help';
+        empty.textContent = 'No staff grants yet.';
+        adminStaffList.appendChild(empty);
+    } else {
+        for (const item of result.staff) {
+            const state = item.active ? `Active until ${formatDate(item.expiresAt)}` : 'Expired or disabled';
+            const scopeLabels = item.scopes.map(scope => ({
+                vaults: 'Vaults', vaultSource: 'Source', executions: 'Executions', announcements: 'Announcements',
+                ideas: 'Ideas', restoreRequests: 'Restore requests', communityScripts: 'Community scripts'
+            }[scope] || scope));
+            const actions = item.active ? [{ action: 'revoke-staff', label: 'Revoke', icon: 'fa-user-slash', uid: item.uid, danger: true }] : [];
+            adminStaffList.appendChild(operationLine(item.email || 'Guest account', `${item.uid} · ${state} · ${scopeLabels.join(', ')}`, actions));
+        }
+    }
+}
+
+async function loadAdminOperations() {
+    const result = await requestJson('/api/admin-operations');
+    renderAdminOperations(result);
+}
+
 function setVaultStatus(message, kind = 'info') {
     adminVaultStatus.textContent = message;
     adminVaultStatus.className = `admin-status ${kind}`;
@@ -162,7 +265,7 @@ function currentAdminVaultSignature() {
         enabled: adminVaultObfuscation.checked,
         level: adminVaultLevel.value,
         tamper: adminVaultTamper.checked,
-        vm: adminVaultVm.checked,
+        vm: adminVaultObfuscation.checked,
         splitting: adminVaultSplitting.checked
     });
 }
@@ -196,7 +299,7 @@ function markAdminVaultDirty() {
 function getAdminVaultObfuscationSettings() {
     const enabled = adminVaultObfuscation.checked;
     const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
-    const vmProtection = absoluteMode || (enabled && adminVaultVm.checked);
+    const vmProtection = enabled;
     return {
         enabled,
         requestedLevel: adminVaultLevel.value,
@@ -212,14 +315,16 @@ function getAdminVaultObfuscationSettings() {
 function syncAdminVaultProtectionControls() {
     const enabled = !!activeAdminVault && adminVaultObfuscation.checked;
     const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
+    if (adminVaultVm) {
+        adminVaultVm.checked = enabled;
+        adminVaultVm.disabled = true;
+    }
     if (absoluteMode) {
         adminVaultTamper.checked = true;
-        adminVaultVm.checked = true;
         adminVaultSplitting.checked = true;
     }
     adminVaultLevel.disabled = !enabled;
     adminVaultTamper.disabled = !enabled || absoluteMode;
-    adminVaultVm.disabled = !enabled || absoluteMode;
     adminVaultSplitting.disabled = !enabled || absoluteMode;
     if (adminVaultPreviewButton) adminVaultPreviewButton.disabled = !enabled || !activeAdminVault;
 }
@@ -825,6 +930,8 @@ async function refreshDashboard() {
         } catch (error) {
             setStatus(`Dashboard loaded, but the announcement could not be loaded: ${error.message}`, 'error');
         }
+        try { await loadAdminOperations(); }
+        catch (error) { setOperationsStatus(`Could not load recovery or staff data: ${error.message}`, 'error'); }
     } catch (error) {
         setStatus(error.message, 'error');
         if (/session expired/i.test(error.message)) setLoggedIn(false);
@@ -837,6 +944,79 @@ loginButton.addEventListener('click', signIn);
 }));
 
 document.getElementById('admin-refresh-btn').addEventListener('click', refreshDashboard);
+document.getElementById('admin-operations-refresh').addEventListener('click', async event => {
+    setLoading(event.currentTarget, true, 'LOADING…');
+    try { await loadAdminOperations(); setOperationsStatus('Recovery and staff data refreshed.', 'success'); }
+    catch (error) { setOperationsStatus(error.message, 'error'); }
+    finally { setLoading(event.currentTarget, false); }
+});
+document.getElementById('admin-staff-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const scopes = [...form.querySelectorAll('input[name="staff-scope"]:checked')].map(input => input.value);
+    setLoading(button, true, 'GRANTING…');
+    try {
+        const result = await requestJson('/api/admin-operations', {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'grant_staff',
+                uid: document.getElementById('admin-staff-uid').value.trim(),
+                email: document.getElementById('admin-staff-email').value.trim(),
+                durationHours: Number(document.getElementById('admin-staff-hours').value),
+                scopes
+            })
+        });
+        setOperationsStatus(`Staff access granted to account ${result.uid}.`, 'success');
+        form.reset();
+        document.getElementById('admin-staff-hours').value = '24';
+        await loadAdminOperations();
+    } catch (error) { setOperationsStatus(error.message, 'error'); }
+    finally { setLoading(button, false); }
+});
+const staffVaultScope = document.querySelector('#admin-staff-form input[value="vaults"]');
+const staffSourceScope = document.querySelector('#admin-staff-form input[value="vaultSource"]');
+staffSourceScope.addEventListener('change', () => {
+    if (staffSourceScope.checked) staffVaultScope.checked = true;
+});
+staffVaultScope.addEventListener('change', () => {
+    if (!staffVaultScope.checked) staffSourceScope.checked = false;
+});
+document.querySelector('.admin-operations-grid').addEventListener('click', async event => {
+    const button = event.target.closest('button[data-operation-action]');
+    if (!button) return;
+    const action = button.dataset.operationAction;
+    if (action.startsWith('restore')) {
+        const confirmation = button.dataset.backupType === 'communityScript'
+            ? 'Restore this community script backup? It will restore the saved script and its previous library visibility.'
+            : 'Restore this vault backup? This replaces the saved script and obfuscation settings. Existing vaults keep their current keys and execution count. A deleted vault is recreated with its old keys cleared.';
+        if (!window.confirm(confirmation)) return;
+    }
+    if (action === 'dismiss-request' && !window.confirm('Decline this restore request?')) return;
+    if (action === 'revoke-staff' && !window.confirm('Revoke this staff member’s access now?')) return;
+    setLoading(button, true, 'SAVING…');
+    try {
+        if (action === 'restore-backup' || action === 'restore-request') {
+            const result = await requestJson('/api/admin-operations', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'restore_backup', backupId: button.dataset.backupId, backupType: button.dataset.backupType || 'vault', requestId: button.dataset.requestId || '' })
+            });
+            setOperationsStatus(result.backupType === 'communityScript'
+                ? `Community script restored${result.recreated ? ' from its backup' : ' to its saved state'}.`
+                : result.recreated
+                    ? 'Vault restored. Old loaders and keys were invalidated; create new keys before enabling access.'
+                    : 'Vault restored. Old loaders were invalidated; its current keys and execution count were kept.', 'success');
+        } else if (action === 'dismiss-request') {
+            await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'dismiss_restore_request', requestId: button.dataset.requestId }) });
+            setOperationsStatus('Restore request declined.', 'success');
+        } else if (action === 'revoke-staff') {
+            await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'revoke_staff', uid: button.dataset.uid }) });
+            setOperationsStatus('Staff access revoked.', 'success');
+        }
+        await loadAdminOperations();
+    } catch (error) { setOperationsStatus(error.message, 'error'); }
+    finally { setLoading(button, false); }
+});
 document.getElementById('admin-vault-refresh-btn').addEventListener('click', loadAdminVaults);
 adminVaultSearch.addEventListener('input', renderAdminVaultList);
 adminVaultList.addEventListener('click', event => {

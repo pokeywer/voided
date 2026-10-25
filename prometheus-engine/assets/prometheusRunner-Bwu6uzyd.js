@@ -10918,7 +10918,62 @@ local ok, outputOrError = xpcall(function()
         end
         table.insert(config.Steps, { Name = "NumbersToExpressions", Settings = numericSettings })
       end
-      table.insert(config.Steps, { Name = "Vmify", Settings = {} })
+      local vmLayers = ${Math.max(1, Math.min(4, Math.floor(Number(e.vmLayers) || 1)))}
+      for layer = 1, vmLayers do
+        if layer > 1 then
+          table.insert(config.Steps, { Name = "EncryptStrings", Settings = {} })
+          if ${e.tamperCheck === true ? `true` : `false`} then
+            table.insert(config.Steps, {
+              Name = "AntiTamper",
+              Settings = { UseDebug = false },
+            })
+          end
+          table.insert(config.Steps, {
+            Name = "ConstantArray",
+            Settings = {
+              Threshold = 1,
+              StringsOnly = true,
+              Shuffle = true,
+              Rotate = true,
+              LocalWrapperThreshold = 0,
+            },
+          })
+          if preset ~= "Weak" then
+            table.insert(config.Steps, {
+              Name = "NumbersToExpressions",
+              Settings = {
+                Threshold = 1,
+                InternalThreshold = 0.2,
+                NumberRepresentationMutation = preset == "Strong",
+                AllowedNumberRepresentations = { "hex", "normal" },
+              },
+            })
+          end
+        end
+        table.insert(config.Steps, { Name = "Vmify", Settings = {} })
+      end
+      table.insert(config.Steps, {
+        Name = "ConstantArray",
+        Settings = {
+          Threshold = 1,
+          StringsOnly = true,
+          Shuffle = vmLayers > 1,
+          Rotate = vmLayers > 1,
+          LocalWrapperThreshold = 0,
+        },
+      })
+      if preset ~= "Weak" then
+        table.insert(config.Steps, {
+          Name = "NumbersToExpressions",
+          Settings = {
+            Threshold = 1,
+            InternalThreshold = 0.2,
+            NumberRepresentationMutation = preset == "Strong",
+            AllowedNumberRepresentations = { "hex", "normal" },
+          },
+        })
+      end
+      table.insert(config.Steps, { Name = "WrapInFunction", Settings = {} })
     else
       -- Keep Roblox API strings intact and omit transformations that can corrupt or break Luau.
       local incompatibleSteps = {

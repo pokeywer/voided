@@ -305,6 +305,23 @@ function downloadLocalVaultBackup(vaultId, title, code) {
     }
 }
 
+async function createRemoteVaultBackup(vaultId, reason = 'before_save') {
+    if (!currentUser || !vaultId) throw new Error('Sign in before creating a vault backup.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/vault-backups', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action: 'snapshot', vaultId, reason })
+    });
+    let result = {};
+    try { result = await response.json(); } catch {}
+    if (!response.ok || result.ok !== true) {
+        throw new Error(result.message || 'Could not create the server backup. Your vault was not changed.');
+    }
+    return result.backup;
+}
+
 // Simple promise-based replacement for window.confirm, styled to match the app.
 function customConfirm({ title, message, confirmLabel = 'Delete' }) {
     return new Promise(resolve => {
@@ -420,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const enabled = !!(chkObfuscation && chkObfuscation.checked);
         const requestedLevel = obfuscationLevelSelect ? obfuscationLevelSelect.value : 'auto';
         const absoluteMode = enabled && requestedLevel === 'absolute';
-        const vmProtection = absoluteMode || (enabled && !!(chkVmProtection && chkVmProtection.checked));
+        const vmProtection = enabled;
         const protection = {
             tamperCheck: absoluteMode || !!(chkTamperCheck && chkTamperCheck.checked),
             vmProtection,
@@ -966,6 +983,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function deleteVaultIfStillUnused(vaultId, ownerUid) {
         const ref = doc(db, 'vaults', vaultId);
+        const initial = await getDoc(ref);
+        if (!initial.exists()) return { deleted: true };
+        const initialData = initial.data();
+        const initialExpiry = Number(initialData.autoDeleteAt);
+        if (initialData.uid !== ownerUid || (Number(initialData.executions) || 0) !== 0
+            || !Number.isFinite(initialExpiry) || initialExpiry > Date.now()) {
+            return { deleted: false, data: initialData };
+        }
+        await createRemoteVaultBackup(vaultId, 'before_delete');
         return runTransaction(db, async transaction => {
             const fresh = await transaction.get(ref);
             if (!fresh.exists()) return { deleted: true };
@@ -1069,7 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 6) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 7) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1128,7 +1154,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chkVmProtection) chkVmProtection.checked = true;
             if (chkExpandedTransforms) chkExpandedTransforms.checked = true;
         }
-        if (chkVmProtection) chkVmProtection.disabled = !obfuscationOn || absoluteMode;
+        if (chkVmProtection) {
+            chkVmProtection.checked = obfuscationOn;
+            chkVmProtection.disabled = true;
+        }
         if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn;
         if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn || absoluteMode;
         if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || absoluteMode;
@@ -1409,7 +1438,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 6,
+            obfuscationProfileVersion: 7,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,
@@ -1435,6 +1464,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            if (activeVaultId.value) {
+                await createRemoteVaultBackup(vaultId, 'before_save');
+            }
             await setDoc(doc(db, "vaults", vaultId), payload);
             if (!obfuscationEnabled) {
                 clearObfuscatedPreview();
@@ -1586,6 +1618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> DELETING...';
 
         try {
+            await createRemoteVaultBackup(id, 'before_delete');
             await deleteDoc(doc(db, "vaults", id));
             resetEditor();
             showToast('Vault deleted.', 'info');

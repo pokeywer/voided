@@ -17,6 +17,7 @@ export const MAX_STORED_OBFUSCATED_OUTPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
 
 const PRESETS = Object.freeze({ low: 'Weak', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
+const VM_LAYER_COUNTS = Object.freeze({ low: 1, medium: 2, high: 3, absolute: 4 });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
 const MAX_PROMETHEUS_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -47,13 +48,17 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
 
     const absoluteMode = level === 'absolute';
     const tamperCheck = absoluteMode || protection.tamperCheck === true;
-    const vmProtection = absoluteMode || protection.vmProtection === true;
+    // Every obfuscated output now goes through the VM pipeline. Strength controls
+    // how many times the generated VM is itself compiled into another VM layer.
+    const vmProtection = true;
     const expandedTransforms = absoluteMode || protection.expandedTransforms === true;
+    const vmLayers = VM_LAYER_COUNTS[level] || 1;
     if (lastSuccessfulObfuscation?.source === source
         && lastSuccessfulObfuscation.level === level
         && lastSuccessfulObfuscation.tamperCheck === tamperCheck
         && lastSuccessfulObfuscation.vmProtection === vmProtection
-        && lastSuccessfulObfuscation.expandedTransforms === expandedTransforms) {
+        && lastSuccessfulObfuscation.expandedTransforms === expandedTransforms
+        && lastSuccessfulObfuscation.vmLayers === vmLayers) {
         return Promise.resolve(lastSuccessfulObfuscation.output);
     }
 
@@ -77,7 +82,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
             }
             const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
             if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
-                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, output };
+                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, vmLayers, output };
             } else {
                 lastSuccessfulObfuscation = null;
             }
@@ -130,6 +135,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                     tamperCheck,
                     vmProtection,
                     expandedTransforms,
+                    vmLayers,
                     prettyPrint: false,
                     seed
                 }

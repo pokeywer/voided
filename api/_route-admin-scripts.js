@@ -1,5 +1,6 @@
 import { db } from './_admin.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
+import { createCommunityScriptBackup } from './_communityScriptBackups.js';
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -44,6 +45,9 @@ export default async function handler(req, res) {
             const ref = db.collection('communityScripts').doc(id);
             const snap = await ref.get();
             if (!snap.exists) return json(res, 404, { ok: false, message: 'That upload no longer exists.' });
+            if (snap.data().status !== status) {
+                await createCommunityScriptBackup(id, snap.data(), 'before_moderation', 'admin');
+            }
             await ref.update({ status, moderatedAt: Date.now(), moderatedBy: 'admin' });
             return json(res, 200, { ok: true });
         }

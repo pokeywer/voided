@@ -3,6 +3,7 @@
 import adminAuth from './_route-admin-auth.js';
 import adminDashboard from './_route-admin-dashboard.js';
 import adminScripts from './_route-admin-scripts.js';
+import adminOperations from './_route-admin-operations.js';
 import adminVaults from './_route-admin-vaults.js';
 import announcements from './_route-announcements.js';
 import discordAdmin from './_route-discord-admin.js';
@@ -14,6 +15,8 @@ import loaderToken from './_route-loader-token.js';
 import payload from './_route-payload.js';
 import raw from './_route-raw.js';
 import scripts from './_route-scripts.js';
+import staff from './_route-staff.js';
+import vaultBackups from './_route-vault-backups.js';
 import vaultinfo from './_route-vaultinfo.js';
 import verify from './_route-verify.js';
 
@@ -21,6 +24,7 @@ const handlers = {
     'admin-auth': adminAuth,
     'admin-dashboard': adminDashboard,
     'admin-scripts': adminScripts,
+    'admin-operations': adminOperations,
     'admin-vaults': adminVaults,
     announcements,
     'discord-admin': discordAdmin,
@@ -32,6 +36,8 @@ const handlers = {
     payload,
     raw,
     scripts,
+    staff,
+    'vault-backups': vaultBackups,
     vaultinfo,
     verify
 };

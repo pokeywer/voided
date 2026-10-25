@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>VoidedX // Staff Panel</title>
+    <link rel="icon" type="image/png" href="/voidedx-favicon.png?v=2">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script defer src="/i18n.js"></script>
+</head>
+<body class="creator-panel-page">
+    <main class="creator-panel-shell">
+        <header class="creator-panel-nav">
+            <a href="/" class="brand-unit brand-unit-link"><img src="logo.png" alt="VoidedX logo" class="brand-icon-img"><span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">STAFF PANEL</span></span></a>
+            <nav class="creator-panel-nav-actions" aria-label="Main navigation">
+                <a class="btn-ghost" href="/panel.html"><i class="fa-solid fa-user"></i> Creator panel</a>
+                <button id="staff-sign-out" class="btn-ghost hidden" type="button"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button>
+            </nav>
+        </header>
+
+        <section class="creator-panel-hero staff-hero">
+            <div class="creator-panel-hero-copy"><span class="creator-panel-eyebrow"><i class="fa-solid fa-user-shield"></i> ACCOUNT-BOUND ACCESS</span><h1>Staff<br><span>workspace.</span></h1><p>Your account only sees the sections an admin has granted. Staff access ends automatically at its expiry time.</p></div>
+            <div class="creator-panel-hero-mark" aria-hidden="true"><span class="creator-panel-orbit orbit-one"></span><span class="creator-panel-orbit orbit-two"></span><img src="logo.png" alt=""><span class="creator-panel-spark spark-one"></span><span class="creator-panel-spark spark-two"></span></div>
+            <div class="creator-panel-hero-foot"><span>LIMITED PERMISSIONS</span><span>ACCOUNT VERIFIED</span><span>TIME LIMITED</span></div>
+        </section>
+
+        <section id="staff-sign-in" class="creator-panel-auth admin-card">
+            <div class="creator-panel-auth-heading"><span class="creator-panel-auth-icon"><i class="fa-solid fa-user-lock"></i></span><div><h2>Sign in to check access</h2><p>Use the same email or guest account the admin granted.</p></div></div>
+            <div id="staff-auth-error" class="admin-status hidden" role="alert"></div>
+            <label class="panel-label" for="staff-email">EMAIL</label><input id="staff-email" class="input-field" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com">
+            <label class="panel-label" for="staff-password">PASSWORD</label><input id="staff-password" class="input-field" type="password" autocomplete="current-password" maxlength="200" placeholder="Your account password">
+            <div class="creator-panel-auth-actions"><button id="staff-login-btn" class="btn-primary" type="button"><i class="fa-solid fa-right-to-bracket"></i> Sign in</button><button id="staff-guest-btn" class="btn-ghost" type="button"><i class="fa-solid fa-user-clock"></i> Continue as guest</button></div>
+            <p class="creator-panel-muted">A browser cannot provide a reliable hardware ID. Access is checked against your signed-in Firebase account ID.</p>
+        </section>
+
+        <section id="staff-account-card" class="admin-card staff-account-card hidden">
+            <div><span class="creator-panel-eyebrow">SIGNED-IN ACCOUNT</span><h2 id="staff-account-name">Account</h2><p id="staff-account-uid" class="creator-panel-muted"></p></div>
+            <div id="staff-feedback" class="admin-status info" role="status" aria-live="polite">Checking your staff access…</div>
+            <div id="staff-grant-summary" class="hidden"><strong id="staff-expiry"></strong><div id="staff-scope-tags" class="creator-vault-tags"></div></div>
+        </section>
+
+        <section id="staff-dashboard" class="creator-panel-dashboard hidden">
+            <section id="staff-executions-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">SITE ACTIVITY</span><h2>Executions</h2></div></div><strong id="staff-executions-total" class="staff-big-stat">0</strong><div id="staff-executions-daily" class="admin-operation-list"></div></section>
+            <section id="staff-vaults-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">VAULT ACCESS</span><h2>Vaults</h2></div><span id="staff-vault-count" class="admin-state-pill">0</span></div><div id="staff-vault-list" class="admin-operation-list"></div><div id="staff-source-list" class="staff-source-list"></div></section>
+            <section id="staff-announcements-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">SITE MESSAGES</span><h2>Announcements</h2></div></div><div id="staff-announcement-list" class="admin-operation-list"></div></section>
+            <section id="staff-ideas-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">COMMUNITY</span><h2>Feature ideas</h2></div></div><div id="staff-ideas-list" class="admin-operation-list"></div></section>
+            <section id="staff-restore-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">RECOVERY</span><h2>Restore requests</h2></div></div><div id="staff-restore-list" class="admin-operation-list"></div></section>
+            <section id="staff-community-scripts-section" class="admin-card hidden"><div class="creator-panel-section-heading"><div><span class="creator-panel-eyebrow">SCRIPT LIBRARY</span><h2>Pending community scripts</h2></div></div><div id="staff-community-scripts-list" class="admin-operation-list"></div></section>
+        </section>
+
+        <footer class="creator-panel-footer"><span>VOIDEDX STAFF WORKSPACE</span><span><a href="/">Back to VoidedX</a></span></footer>
+    </main>
+    <script type="module" src="staff.js"></script>
+</body>
+</html>
