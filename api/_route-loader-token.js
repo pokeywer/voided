@@ -81,7 +81,7 @@ export default async function handler(req, res) {
             ok: true,
             token: issued.token,
             expiresAt: issued.expiresAt,
-            refreshAfterMs: 40_000
+            refreshAfterMs: 8_000
         });
     } catch (error) {
         console.error('Could not issue loader token:', error);

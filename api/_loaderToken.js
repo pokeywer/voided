@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-export const LOADER_TOKEN_TTL_MS = 45_000;
+export const LOADER_TOKEN_TTL_MS = 10_000;
 
 function secret() {
     const value = process.env.LOADER_TOKEN_SECRET

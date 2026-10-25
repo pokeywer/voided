@@ -99,7 +99,7 @@ export default async function handler(req, res) {
 
         // The short-lived loader credential is also packed into the returned
         // _bsdata0 envelope. A copied response body must revalidate it when run,
-        // so copying the decoded bootstrap does not bypass its 45-second expiry.
+        // so copying the decoded bootstrap does not bypass its 10-second expiry.
         if (req.query.format === 'token-check') {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
