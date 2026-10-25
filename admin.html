@@ -200,7 +200,7 @@
 
                 <section class="admin-card admin-operations-card">
                     <div class="admin-section-heading"><div><p class="admin-eyebrow">TEAM ACCESS</p><h2><i class="fa-solid fa-user-shield"></i> Staff access</h2></div></div>
-                    <p class="admin-help">Grant read-only access to a signed-in VoidedX account. Access is tied to its Firebase account ID, not a hardware ID. Choose a time limit and exactly which pages they can see.</p>
+                    <p class="admin-help">Grant time-limited access to a signed-in VoidedX account. Access is tied to its Firebase account ID, not a hardware ID. Viewing sections and write actions are separate permissions; only grant the actions you want this staff member to use.</p>
                     <form id="admin-staff-form" class="admin-staff-form">
                         <label class="panel-label" for="admin-staff-uid">ACCOUNT ID (UID)</label>
                         <input id="admin-staff-uid" class="input-field" maxlength="128" autocomplete="off" placeholder="Copy this from the staff panel">
@@ -208,14 +208,18 @@
                         <input id="admin-staff-email" class="input-field" type="email" maxlength="254" autocomplete="off" placeholder="Use UID for guest accounts">
                         <label class="panel-label" for="admin-staff-hours">ACCESS TIME IN HOURS</label>
                         <input id="admin-staff-hours" class="input-field" type="number" min="1" max="8760" value="24" required>
-                        <div class="admin-staff-permissions" aria-label="Staff viewing permissions">
+                        <div class="admin-staff-permissions" aria-label="Staff viewing and action permissions">
                             <label><input type="checkbox" name="staff-scope" value="vaults"><span>Vault list and settings</span></label>
                             <label><input type="checkbox" name="staff-scope" value="vaultSource"><span>Readable vault source (also grants vault list)</span></label>
                             <label><input type="checkbox" name="staff-scope" value="executions"><span>Execution totals and activity</span></label>
                             <label><input type="checkbox" name="staff-scope" value="announcements"><span>Announcements</span></label>
                             <label><input type="checkbox" name="staff-scope" value="ideas"><span>Feature ideas</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="ideaTriage"><span>Triage idea status (requires Feature ideas)</span></label>
                             <label><input type="checkbox" name="staff-scope" value="restoreRequests"><span>Restore request status</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="restoreTriage"><span>Claim & escalate restore requests (cannot restore)</span></label>
                             <label><input type="checkbox" name="staff-scope" value="communityScripts"><span>Pending community scripts</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="communityModeration"><span>Approve/reject submissions (requires community scripts)</span></label>
+                            <label><input type="checkbox" name="staff-scope" value="announcementManage"><span>Create, edit & pause announcements (public)</span></label>
                         </div>
                         <button class="btn-primary" type="submit"><i class="fa-solid fa-user-plus"></i> Grant staff access</button>
                     </form>

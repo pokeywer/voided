@@ -1215,8 +1215,16 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 .staff-source-detail { min-width: 0; border: 1px solid var(--border-color); border-radius: 8px; background: #090b10; }
 .staff-source-detail summary { padding: 9px 11px; color: #67e8f9; font-size: 10px; font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
 .staff-source-detail pre { max-height: 560px; overflow: auto; padding: 12px; border-top: 1px solid var(--border-color); color: #9ddfe9; font: 10px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.staff-announcement-form { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background: rgba(9,11,16,.72); }
+.staff-announcement-form .input-field { width: 100%; }
+.staff-announcement-fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.staff-announcement-fields > div { min-width: 0; }
+.staff-announcement-form .creator-panel-auth-actions { flex-wrap: wrap; }
+.staff-announcement-form .creator-panel-auth-actions button { flex: 1 1 130px; }
+.staff-source-detail > p { margin: 0; padding: 8px 11px 0; }
 @media (max-width: 520px) {
     .admin-staff-permissions { grid-template-columns: 1fr; }
+    .staff-announcement-fields { grid-template-columns: 1fr; }
     .admin-operation-item, .creator-recovery-item { align-items: flex-start; flex-direction: column; }
     .admin-operation-actions { justify-content: flex-start; }
     .creator-recovery-item button { width: 100%; }

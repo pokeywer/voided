@@ -1,10 +1,12 @@
 import { db, getAdminAuth } from './_admin.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
-import { createVaultBackup } from './_vaultBackups.js';
+import { createVaultBackup, readVaultBackupData } from './_vaultBackups.js';
 import { createCommunityScriptBackup } from './_communityScriptBackups.js';
 
 const STAFF_SCOPES = new Set([
-    'vaults', 'vaultSource', 'executions', 'announcements', 'ideas', 'restoreRequests', 'communityScripts'
+    'vaults', 'vaultSource', 'executions', 'announcements', 'announcementManage',
+    'ideas', 'ideaTriage', 'restoreRequests', 'restoreTriage',
+    'communityScripts', 'communityModeration'
 ]);
 
 function json(res, status, body) {
@@ -55,6 +57,7 @@ export default async function handler(req, res) {
                     ownerEmail: String(item.ownerEmail || ''),
                     title: String(item.title || 'Untitled Vault'),
                     status: String(item.status || 'pending'),
+                    staffNotes: Array.isArray(item.staffNotes) ? item.staffNotes.slice(-8).map(note => ({ email: String(note.email || ''), text: String(note.text || '').slice(0, 500) })) : [],
                     createdAt: Number(item.createdAt) || 0
                 };
             });
@@ -100,6 +103,10 @@ export default async function handler(req, res) {
             const scopes = Array.isArray(body.scopes) ? [...new Set(body.scopes.filter(scope => STAFF_SCOPES.has(scope)))] : [];
             if (!scopes.length) return json(res, 400, { ok: false, message: 'Choose at least one staff permission.' });
             if (scopes.includes('vaultSource') && !scopes.includes('vaults')) return json(res, 400, { ok: false, message: 'Readable vault source access also needs the vault list permission.' });
+            if (scopes.includes('announcementManage') && !scopes.includes('announcements')) return json(res, 400, { ok: false, message: 'Announcement management also needs announcement access.' });
+            if (scopes.includes('ideaTriage') && !scopes.includes('ideas')) return json(res, 400, { ok: false, message: 'Idea triage also needs feature idea access.' });
+            if (scopes.includes('restoreTriage') && !scopes.includes('restoreRequests')) return json(res, 400, { ok: false, message: 'Restore request triage also needs restore request access.' });
+            if (scopes.includes('communityModeration') && !scopes.includes('communityScripts')) return json(res, 400, { ok: false, message: 'Community moderation also needs community script access.' });
             const finalEmail = String(account?.email || email || '').toLowerCase();
             const grant = {
                 email: finalEmail,
@@ -158,7 +165,7 @@ export default async function handler(req, res) {
                 const matchingRequests = await db.collection('restoreRequests').where('backupId', '==', backupId).get();
                 const pendingRequests = matchingRequests.docs.filter(doc => {
                     const item = doc.data();
-                    return item.status === 'pending' && item.backupType === 'communityScript';
+                    return ['pending', 'in_review', 'needs_admin'].includes(item.status) && item.backupType === 'communityScript';
                 });
                 if (pendingRequests.length) {
                     const batch = db.batch();
@@ -168,7 +175,8 @@ export default async function handler(req, res) {
                 return json(res, 200, { ok: true, backupType, scriptId: String(backup.scriptId), title: String(backup.title || 'Untitled script'), recreated: !current });
             }
 
-            if (!backup.data || typeof backup.data !== 'object' || !backup.ownerUid || !backup.vaultId) return json(res, 400, { ok: false, message: 'That backup is incomplete and cannot be restored.' });
+            const backupData = await readVaultBackupData(backupRef, backup);
+            if (!backupData || !backup.ownerUid || !backup.vaultId) return json(res, 400, { ok: false, message: 'That backup is incomplete and cannot be restored.' });
             const vaultRef = db.collection('vaults').doc(String(backup.vaultId));
             const currentSnap = await vaultRef.get();
             const current = currentSnap.exists ? currentSnap.data() : null;
@@ -176,9 +184,9 @@ export default async function handler(req, res) {
             if (current) await createVaultBackup(String(backup.vaultId), current, 'before_restore', 'admin');
 
             const now = Date.now();
-            const nextVersion = Math.max(Number(current?.loaderVersion) || 0, Number(backup.data.loaderVersion) || 0) + 1;
+            const nextVersion = Math.max(Number(current?.loaderVersion) || 0, Number(backupData.loaderVersion) || 0) + 1;
             const restored = {
-                ...backup.data,
+                ...backupData,
                 uid: String(backup.ownerUid),
                 loaderVersion: nextVersion,
                 updatedAt: now,
@@ -205,7 +213,7 @@ export default async function handler(req, res) {
             const matchingRequests = await db.collection('restoreRequests').where('backupId', '==', backupId).get();
             const pendingRequests = matchingRequests.docs.filter(doc => {
                 const item = doc.data();
-                return item.status === 'pending' && (item.backupType === 'communityScript' ? 'communityScript' : 'vault') === 'vault';
+                return ['pending', 'in_review', 'needs_admin'].includes(item.status) && (item.backupType === 'communityScript' ? 'communityScript' : 'vault') === 'vault';
             });
             if (pendingRequests.length) {
                 const batch = db.batch();
@@ -218,7 +226,11 @@ export default async function handler(req, res) {
         if (action === 'dismiss_restore_request') {
             const requestId = String(body.requestId || '');
             if (!/^[A-Za-z0-9_-]{10,40}$/.test(requestId)) return json(res, 400, { ok: false, message: 'Choose a valid restore request.' });
-            await db.collection('restoreRequests').doc(requestId).update({ status: 'declined', handledAt: Date.now() });
+            const requestRef = db.collection('restoreRequests').doc(requestId);
+            const requestSnap = await requestRef.get();
+            if (!requestSnap.exists) return json(res, 404, { ok: false, message: 'That restore request no longer exists.' });
+            if (!['pending', 'in_review', 'needs_admin'].includes(String(requestSnap.data().status || 'pending'))) return json(res, 409, { ok: false, message: 'That restore request is already closed.' });
+            await requestRef.update({ status: 'declined', handledAt: Date.now() });
             return json(res, 200, { ok: true });
         }
 

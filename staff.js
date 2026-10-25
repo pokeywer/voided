@@ -18,6 +18,8 @@ const dashboard = document.getElementById('staff-dashboard');
 const feedback = document.getElementById('staff-feedback');
 let currentUser = null;
 let grantedScopes = [];
+let latestAnnouncements = [];
+let staffExpiryTimer = null;
 
 function message(element, text, kind = 'info') {
     element.textContent = text;
@@ -30,10 +32,11 @@ function dateText(value) {
     catch { return 'Date unavailable'; }
 }
 
-async function api(path = '/api/staff') {
+async function api(path = '/api/staff', options = {}) {
     if (!currentUser) throw new Error('Sign in first.');
     const token = await currentUser.getIdToken();
-    const response = await fetch(path, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+    const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+    const response = await fetch(path, { ...options, cache: 'no-store', headers });
     let result = {};
     try { result = await response.json(); } catch {}
     if (!response.ok || result.ok === false) throw new Error(result.message || 'Could not load staff data.');
@@ -71,11 +74,40 @@ function toggleSection(id, enabled) {
     document.getElementById(id).classList.toggle('hidden', !enabled);
 }
 
+function clearStaffWorkspace() {
+    for (const id of [
+        'staff-source-list', 'staff-community-script-detail', 'staff-scope-tags', 'staff-vault-list',
+        'staff-executions-daily', 'staff-announcement-list', 'staff-ideas-list', 'staff-restore-list',
+        'staff-community-scripts-list'
+    ]) document.getElementById(id).replaceChildren();
+    latestAnnouncements = [];
+    resetAnnouncementForm();
+    dashboard.classList.add('hidden');
+    document.getElementById('staff-grant-summary').classList.add('hidden');
+}
+
+function scheduleStaffExpiry(expiresAt) {
+    if (staffExpiryTimer) clearTimeout(staffExpiryTimer);
+    const checkExpiry = () => {
+        const remaining = expiresAt - Date.now();
+        if (remaining <= 0) {
+            grantedScopes = [];
+            clearStaffWorkspace();
+            message(feedback, 'Staff access has expired. Ask an administrator to renew it.', 'error');
+            return;
+        }
+        staffExpiryTimer = setTimeout(checkExpiry, Math.min(remaining, 2_000_000_000));
+    };
+    checkExpiry();
+}
+
 function showScopes(scopes) {
     const labels = {
         vaults: 'Vault list and settings', vaultSource: 'Readable source', executions: 'Executions',
         announcements: 'Announcements', ideas: 'Feature ideas', restoreRequests: 'Restore request status',
-        communityScripts: 'Pending community scripts'
+        communityScripts: 'Pending community scripts', announcementManage: 'Manage public announcements',
+        ideaTriage: 'Triage idea status', restoreTriage: 'Claim and escalate restore requests',
+        communityModeration: 'Approve or reject submissions'
     };
     const target = document.getElementById('staff-scope-tags');
     target.replaceChildren();
@@ -85,6 +117,110 @@ function showScopes(scopes) {
         tag.textContent = labels[scope] || scope;
         target.appendChild(tag);
     }
+}
+
+function actionButton(label, action, id, danger = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = danger ? 'btn-danger admin-operation-action' : 'btn-ghost admin-operation-action';
+    button.dataset.staffAction = action;
+    if (id) button.dataset.itemId = id;
+    button.textContent = label;
+    return button;
+}
+
+function localDateTimeValue(timestamp) {
+    const date = new Date(Number(timestamp) || 0);
+    if (!Number.isFinite(date.getTime()) || !timestamp) return '';
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function resetAnnouncementForm() {
+    const form = document.getElementById('staff-announcement-form');
+    form.reset();
+    document.getElementById('staff-announcement-id').value = '';
+    document.getElementById('staff-announcement-enabled').checked = true;
+    form.classList.add('hidden');
+    document.getElementById('staff-announcement-new').classList.remove('hidden');
+}
+
+function fillAnnouncementForm(item = null) {
+    const form = document.getElementById('staff-announcement-form');
+    document.getElementById('staff-announcement-id').value = item?.id || '';
+    document.getElementById('staff-announcement-title').value = item?.title || '';
+    document.getElementById('staff-announcement-message').value = item?.message || '';
+    document.getElementById('staff-announcement-kind').value = item?.kind || 'info';
+    document.getElementById('staff-announcement-display').value = item?.displayMode === 'modal' ? 'modal' : 'banner';
+    document.getElementById('staff-announcement-link').value = item?.link || '';
+    document.getElementById('staff-announcement-link-label').value = item?.linkLabel || '';
+    document.getElementById('staff-announcement-expires').value = item?.expired ? '' : localDateTimeValue(item?.expiresAt);
+    document.getElementById('staff-announcement-dismissible').checked = item?.dismissible !== false;
+    document.getElementById('staff-announcement-enabled').checked = item?.enabled !== false;
+    form.classList.remove('hidden');
+    document.getElementById('staff-announcement-new').classList.add('hidden');
+    document.getElementById('staff-announcement-title').focus();
+}
+
+function renderAnnouncements(items, canManage) {
+    latestAnnouncements = Array.isArray(items) ? items : [];
+    renderList('staff-announcement-list', latestAnnouncements, item => {
+        const state = item.expired ? 'Expired' : item.enabled ? 'Active' : 'Paused';
+        const row = textItem(item.title, `${state} · ${item.displayMode === 'modal' ? 'Popup' : 'Banner'} · ${item.message}`);
+        if (canManage) {
+            const actions = document.createElement('div');
+            actions.className = 'admin-operation-actions';
+            const edit = actionButton('Edit', 'announcement-edit', item.id);
+            const toggle = actionButton(item.enabled ? 'Pause' : 'Activate', 'announcement-toggle', item.id);
+            toggle.dataset.enabled = String(!item.enabled);
+            actions.append(edit, toggle);
+            row.appendChild(actions);
+        }
+        return row;
+    }, 'No announcements.');
+}
+
+function renderIdeas(items, canTriage) {
+    renderList('staff-ideas-list', items, item => {
+        const row = textItem(item.name, `${item.status === 'reviewed' ? 'Reviewed' : 'New'} · ${dateText(item.createdAt)} · ${item.idea}`);
+        if (canTriage) {
+            const button = actionButton(item.status === 'reviewed' ? 'Reopen' : 'Mark reviewed', 'idea-status', item.id);
+            button.dataset.nextStatus = item.status === 'reviewed' ? 'new' : 'reviewed';
+            row.appendChild(button);
+        }
+        return row;
+    }, 'No feature ideas.');
+}
+
+function renderRestoreRequests(items, canTriage) {
+    renderList('staff-restore-list', items, item => {
+        const kind = item.backupType === 'communityScript' ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`;
+        const assigned = item.assignedStaffEmail ? ` · Assigned to ${item.assignedStaffEmail}` : '';
+        const notes = (item.staffNotes || []).map(note => `${note.email || 'Staff'}: ${note.text}`).join(' | ');
+        const row = textItem(item.title, `${kind} · ${item.status} · ${dateText(item.createdAt)}${assigned}${notes ? ` · Notes: ${notes}` : ''}`);
+        if (canTriage && ['pending', 'in_review', 'needs_admin'].includes(item.status)) {
+            const actions = document.createElement('div');
+            actions.className = 'admin-operation-actions';
+            if (item.status === 'pending') actions.appendChild(actionButton('Claim', 'restore-claim', item.id));
+            if (item.status === 'in_review') actions.appendChild(actionButton('Send to admin', 'restore-escalate', item.id));
+            if (item.status === 'needs_admin') actions.appendChild(actionButton('Return to review', 'restore-reopen', item.id));
+            row.appendChild(actions);
+        }
+        return row;
+    }, 'No restore requests.');
+}
+
+function renderCommunityScripts(items, canModerate) {
+    renderList('staff-community-scripts-list', items, item => {
+        const row = textItem(item.title, `${item.game} · ${item.category} · ${item.authorName} · ${dateText(item.createdAt)} · ${item.description}`);
+        const actions = document.createElement('div');
+        actions.className = 'admin-operation-actions';
+        actions.appendChild(actionButton('Review source', 'community-view', item.id));
+        if (canModerate) {
+            actions.append(actionButton('Approve', 'community-approve', item.id), actionButton('Reject', 'community-reject', item.id, true));
+        }
+        row.appendChild(actions);
+        return row;
+    }, 'No pending community scripts.');
 }
 
 async function showVaultSource(vaultId) {
@@ -108,11 +244,135 @@ async function showVaultSource(vaultId) {
     } catch (error) { message(feedback, error.message, 'error'); }
 }
 
+async function showCommunityScript(id) {
+    try {
+        const result = await api(`/api/staff?communityScriptId=${encodeURIComponent(id)}`);
+        const item = result.data?.communityScript;
+        if (!item) throw new Error('That pending script is no longer available. Refresh the panel.');
+        const container = document.getElementById('staff-community-script-detail');
+        container.replaceChildren();
+        const details = document.createElement('details');
+        details.className = 'staff-source-detail';
+        details.open = true;
+        const summary = document.createElement('summary');
+        summary.textContent = `${item.title} · source by ${item.authorName}`;
+        const description = document.createElement('p');
+        description.className = 'creator-panel-muted';
+        description.textContent = `${item.game} · ${item.category} · ${item.description}`;
+        const code = document.createElement('pre');
+        code.textContent = item.code;
+        details.append(summary, description, code);
+        container.appendChild(details);
+    } catch (error) { message(feedback, error.message, 'error'); }
+}
+
+async function performStaffAction(button, payload, successText) {
+    if (button) button.disabled = true;
+    try {
+        await api('/api/staff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        await loadDashboard();
+        message(feedback, successText, 'success');
+    } catch (error) {
+        message(feedback, error.message, 'error');
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function handleStaffActionClick(event) {
+    const button = event.target.closest('button[data-staff-action]');
+    if (!button) return;
+    const id = button.dataset.itemId;
+    switch (button.dataset.staffAction) {
+        case 'announcement-edit': {
+            const item = latestAnnouncements.find(candidate => candidate.id === id);
+            if (item) fillAnnouncementForm(item);
+            break;
+        }
+        case 'announcement-toggle':
+            await performStaffAction(button, { action: 'toggle_announcement', id, enabled: button.dataset.enabled === 'true' }, 'Announcement status updated.');
+            break;
+        case 'idea-status': {
+            const status = button.dataset.nextStatus === 'new' ? 'new' : 'reviewed';
+            await performStaffAction(button, { action: 'update_idea_status', id, status }, status === 'reviewed' ? 'Idea marked as reviewed.' : 'Idea reopened.');
+            break;
+        }
+        case 'restore-claim':
+        case 'restore-escalate':
+        case 'restore-reopen': {
+            const mode = button.dataset.staffAction;
+            const promptText = mode === 'restore-escalate'
+                ? 'Add a note for the administrator (at least 8 characters):'
+                : 'Add an optional private note for the restore request:';
+            const note = window.prompt(promptText);
+            if (note === null) break;
+            if (mode === 'restore-escalate' && note.trim().length < 8) {
+                message(feedback, 'Write at least 8 characters before escalating this request.', 'error');
+                break;
+            }
+            const status = mode === 'restore-escalate' ? 'needs_admin' : 'in_review';
+            await performStaffAction(button, { action: 'triage_restore_request', id, status, note }, status === 'needs_admin' ? 'Restore request sent to an administrator.' : 'Restore request assigned for review.');
+            break;
+        }
+        case 'community-view':
+            await showCommunityScript(id);
+            break;
+        case 'community-approve':
+            if (window.confirm('Approve this script for the public library? A backup will be created first.')) {
+                await performStaffAction(button, { action: 'moderate_community_script', id, status: 'approved' }, 'Community script approved.');
+            }
+            break;
+        case 'community-reject': {
+            const note = window.prompt('Reason for rejecting this submission (at least 8 characters):');
+            if (note === null) break;
+            if (note.trim().length < 8) {
+                message(feedback, 'Write at least 8 characters before rejecting this submission.', 'error');
+                break;
+            }
+            await performStaffAction(button, { action: 'moderate_community_script', id, status: 'rejected', note }, 'Community script rejected.');
+            break;
+        }
+    }
+}
+
+function bindStaffAnnouncementForm() {
+    const form = document.getElementById('staff-announcement-form');
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const expiresInput = document.getElementById('staff-announcement-expires').value;
+        const expiresAt = expiresInput ? new Date(expiresInput).getTime() : 0;
+        if (expiresInput && !Number.isFinite(expiresAt)) {
+            message(feedback, 'Choose a valid expiration time.', 'error');
+            return;
+        }
+        const payload = {
+            action: 'save_announcement',
+            id: document.getElementById('staff-announcement-id').value,
+            title: document.getElementById('staff-announcement-title').value.trim(),
+            message: document.getElementById('staff-announcement-message').value.trim(),
+            kind: document.getElementById('staff-announcement-kind').value,
+            displayMode: document.getElementById('staff-announcement-display').value,
+            link: document.getElementById('staff-announcement-link').value.trim(),
+            linkLabel: document.getElementById('staff-announcement-link-label').value.trim(),
+            expiresAt,
+            dismissible: document.getElementById('staff-announcement-dismissible').checked,
+            enabled: document.getElementById('staff-announcement-enabled').checked
+        };
+        const submit = form.querySelector('button[type="submit"]');
+        await performStaffAction(submit, payload, payload.enabled ? 'Announcement saved and published.' : 'Announcement saved and paused.');
+    });
+    document.getElementById('staff-announcement-new').addEventListener('click', () => fillAnnouncementForm());
+    document.getElementById('staff-announcement-cancel').addEventListener('click', resetAnnouncementForm);
+}
+
 async function loadDashboard() {
     if (!currentUser) return;
+    if (staffExpiryTimer) clearTimeout(staffExpiryTimer);
     const uid = currentUser.uid;
     grantedScopes = [];
     document.getElementById('staff-source-list').replaceChildren();
+    document.getElementById('staff-community-script-detail').replaceChildren();
+    resetAnnouncementForm();
     document.getElementById('staff-account-name').textContent = currentUser.email || (currentUser.isAnonymous ? 'Guest account' : 'VoidedX account');
     document.getElementById('staff-account-uid').textContent = `Account ID: ${uid}`;
     document.getElementById('staff-account-uid').title = 'Give this account ID to the administrator for a staff grant.';
@@ -125,6 +385,7 @@ async function loadDashboard() {
         if (!currentUser || currentUser.uid !== uid) return;
         grantedScopes = result.staff.scopes || [];
         document.getElementById('staff-expiry').textContent = `Staff access expires ${dateText(result.staff.expiresAt)}.`;
+        scheduleStaffExpiry(Number(result.staff.expiresAt) || 0);
         showScopes(grantedScopes);
         document.getElementById('staff-grant-summary').classList.remove('hidden');
         message(feedback, 'Staff access is active for this account.', 'success');
@@ -137,6 +398,15 @@ async function loadDashboard() {
         toggleSection('staff-ideas-section', grantedScopes.includes('ideas'));
         toggleSection('staff-restore-section', grantedScopes.includes('restoreRequests'));
         toggleSection('staff-community-scripts-section', grantedScopes.includes('communityScripts'));
+        const canManageAnnouncements = grantedScopes.includes('announcementManage');
+        const canTriageIdeas = grantedScopes.includes('ideaTriage');
+        const canTriageRestore = grantedScopes.includes('restoreTriage');
+        const canModerateScripts = grantedScopes.includes('communityModeration');
+        document.getElementById('staff-announcement-new').classList.toggle('hidden', !canManageAnnouncements);
+        document.getElementById('staff-announcement-help').classList.toggle('hidden', !canManageAnnouncements);
+        document.getElementById('staff-ideas-help').classList.toggle('hidden', !canTriageIdeas);
+        document.getElementById('staff-restore-help').classList.toggle('hidden', !canTriageRestore);
+        document.getElementById('staff-community-scripts-help').classList.toggle('hidden', !canModerateScripts);
 
         document.getElementById('staff-vault-count').textContent = String(data.vaults?.length || 0);
         renderList('staff-vault-list', data.vaults, item => {
@@ -156,10 +426,10 @@ async function loadDashboard() {
             document.getElementById('staff-executions-total').textContent = Number(data.executions.lifetime || 0).toLocaleString();
             renderList('staff-executions-daily', data.executions.daily, item => textItem(item.date, `${Number(item.executions || 0).toLocaleString()} executions`), 'No daily activity yet.');
         }
-        renderList('staff-announcement-list', data.announcements, item => textItem(item.title, `${item.enabled ? 'Active' : 'Paused'} · ${item.message}`), 'No announcements.');
-        renderList('staff-ideas-list', data.ideas, item => textItem(item.name, `${item.status} · ${dateText(item.createdAt)} · ${item.idea}`), 'No feature ideas.');
-        renderList('staff-restore-list', data.restoreRequests, item => textItem(item.title, `${item.backupType === 'communityScript' ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`} · ${item.status} · ${dateText(item.createdAt)}`), 'No restore requests.');
-        renderList('staff-community-scripts-list', data.communityScripts, item => textItem(item.title, `${item.game} · ${item.category} · ${dateText(item.createdAt)}`), 'No pending community scripts.');
+        renderAnnouncements(data.announcements || [], canManageAnnouncements);
+        renderIdeas(data.ideas || [], canTriageIdeas);
+        renderRestoreRequests(data.restoreRequests || [], canTriageRestore);
+        renderCommunityScripts(data.communityScripts || [], canModerateScripts);
     } catch (error) {
         if (!currentUser || currentUser.uid !== uid) return;
         dashboard.classList.add('hidden');
@@ -188,14 +458,16 @@ document.getElementById('staff-vault-list').addEventListener('click', event => {
     const button = event.target.closest('button[data-view-source]');
     if (button) showVaultSource(button.dataset.viewSource);
 });
+document.getElementById('staff-dashboard').addEventListener('click', handleStaffActionClick);
+bindStaffAnnouncementForm();
 onAuthStateChanged(auth, user => {
+    if (staffExpiryTimer) clearTimeout(staffExpiryTimer);
     currentUser = user;
     grantedScopes = [];
     loginPanel.classList.toggle('hidden', !!user);
     if (!user) {
         accountCard.classList.add('hidden');
-        dashboard.classList.add('hidden');
-        document.getElementById('staff-source-list').replaceChildren();
+        clearStaffWorkspace();
         document.getElementById('staff-sign-out').classList.add('hidden');
         return;
     }

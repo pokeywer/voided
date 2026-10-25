@@ -95,10 +95,10 @@ export default async function handler(req, res) {
             const duplicate = await db.collection('restoreRequests').where('backupId', '==', backupId).get();
             const pending = duplicate.docs.find(doc => doc.data().ownerUid === user.uid
                 && (doc.data().backupType === 'communityScript' ? 'communityScript' : 'vault') === backupType
-                && doc.data().status === 'pending');
+                && ['pending', 'in_review', 'needs_admin'].includes(String(doc.data().status || 'pending')));
             if (pending) return json(res, 200, { ok: true, requestId: pending.id, alreadyRequested: true });
             const ownerRequests = await db.collection('restoreRequests').where('ownerUid', '==', user.uid).get();
-            const pendingCount = ownerRequests.docs.filter(doc => doc.data().status === 'pending').length;
+            const pendingCount = ownerRequests.docs.filter(doc => ['pending', 'in_review', 'needs_admin'].includes(String(doc.data().status || 'pending'))).length;
             if (pendingCount >= 10) return json(res, 429, { ok: false, message: 'You already have 10 restore requests waiting. Ask an administrator to review them first.' });
 
             const requestRef = db.collection('restoreRequests').doc();
@@ -120,6 +120,9 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: 'Choose a supported backup action.' });
     } catch (error) {
         console.error('Vault backup request failed:', error);
-        return json(res, 500, { ok: false, message: 'Could not complete the backup request.' });
+        const message = error?.message === 'This vault is too large to back up safely.'
+            ? 'This vault is too large to back up safely, so it was not changed.'
+            : 'Could not create a safe backup, so the vault was not changed. Please try again.';
+        return json(res, 500, { ok: false, message });
     }
 }

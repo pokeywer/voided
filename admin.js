@@ -184,14 +184,15 @@ function renderAdminOperations(result) {
         adminRestoreRequests.appendChild(empty);
     } else {
         for (const item of result.requests) {
-            const actions = item.status === 'pending' ? [
+            const actions = ['pending', 'in_review', 'needs_admin'].includes(item.status) ? [
                 { action: 'restore-request', label: 'Restore', icon: 'fa-rotate-left', backupId: item.backupId, backupType: item.backupType, requestId: item.id },
                 { action: 'dismiss-request', label: 'Decline', icon: 'fa-xmark', requestId: item.id, danger: true }
             ] : [];
             const isScript = item.backupType === 'communityScript';
+            const staffNotes = (item.staffNotes || []).map(note => `${note.email || 'Staff'}: ${note.text}`).join(' · ');
             adminRestoreRequests.appendChild(operationLine(
                 item.title || (isScript ? 'Untitled script' : 'Untitled Vault'),
-                `${item.ownerEmail || item.ownerUid} · ${isScript ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`} · ${item.status} · ${formatDate(item.createdAt)}`,
+                `${item.ownerEmail || item.ownerUid} · ${isScript ? `Community script ${item.scriptId}` : `Vault ${item.vaultId}`} · ${item.status} · ${formatDate(item.createdAt)}${staffNotes ? ` · Staff notes: ${staffNotes}` : ''}`,
                 actions
             ));
         }
@@ -225,7 +226,9 @@ function renderAdminOperations(result) {
             const state = item.active ? `Active until ${formatDate(item.expiresAt)}` : 'Expired or disabled';
             const scopeLabels = item.scopes.map(scope => ({
                 vaults: 'Vaults', vaultSource: 'Source', executions: 'Executions', announcements: 'Announcements',
-                ideas: 'Ideas', restoreRequests: 'Restore requests', communityScripts: 'Community scripts'
+                announcementManage: 'Manage announcements', ideas: 'Ideas', ideaTriage: 'Triage ideas',
+                restoreRequests: 'Restore requests', restoreTriage: 'Triage restore requests',
+                communityScripts: 'Community scripts', communityModeration: 'Moderate community scripts'
             }[scope] || scope));
             const actions = item.active ? [{ action: 'revoke-staff', label: 'Revoke', icon: 'fa-user-slash', uid: item.uid, danger: true }] : [];
             adminStaffList.appendChild(operationLine(item.email || 'Guest account', `${item.uid} · ${state} · ${scopeLabels.join(', ')}`, actions));
@@ -989,14 +992,23 @@ document.getElementById('admin-staff-form').addEventListener('submit', async eve
     } catch (error) { setOperationsStatus(error.message, 'error'); }
     finally { setLoading(button, false); }
 });
-const staffVaultScope = document.querySelector('#admin-staff-form input[value="vaults"]');
-const staffSourceScope = document.querySelector('#admin-staff-form input[value="vaultSource"]');
-staffSourceScope.addEventListener('change', () => {
-    if (staffSourceScope.checked) staffVaultScope.checked = true;
-});
-staffVaultScope.addEventListener('change', () => {
-    if (!staffVaultScope.checked) staffSourceScope.checked = false;
-});
+const staffScopeDependencies = [
+    ['vaultSource', 'vaults'],
+    ['announcementManage', 'announcements'],
+    ['ideaTriage', 'ideas'],
+    ['restoreTriage', 'restoreRequests'],
+    ['communityModeration', 'communityScripts']
+];
+for (const [actionScope, viewScope] of staffScopeDependencies) {
+    const actionInput = document.querySelector(`#admin-staff-form input[value="${actionScope}"]`);
+    const viewInput = document.querySelector(`#admin-staff-form input[value="${viewScope}"]`);
+    actionInput.addEventListener('change', () => {
+        if (actionInput.checked) viewInput.checked = true;
+    });
+    viewInput.addEventListener('change', () => {
+        if (!viewInput.checked) actionInput.checked = false;
+    });
+}
 document.querySelector('.admin-operations-grid').addEventListener('click', async event => {
     const button = event.target.closest('button[data-operation-action]');
     if (!button) return;
