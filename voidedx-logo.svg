@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">VoidedX logo</title>
+  <desc id="desc">Four sharp violet and cyan blades orbit a glowing center.</desc>
+  <defs>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#4338ca"/></linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#0284c7"/></linearGradient>
+    <radialGradient id="core"><stop stop-color="#fff"/><stop offset=".18" stop-color="#67e8f9"/><stop offset=".62" stop-color="#6366f1"/><stop offset="1" stop-color="#111827"/></radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M245 235 42 22l187 260-17-68 33 21Z" fill="url(#violet)" stroke="#c4b5fd" stroke-width="5"/>
+    <path d="M267 235 470 22 283 282l17-68-33 21Z" fill="url(#cyan)" stroke="#a5f3fc" stroke-width="5"/>
+    <path d="M245 277 42 490l187-260-17 68 33-21Z" fill="url(#violet)" stroke="#c4b5fd" stroke-width="5"/>
+    <path d="M267 277 470 490 283 230l17 68-33-21Z" fill="url(#cyan)" stroke="#a5f3fc" stroke-width="5"/>
+    <path d="m80 64 140 159m212-159L292 223M80 448l140-159m212 159L292 289" stroke="#e0e7ff" stroke-opacity=".34" stroke-width="4"/>
+    <circle cx="256" cy="256" r="59" stroke="#22d3ee" stroke-opacity=".7" stroke-width="6" filter="url(#glow)"/>
+    <circle cx="256" cy="256" r="35" fill="url(#core)" stroke="#c4b5fd" stroke-width="4" filter="url(#glow)"/>
+  </g>
+</svg>
