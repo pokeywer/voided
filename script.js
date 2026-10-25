@@ -419,11 +419,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function getObfuscationSettings(code) {
         const enabled = !!(chkObfuscation && chkObfuscation.checked);
         const requestedLevel = obfuscationLevelSelect ? obfuscationLevelSelect.value : 'auto';
-        const vmProtection = enabled && !!(chkVmProtection && chkVmProtection.checked);
+        const absoluteMode = enabled && requestedLevel === 'absolute';
+        const vmProtection = absoluteMode || (enabled && !!(chkVmProtection && chkVmProtection.checked));
         const protection = {
-            tamperCheck: !!(chkTamperCheck && chkTamperCheck.checked),
+            tamperCheck: absoluteMode || !!(chkTamperCheck && chkTamperCheck.checked),
             vmProtection,
-            expandedTransforms: !!(chkExpandedTransforms && chkExpandedTransforms.checked)
+            expandedTransforms: absoluteMode || !!(chkExpandedTransforms && chkExpandedTransforms.checked)
         };
         return {
             enabled,
@@ -1062,14 +1063,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkObfuscation) chkObfuscation.checked = data.obfuscationEnabled === true;
         if (chkFastLoadCache) chkFastLoadCache.checked = data.fastLoadCacheEnabled === true;
         if (obfuscationLevelSelect) {
-            obfuscationLevelSelect.value = ['auto', 'low', 'medium', 'high'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
+            obfuscationLevelSelect.value = ['auto', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
         }
         if (chkTamperCheck) chkTamperCheck.checked = data.tamperCheckEnabled === true;
         if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
         if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 6) {
-            showToast('This vault has an older obfuscation copy. Save it again to regenerate it. Enable VM protection first if you want the experimental VM pass.', 'warning', 10000);
+            showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
         setProtectionKeyStatus(!!data.requireKey);
@@ -1120,11 +1121,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chkFastLoadCache) chkFastLoadCache.addEventListener('change', () => setEditorDirty(true));
     function syncObfuscationProtectionControls() {
         const obfuscationOn = !!(chkObfuscation && chkObfuscation.checked);
+        const absoluteMode = obfuscationOn && !!(obfuscationLevelSelect && obfuscationLevelSelect.value === 'absolute');
         if (!obfuscationOn && chkVmProtection) chkVmProtection.checked = false;
-        if (chkVmProtection) chkVmProtection.disabled = !obfuscationOn;
+        if (absoluteMode) {
+            if (chkTamperCheck) chkTamperCheck.checked = true;
+            if (chkVmProtection) chkVmProtection.checked = true;
+            if (chkExpandedTransforms) chkExpandedTransforms.checked = true;
+        }
+        if (chkVmProtection) chkVmProtection.disabled = !obfuscationOn || absoluteMode;
         if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn;
-        if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn;
-        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn;
+        if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn || absoluteMode;
+        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || absoluteMode;
     }
 
     if (chkObfuscation) chkObfuscation.addEventListener('change', () => {
@@ -1134,6 +1141,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setEditorDirty(true);
     });
     if (obfuscationLevelSelect) obfuscationLevelSelect.addEventListener('change', () => {
+        syncObfuscationProtectionControls();
         obfuscationRevision += 1;
         markObfuscatedPreviewStale();
         setEditorDirty(true);

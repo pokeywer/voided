@@ -195,25 +195,32 @@ function markAdminVaultDirty() {
 
 function getAdminVaultObfuscationSettings() {
     const enabled = adminVaultObfuscation.checked;
-    const vmProtection = enabled && adminVaultVm.checked;
+    const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
+    const vmProtection = absoluteMode || (enabled && adminVaultVm.checked);
     return {
         enabled,
         requestedLevel: adminVaultLevel.value,
         effectiveLevel: resolveObfuscationLevel(adminVaultSource.value, adminVaultLevel.value),
         protection: {
-            tamperCheck: adminVaultTamper.checked,
+            tamperCheck: absoluteMode || adminVaultTamper.checked,
             vmProtection,
-            expandedTransforms: adminVaultSplitting.checked
+            expandedTransforms: absoluteMode || adminVaultSplitting.checked
         }
     };
 }
 
 function syncAdminVaultProtectionControls() {
     const enabled = !!activeAdminVault && adminVaultObfuscation.checked;
+    const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
+    if (absoluteMode) {
+        adminVaultTamper.checked = true;
+        adminVaultVm.checked = true;
+        adminVaultSplitting.checked = true;
+    }
     adminVaultLevel.disabled = !enabled;
-    adminVaultTamper.disabled = !enabled;
-    adminVaultVm.disabled = !activeAdminVault || !adminVaultObfuscation.checked;
-    adminVaultSplitting.disabled = !enabled;
+    adminVaultTamper.disabled = !enabled || absoluteMode;
+    adminVaultVm.disabled = !enabled || absoluteMode;
+    adminVaultSplitting.disabled = !enabled || absoluteMode;
     if (adminVaultPreviewButton) adminVaultPreviewButton.disabled = !enabled || !activeAdminVault;
 }
 
@@ -280,7 +287,7 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
         adminVaultSource.value = vault.source || '';
         adminVaultExecutions.value = String(Math.max(0, Number(vault.executions) || 0));
         adminVaultObfuscation.checked = vault.obfuscationEnabled === true;
-        adminVaultLevel.value = ['auto', 'low', 'medium', 'high'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
+        adminVaultLevel.value = ['auto', 'low', 'medium', 'high', 'absolute'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
         adminVaultTamper.checked = vault.tamperCheckEnabled === true;
         adminVaultVm.checked = vault.vmProtectionEnabled === true;
         adminVaultSplitting.checked = vault.expandedTransformsEnabled === true;
@@ -842,7 +849,10 @@ adminVaultObfuscation.addEventListener('change', () => {
     syncAdminVaultProtectionControls();
     markAdminVaultDirty();
 });
-adminVaultLevel.addEventListener('change', markAdminVaultDirty);
+adminVaultLevel.addEventListener('change', () => {
+    syncAdminVaultProtectionControls();
+    markAdminVaultDirty();
+});
 adminVaultTamper.addEventListener('change', markAdminVaultDirty);
 adminVaultSplitting.addEventListener('change', markAdminVaultDirty);
 adminVaultVm.addEventListener('change', () => {

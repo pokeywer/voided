@@ -16,7 +16,7 @@ export const MAX_OBFUSCATED_OUTPUT_BYTES = 32 * 1024 * 1024;
 export const MAX_STORED_OBFUSCATED_OUTPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
 
-const PRESETS = Object.freeze({ low: 'Weak', medium: 'Medium', high: 'Strong' });
+const PRESETS = Object.freeze({ low: 'Weak', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
 const MAX_PROMETHEUS_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -43,11 +43,12 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
     }
 
     const preset = PRESETS[level];
-    if (!preset) return Promise.reject(new Error('Choose Auto, Low, Medium, or High obfuscation.'));
+    if (!preset) return Promise.reject(new Error('Choose Auto, Low, Medium, High, or Absolute obfuscation.'));
 
-    const tamperCheck = protection.tamperCheck === true;
-    const vmProtection = protection.vmProtection === true;
-    const expandedTransforms = protection.expandedTransforms === true;
+    const absoluteMode = level === 'absolute';
+    const tamperCheck = absoluteMode || protection.tamperCheck === true;
+    const vmProtection = absoluteMode || protection.vmProtection === true;
+    const expandedTransforms = absoluteMode || protection.expandedTransforms === true;
     if (lastSuccessfulObfuscation?.source === source
         && lastSuccessfulObfuscation.level === level
         && lastSuccessfulObfuscation.tamperCheck === tamperCheck
@@ -62,7 +63,8 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
         let timeoutId;
         let settled = false;
         const jobId = `voidedx-${Date.now()}-${++nextJobId}`;
-        const timeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(MIN_JOB_TIMEOUT_MS, Math.ceil(sourceBytes / 10_240) * 8_000));
+        const timeoutPer10KiB = absoluteMode ? 12_000 : 8_000;
+        const timeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(MIN_JOB_TIMEOUT_MS, Math.ceil(sourceBytes / 10_240) * timeoutPer10KiB));
 
         const finish = (error, output, outputBytes) => {
             if (settled) return;
@@ -84,7 +86,9 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
 
         try {
             worker = new Worker(workerUrl, { type: 'module' });
-            timeoutId = setTimeout(() => finish(new Error('Prometheus timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
+            timeoutId = setTimeout(() => finish(new Error(absoluteMode
+                ? 'Absolute obfuscation timed out. Try High strength or reduce the script size.'
+                : 'Prometheus timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
             worker.addEventListener('message', event => {
                 const message = event.data;
                 if (!message || message.id !== jobId || message.type !== 'result') return;

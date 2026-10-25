@@ -121,7 +121,7 @@
                             <span class="switch"></span>
                         </label>
                         <label class="toggle-row">
-                            <span class="toggle-label-stack"><span>Fast repeat load · verified cache</span><small>First run downloads; later runs reuse an unchanged local copy</small></span>
+                            <span class="toggle-label-stack"><span>Fast execution but not safe</span><small>First run downloads the script; later runs use the saved copy</small></span>
                             <input type="checkbox" id="chk-fast-load-cache">
                             <span class="switch"></span>
                         </label>
@@ -132,6 +132,7 @@
                                 <option value="low">Low</option>
                                 <option value="medium">Medium</option>
                                 <option value="high">High (slower)</option>
+                                <option value="absolute">Absolute (slowest · experimental VM)</option>
                             </select>
                         </div>
                         <div class="obfuscation-protection-options">
@@ -158,7 +159,8 @@
                         </label>
                     </div>
                     <p class="obfuscation-note"><strong>VM warning:</strong> This experimental mode can slow down or break scripts, especially scripts with unsupported Luau syntax or unusual runtime behavior. Keep a readable backup and test the generated copy in a private place before replacing a live vault. If VM compilation fails, the save is stopped and the existing vault stays unchanged.</p>
-                    <p class="obfuscation-note"><strong>Fast repeat load:</strong> Requires executor file and SHA-256 support. The loader still checks the server and key on every run, and only reuses a copy whose SHA-256 matches the current payload. Cached code is still readable on the device; this is a speed option, not extra obfuscation.</p>
+                    <p class="obfuscation-note"><strong>Absolute:</strong> Uses the strongest available preset and automatically turns on VM protection, tamper checking, and maximum string splitting. It is the slowest option, can break scripts, and may create output too large to save in a vault. Test it first; no obfuscator can make client code impossible to inspect.</p>
+                    <p class="obfuscation-note"><strong>What this means:</strong> The server still checks access every time. The saved script can be read or changed on the executor, so use this only if faster repeat loading matters more than that risk. If file or hash support is missing, the loader downloads the script normally.</p>
                     <p class="obfuscation-credit">Voidedx On Top!<a href="https://voidedx.vercel.app" target="_blank" rel="noopener noreferrer">https://voidedx.vercel.app</a></p>
                     <button type="button" id="backup-now-btn" class="btn-ghost backup-now-btn"><i class="fa-solid fa-download"></i> Download backup now</button>
                     <div class="protection-hint">

@@ -8,7 +8,7 @@ const PAGE_SIZE = 100;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENT_ESTIMATE_BYTES = 870 * 1024;
-const LEVELS = new Set(['auto', 'low', 'medium', 'high']);
+const LEVELS = new Set(['auto', 'low', 'medium', 'high', 'absolute']);
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -134,9 +134,10 @@ export default async function handler(req, res) {
 
         const obfuscationEnabled = body.obfuscationEnabled === true;
         const obfuscationLevel = LEVELS.has(body.obfuscationLevel) ? body.obfuscationLevel : 'auto';
-        const vmProtectionEnabled = obfuscationEnabled && body.vmProtectionEnabled === true;
-        const tamperCheckEnabled = obfuscationEnabled && body.tamperCheckEnabled === true;
-        const expandedTransformsEnabled = obfuscationEnabled && body.expandedTransformsEnabled === true;
+        const absoluteMode = obfuscationEnabled && obfuscationLevel === 'absolute';
+        const vmProtectionEnabled = obfuscationEnabled && (absoluteMode || body.vmProtectionEnabled === true);
+        const tamperCheckEnabled = obfuscationEnabled && (absoluteMode || body.tamperCheckEnabled === true);
+        const expandedTransformsEnabled = obfuscationEnabled && (absoluteMode || body.expandedTransformsEnabled === true);
         let obfuscatedCode = null;
         let obfuscatedCodeEncoding = null;
         let obfuscatedCodeLevel = null;
@@ -148,7 +149,7 @@ export default async function handler(req, res) {
             }
             obfuscatedCode = body.obfuscatedCode;
             obfuscatedCodeEncoding = body.obfuscatedCodeEncoding;
-            obfuscatedCodeLevel = ['low', 'medium', 'high'].includes(body.obfuscatedCodeLevel) ? body.obfuscatedCodeLevel : null;
+            obfuscatedCodeLevel = ['low', 'medium', 'high', 'absolute'].includes(body.obfuscatedCodeLevel) ? body.obfuscatedCodeLevel : null;
             if (!obfuscatedCodeLevel) return json(res, 400, { ok: false, message: 'The obfuscation strength is missing.' });
         }
 
