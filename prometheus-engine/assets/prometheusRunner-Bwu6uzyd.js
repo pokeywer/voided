@@ -10885,10 +10885,38 @@ local ok, outputOrError = xpcall(function()
   config.LuaVersion = ${d(e.luaVersion)}
   if config.LuaVersion == "LuaU" then
     if ${e.vmProtection === true ? `true` : `false`} then
-      -- Vmify replaces the whole AST, so keep it isolated from other passes.
-      -- The VM runs as the final transform and preserves global lookups through
-      -- the captured Luau environment instead of splitting Roblox API names.
-      config.Steps = { { Name = "Vmify", Settings = {} } }
+      -- Apply only compatibility-reviewed source transforms before VM compilation.
+      -- Vmify must remain last because it replaces the AST.
+      config.Steps = {}
+      local maxStringChunk = ${e.expandedTransforms === true ? `2` : e.preset === "Strong" ? `4` : e.preset === "Medium" ? `5` : `7`}
+      table.insert(config.Steps, {
+        Name = "SplitStrings",
+        Settings = {
+          Threshold = 1,
+          MinLength = 2,
+          MaxLength = maxStringChunk,
+          ConcatenationType = "strcat",
+        },
+      })
+      if ${e.tamperCheck === true ? `true` : `false`} then
+        table.insert(config.Steps, {
+          Name = "WatermarkCheck",
+          Settings = { Content = "VoidedX:" .. tostring(config.Seed) },
+        })
+      end
+      if preset ~= "Weak" then
+        local numericSettings = {
+          Threshold = 1,
+          InternalThreshold = 0.2,
+          NumberRepresentationMutation = false,
+          AllowedNumberRepresentations = { "hex", "normal" },
+        }
+        if preset == "Strong" then
+          numericSettings.NumberRepresentationMutation = true
+        end
+        table.insert(config.Steps, { Name = "NumbersToExpressions", Settings = numericSettings })
+      end
+      table.insert(config.Steps, { Name = "Vmify", Settings = {} })
     else
       -- Keep Roblox API strings intact and omit transformations that can corrupt or break Luau.
       local incompatibleSteps = {

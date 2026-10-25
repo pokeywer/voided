@@ -420,9 +420,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const requestedLevel = obfuscationLevelSelect ? obfuscationLevelSelect.value : 'auto';
         const vmProtection = enabled && !!(chkVmProtection && chkVmProtection.checked);
         const protection = {
-            tamperCheck: !vmProtection && !!(chkTamperCheck && chkTamperCheck.checked),
+            tamperCheck: !!(chkTamperCheck && chkTamperCheck.checked),
             vmProtection,
-            expandedTransforms: !vmProtection && !!(chkExpandedTransforms && chkExpandedTransforms.checked)
+            expandedTransforms: !!(chkExpandedTransforms && chkExpandedTransforms.checked)
         };
         return {
             enabled,
@@ -1033,7 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 4) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 5) {
             showToast('This vault has an older Luau obfuscation copy. Save it again to regenerate with the current profile.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1085,15 +1085,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncObfuscationProtectionControls() {
         const obfuscationOn = !!(chkObfuscation && chkObfuscation.checked);
         if (!obfuscationOn && chkVmProtection) chkVmProtection.checked = false;
-        const vmOn = obfuscationOn && !!(chkVmProtection && chkVmProtection.checked);
-        if (vmOn) {
-            if (chkTamperCheck) chkTamperCheck.checked = false;
-            if (chkExpandedTransforms) chkExpandedTransforms.checked = false;
-        }
         if (chkVmProtection) chkVmProtection.disabled = !obfuscationOn;
-        if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn || vmOn;
-        if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn || vmOn;
-        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || vmOn;
+        if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn;
+        if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn;
+        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn;
     }
 
     if (chkObfuscation) chkObfuscation.addEventListener('change', () => {
@@ -1354,7 +1349,7 @@ document.addEventListener('DOMContentLoaded', () => {
             code: encodedSourceCode.value,
             codeEncoding: encodedSourceCode.encoding,
             obfuscationEnabled,
-            obfuscationProfileVersion: 4,
+            obfuscationProfileVersion: 5,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

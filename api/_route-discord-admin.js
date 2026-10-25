@@ -31,7 +31,7 @@ function configBody(data = {}) {
     };
 }
 
-async function discordRequest(path, init = {}) {
+async function discordRequest(path, init = {}, retryCount = 0) {
     const token = getBotToken();
     if (!token) throw new Error('Set BOT_TOKEN in the Vercel project environment before connecting the bot.');
     const response = await fetch(`https://discord.com/api/v10${path}`, {
@@ -47,6 +47,16 @@ async function discordRequest(path, init = {}) {
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
     if (!response.ok) {
+        if (response.status === 429) {
+            const retryAfter = Math.max(0, Number(response.headers.get('retry-after')) || Number(body.retry_after) || 0);
+            const waitMs = Math.ceil(retryAfter * 1000) + 150;
+            if (retryCount < 2 && waitMs <= 8000) {
+                await new Promise(resolve => setTimeout(resolve, Math.max(250, waitMs)));
+                return discordRequest(path, init, retryCount + 1);
+            }
+            const waitSeconds = Math.max(1, Math.ceil(retryAfter));
+            throw new Error(`Discord is rate-limiting setup. Wait about ${waitSeconds} seconds, then try again.`);
+        }
         const detail = String(body.message || `Discord returned HTTP ${response.status}.`).slice(0, 300);
         throw new Error(detail);
     }
@@ -54,15 +64,28 @@ async function discordRequest(path, init = {}) {
 }
 
 async function registerCommands() {
-    const commands = discordCommands();
-    let registered = 0;
-    for (const command of commands) {
-        await discordRequest(`/applications/${DISCORD_APPLICATION_ID}/guilds/${DISCORD_GUILD_ID}/commands`, {
-            method: 'POST', body: JSON.stringify(command)
+    const route = `/applications/${DISCORD_APPLICATION_ID}/guilds/${DISCORD_GUILD_ID}/commands`;
+    const managed = discordCommands();
+    const managedKeys = new Set(managed.map(command => `${command.type || 1}:${command.name}`));
+    const current = await discordRequest(route);
+    const preserved = (Array.isArray(current) ? current : [])
+        .filter(command => command?.name && !managedKeys.has(`${command.type || 1}:${command.name}`))
+        .map(command => {
+            const allowedFields = [
+                'id', 'name', 'type', 'description', 'options', 'default_member_permissions',
+                'dm_permission', 'default_permission', 'name_localizations', 'description_localizations',
+                'nsfw', 'contexts', 'integration_types', 'handler'
+            ];
+            return Object.fromEntries(allowedFields
+                .filter(field => Object.prototype.hasOwnProperty.call(command, field))
+                .map(field => [field, command[field]]));
         });
-        registered += 1;
-    }
-    return registered;
+    const result = await discordRequest(route, {
+        method: 'PUT',
+        body: JSON.stringify([...preserved, ...managed])
+    });
+    if (!Array.isArray(result)) throw new Error('Discord did not confirm the command update.');
+    return result.filter(command => managedKeys.has(`${command.type || 1}:${command.name}`)).length;
 }
 
 async function publishPanels() {
@@ -81,12 +104,21 @@ async function publishPanels() {
             continue;
         }
         const embed = {
-            title: `VoidedX · ${channel.label}`,
+            title: channel.key === 'commands' ? 'VoidedX Creator Panel' : `VoidedX · ${channel.label}`,
             description: messages[channel.key].slice(0, 3800),
             color: 0x12b8d0,
             footer: { text: 'VOIDEDX  •  Official community panel' }
         };
-        const messagePayload = { embeds: [embed], allowed_mentions: { parse: [] } };
+        const messagePayload = {
+            embeds: [embed],
+            allowed_mentions: { parse: [] },
+            ...(channel.key === 'commands' ? {
+                components: [{ type: 1, components: [
+                    { type: 2, style: 5, label: 'Open Creator Panel', url: `${DISCORD_SITE_URL}/panel.html` },
+                    { type: 2, style: 5, label: 'Browse Scripts', url: `${DISCORD_SITE_URL}/scripts` }
+                ] }]
+            } : {})
+        };
         const previous = published[channel.key];
         try {
             const channelInfo = await discordRequest(`/channels/${channelId}`);
@@ -188,7 +220,7 @@ export default async function handler(req, res) {
     try {
         if (body.action === 'register') {
             const count = await registerCommands();
-            return json(res, 200, { ok: true, message: `Registered ${count} slash commands for the configured VoidedX server.`, count });
+            return json(res, 200, { ok: true, message: `Registered or refreshed ${count} VoidedX slash commands for the configured server.`, count });
         }
         if (body.action === 'publish') {
             const results = await publishPanels();

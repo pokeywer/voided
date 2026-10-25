@@ -120,8 +120,8 @@ function setBusy(button, busy, label) {
 function updateReadiness(config) {
     const status = document.getElementById('dc-bot-status');
     if (config.tokenConfigured) {
-        status.className = 'dc-status-pill ready';
-        status.innerHTML = '<i class="fa-solid fa-circle-check"></i> Bot token configured';
+        status.className = 'dc-status-pill warn';
+        status.innerHTML = '<i class="fa-solid fa-circle-info"></i> Token ready · online worker required';
     } else {
         status.className = 'dc-status-pill';
         status.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Add bot token in Vercel';

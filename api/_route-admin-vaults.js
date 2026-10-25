@@ -132,8 +132,8 @@ export default async function handler(req, res) {
         const obfuscationEnabled = body.obfuscationEnabled === true;
         const obfuscationLevel = LEVELS.has(body.obfuscationLevel) ? body.obfuscationLevel : 'auto';
         const vmProtectionEnabled = obfuscationEnabled && body.vmProtectionEnabled === true;
-        const tamperCheckEnabled = obfuscationEnabled && !vmProtectionEnabled && body.tamperCheckEnabled === true;
-        const expandedTransformsEnabled = obfuscationEnabled && !vmProtectionEnabled && body.expandedTransformsEnabled === true;
+        const tamperCheckEnabled = obfuscationEnabled && body.tamperCheckEnabled === true;
+        const expandedTransformsEnabled = obfuscationEnabled && body.expandedTransformsEnabled === true;
         let obfuscatedCode = null;
         let obfuscatedCodeEncoding = null;
         let obfuscatedCodeLevel = null;
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
             code: body.code,
             codeEncoding,
             obfuscationEnabled,
-            obfuscationProfileVersion: 4,
+            obfuscationProfileVersion: 5,
             obfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

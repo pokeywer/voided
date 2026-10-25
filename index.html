@@ -136,7 +136,7 @@
                                 <span class="switch"></span>
                             </label>
                             <label class="toggle-row">
-                                <span class="toggle-label-stack"><span>VM protection</span><small>Experimental: runs the VM pass alone; other protection options are disabled while it is on</small></span>
+                                <span class="toggle-label-stack"><span>VM protection</span><small>Experimental: VM plus selected compatible checks; strength and supported options stay active</small></span>
                                 <input type="checkbox" id="chk-vm-protection">
                                 <span class="switch"></span>
                             </label>
@@ -152,7 +152,7 @@
                             <span class="switch"></span>
                         </label>
                     </div>
-                    <p class="obfuscation-note"></p>
+                    <p class="obfuscation-note"><strong>VM warning:</strong> This experimental mode can slow down or break scripts, especially scripts with unsupported Luau syntax or unusual runtime behavior. Keep a readable backup and test the generated copy in a private place before replacing a live vault. If VM compilation fails, the save is stopped and the existing vault stays unchanged.</p>
                     <p class="obfuscation-credit">Voidedx On Top!<a href="https://voidedx.vercel.app" target="_blank" rel="noopener noreferrer">https://voidedx.vercel.app</a></p>
                     <button type="button" id="backup-now-btn" class="btn-ghost backup-now-btn"><i class="fa-solid fa-download"></i> Download backup now</button>
                     <div class="protection-hint">

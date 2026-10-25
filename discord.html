@@ -19,6 +19,7 @@
         .dc-hero p,.dc-muted { color:var(--text-muted); font-size:12px; line-height:1.65; }
         .dc-status-pill { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border-color); background:rgba(255,255,255,.025); border-radius:999px; padding:7px 11px; color:var(--text-muted); font-size:10px; font-weight:800; white-space:nowrap; }
         .dc-status-pill.ready { color:#86efac; border-color:rgba(34,197,94,.28); background:rgba(34,197,94,.07); }
+        .dc-status-pill.warn { color:#fde68a; border-color:rgba(250,204,21,.26); background:rgba(250,204,21,.06); }
         .dc-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
         .dc-card { min-width:0; padding:18px; border:1px solid var(--border-color); border-radius:13px; background:var(--bg-surface); }
         .dc-card h2 { margin:0 0 7px; font-size:15px; }
@@ -90,13 +91,13 @@
                         <div class="dc-meta-row"><span>Allowed server</span><code id="dc-guild-id">—</code></div>
                         <div class="dc-meta-row"><span>Commands endpoint</span><code id="dc-endpoint">—</code></div>
                     </div>
-                    <div class="dc-notice"><i class="fa-solid fa-key"></i> The server reads your private Vercel <code>BOT_TOKEN</code> variable (it also accepts <code>DISCORD_BOT_TOKEN</code>). After changing Vercel variables, redeploy the site. Do not paste the token into this page or source code. The bot needs <strong>Send Messages</strong> and <strong>Embed Links</strong> in channels where you publish panels.</div>
+                    <div class="dc-notice"><i class="fa-solid fa-key"></i> The website reads your private Vercel <code>BOT_TOKEN</code> variable (it also accepts <code>DISCORD_BOT_TOKEN</code>). This lets the website publish panels and answer slash commands, but does not keep the bot online. To show an online status, run the separate <code>discord-worker</code> process continuously and add the token to that host too. See <a href="/discord-worker/README.md">worker setup steps</a>. Never paste the token into this page or source code.</div>
                 </section>
                 <section class="dc-card">
                     <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Setup actions</h2>
-                    <p class="dc-muted">Register creates or updates these guild-only slash commands. Publish sends a VoidedX info embed to each channel ID configured below and updates the bot’s previous panel when possible.</p>
+                    <p class="dc-muted">Register refreshes the VoidedX guild commands in one rate-limit-friendly update and preserves other commands already on this app. Publish sends or updates the channel panels; the Commands channel panel includes Creator Panel and Script Library buttons.</p>
                     <div class="dc-actions" style="margin-top:15px">
-                        <button id="dc-register" class="btn-primary" type="button"><i class="fa-solid fa-list-check"></i> Register commands</button>
+                        <button id="dc-register" class="btn-primary" type="button"><i class="fa-solid fa-list-check"></i> Register / refresh commands</button>
                         <button id="dc-publish" class="btn-ghost" type="button"><i class="fa-solid fa-paper-plane"></i> Publish channel panels</button>
                     </div>
                     <div class="dc-notice"><i class="fa-solid fa-circle-info"></i> First invite the app to your server with <code>bot</code> and <code>applications.commands</code>. Keep the bot’s server permissions minimal.</div>

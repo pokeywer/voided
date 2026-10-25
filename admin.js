@@ -201,20 +201,19 @@ function getAdminVaultObfuscationSettings() {
         requestedLevel: adminVaultLevel.value,
         effectiveLevel: resolveObfuscationLevel(adminVaultSource.value, adminVaultLevel.value),
         protection: {
-            tamperCheck: !vmProtection && adminVaultTamper.checked,
+            tamperCheck: adminVaultTamper.checked,
             vmProtection,
-            expandedTransforms: !vmProtection && adminVaultSplitting.checked
+            expandedTransforms: adminVaultSplitting.checked
         }
     };
 }
 
 function syncAdminVaultProtectionControls() {
     const enabled = !!activeAdminVault && adminVaultObfuscation.checked;
-    const vmProtection = enabled && adminVaultVm.checked;
-    adminVaultLevel.disabled = !enabled || vmProtection;
-    adminVaultTamper.disabled = !enabled || vmProtection;
+    adminVaultLevel.disabled = !enabled;
+    adminVaultTamper.disabled = !enabled;
     adminVaultVm.disabled = !activeAdminVault || !adminVaultObfuscation.checked;
-    adminVaultSplitting.disabled = !enabled || vmProtection;
+    adminVaultSplitting.disabled = !enabled;
     if (adminVaultPreviewButton) adminVaultPreviewButton.disabled = !enabled || !activeAdminVault;
 }
 
@@ -847,10 +846,6 @@ adminVaultLevel.addEventListener('change', markAdminVaultDirty);
 adminVaultTamper.addEventListener('change', markAdminVaultDirty);
 adminVaultSplitting.addEventListener('change', markAdminVaultDirty);
 adminVaultVm.addEventListener('change', () => {
-    if (adminVaultVm.checked) {
-        adminVaultTamper.checked = false;
-        adminVaultSplitting.checked = false;
-    }
     syncAdminVaultProtectionControls();
     markAdminVaultDirty();
 });

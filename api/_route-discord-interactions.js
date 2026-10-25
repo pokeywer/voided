@@ -44,6 +44,26 @@ function respond(res, content) {
     });
 }
 
+function respondWithCreatorPanel(res) {
+    return json(res, 200, {
+        type: 4,
+        data: {
+            flags: 64,
+            embeds: [{
+                title: 'VoidedX Creator Panel',
+                description: 'Manage your vaults and scripts from the VoidedX website. Open the panel to create, edit, and publish your work.',
+                color: 0x12b8d0,
+                footer: { text: 'VOIDEDX  •  Creator tools' }
+            }],
+            components: [{ type: 1, components: [
+                { type: 2, style: 5, label: 'Open Creator Panel', url: `${DISCORD_SITE_URL}/panel.html` },
+                { type: 2, style: 5, label: 'Browse Scripts', url: `${DISCORD_SITE_URL}/scripts` }
+            ] }],
+            allowed_mentions: { parse: [] }
+        }
+    });
+}
+
 function commandOption(interaction, name) {
     const options = Array.isArray(interaction?.data?.options) ? interaction.data.options : [];
     const item = options.find(option => option?.name === name);
@@ -112,7 +132,7 @@ export default async function handler(req, res) {
             `Website: ${DISCORD_SITE_URL}`
         ].join('\n'));
     }
-    if (name === 'panel') return respond(res, `Open your VoidedX Creator Panel: ${DISCORD_SITE_URL}/panel.html`);
+    if (name === 'panel') return respondWithCreatorPanel(res);
     if (name === 'scripts') return respond(res, `Browse the VoidedX script library: ${DISCORD_SITE_URL}/scripts`);
     if (name === 'verify') {
         const vaultId = commandOption(interaction, 'vault_id');
