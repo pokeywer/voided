@@ -120,9 +120,17 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: 'Choose a supported backup action.' });
     } catch (error) {
         console.error('Vault backup request failed:', error);
-        const message = error?.message === 'This vault is too large to back up safely.'
-            ? 'This vault is too large to back up safely, so it was not changed.'
-            : 'Could not create a safe backup, so the vault was not changed. Please try again.';
+        let message = 'Could not create a safe backup, so the vault was not changed. Please try again.';
+        if (error?.message === 'This vault is too large to back up safely.') {
+            message = 'This vault is too large to back up safely, so it was not changed.';
+        } else if (error?.message === 'The vault backup is missing its owner or saved data.') {
+            message = 'The vault backup is missing its owner or saved data. Please reload and try again.';
+        } else if (error?.code === 'resource-exhausted' || error?.code === 8) {
+            message = 'Firestore quota exceeded. Please try again in a moment.';
+        } else if (error?.message) {
+            // Surface the actual error reason for easier debugging
+            message = `Could not create a safe backup: ${error.message}`;
+        }
         return json(res, 500, { ok: false, message });
     }
 }

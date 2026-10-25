@@ -1487,7 +1487,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (activeVaultId.value) {
-                await createRemoteVaultBackup(vaultId, 'before_save');
+                try {
+                    await createRemoteVaultBackup(vaultId, 'before_save');
+                } catch (backupErr) {
+                    console.warn('Server backup failed before save (vault will still be saved):', backupErr);
+                    showToast('Warning: server backup could not be created, but your vault is still being saved.', 'warning', 6000);
+                }
             }
             await setDoc(doc(db, "vaults", vaultId), payload);
             if (!obfuscationEnabled) {
