@@ -10881,6 +10881,8 @@ local ok, outputOrError = xpcall(function()
   for key, value in pairs(Prometheus.Presets[preset]) do
     config[key] = value
   end
+  -- Set the per-run seed before building any seed-derived protection strings.
+  config.Seed = ${Math.max(1,Math.floor(e.seed))}
 
   config.LuaVersion = ${d(e.luaVersion)}
   if config.LuaVersion == "LuaU" then
@@ -10962,7 +10964,6 @@ local ok, outputOrError = xpcall(function()
     end
   end
   config.PrettyPrint = ${e.prettyPrint?`true`:`false`}
-  config.Seed = ${Math.max(1,Math.floor(e.seed))}
 
   return Prometheus.Pipeline:fromConfig(config):apply(source, filename)
 end, debug.traceback)
