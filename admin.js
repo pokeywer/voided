@@ -19,6 +19,8 @@ const adminVaultStatus = document.getElementById('admin-vault-status');
 const adminVaultSearch = document.getElementById('admin-vault-search');
 const adminVaultTitle = document.getElementById('admin-vault-title');
 const adminVaultSource = document.getElementById('admin-vault-source');
+const adminVaultExecutions = document.getElementById('admin-vault-executions');
+const adminVaultSaveExecutions = document.getElementById('admin-vault-save-executions');
 const adminVaultObfuscation = document.getElementById('admin-vault-obfuscation');
 const adminVaultLevel = document.getElementById('admin-vault-level');
 const adminVaultTamper = document.getElementById('admin-vault-tamper');
@@ -145,6 +147,7 @@ function clearAdminVaultWorkspace() {
     adminVaultRevision += 1;
     adminVaultTitle.value = '';
     adminVaultSource.value = '';
+    adminVaultExecutions.value = '';
     adminVaultSearch.value = '';
     adminVaultList.replaceChildren();
     clearAdminVaultPreview();
@@ -255,6 +258,8 @@ function setAdminVaultEditorEnabled(enabled) {
     document.getElementById('admin-vault-download-source').disabled = !enabled;
     document.getElementById('admin-vault-save-btn').disabled = !enabled;
     document.getElementById('admin-vault-preview-btn').disabled = !enabled || !adminVaultObfuscation.checked;
+    adminVaultExecutions.disabled = !enabled;
+    adminVaultSaveExecutions.disabled = !enabled || adminVaultSaving;
     syncAdminVaultProtectionControls();
 }
 
@@ -274,6 +279,7 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
         activeAdminVault = vault;
         adminVaultTitle.value = vault.title || '';
         adminVaultSource.value = vault.source || '';
+        adminVaultExecutions.value = String(Math.max(0, Number(vault.executions) || 0));
         adminVaultObfuscation.checked = vault.obfuscationEnabled === true;
         adminVaultLevel.value = ['auto', 'low', 'medium', 'high'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
         adminVaultTamper.checked = vault.tamperCheckEnabled === true;
@@ -407,8 +413,9 @@ async function saveAdminVault() {
     const settings = getAdminVaultObfuscationSettings();
     adminVaultSaving = true;
     adminVaultRevision += 1;
-    const buttons = ['admin-vault-copy-source', 'admin-vault-download-source', 'admin-vault-preview-btn', 'admin-vault-save-btn'];
+    const buttons = ['admin-vault-copy-source', 'admin-vault-download-source', 'admin-vault-preview-btn', 'admin-vault-save-btn', 'admin-vault-save-executions'];
     adminVaultFormControls.forEach(control => { control.disabled = true; });
+    adminVaultExecutions.disabled = true;
     buttons.forEach(id => { document.getElementById(id).disabled = true; });
     const saveButton = document.getElementById('admin-vault-save-btn');
     const originalHtml = saveButton.innerHTML;
@@ -482,7 +489,52 @@ async function saveAdminVault() {
         document.getElementById('admin-vault-copy-source').disabled = !activeAdminVault;
         document.getElementById('admin-vault-download-source').disabled = !activeAdminVault;
         document.getElementById('admin-vault-save-btn').disabled = !activeAdminVault;
+        adminVaultExecutions.disabled = !activeAdminVault;
+        adminVaultSaveExecutions.disabled = !activeAdminVault;
         document.getElementById('admin-vault-preview-btn').disabled = !activeAdminVault || !adminVaultObfuscation.checked;
+    }
+}
+
+async function saveAdminVaultExecutions() {
+    if (!activeAdminVault || adminVaultSaving) return;
+    if (!adminVaultExecutions.value.trim()) {
+        setVaultStatus('Enter a whole-number execution count.', 'error');
+        return;
+    }
+    const executions = Number(adminVaultExecutions.value);
+    if (!Number.isSafeInteger(executions) || executions < 0 || executions > 1_000_000_000_000) {
+        setVaultStatus('Execution count must be a whole number from 0 to 1,000,000,000,000.', 'error');
+        return;
+    }
+    if (executions === Number(activeAdminVault.executions || 0)) {
+        setVaultStatus('That vault already has this execution count.', 'info');
+        return;
+    }
+    const button = adminVaultSaveExecutions;
+    setLoading(button, true, 'UPDATING…');
+    adminVaultExecutions.disabled = true;
+    try {
+        await requestJson('/api/admin-vaults', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: activeAdminVault.id, executions })
+        });
+        activeAdminVault.executions = executions;
+        const item = adminVaults.find(vault => vault.id === activeAdminVault.id);
+        if (item) item.executions = executions;
+        renderAdminVaultList();
+        const total = adminVaults.reduce((sum, vault) => sum + (Number(vault.executions) || 0), 0);
+        document.getElementById('admin-stat-executions').textContent = total.toLocaleString();
+        const vaultName = activeAdminVault.title || activeAdminVault.id;
+        setVaultStatus(document.documentElement.lang === 'pt-BR'
+            ? `A contagem acumulada de “${vaultName}” foi definida como ${executions.toLocaleString()}. O histórico diário e mensal do ranking não mudou.`
+            : `Updated “${vaultName}” to ${executions.toLocaleString()} lifetime executions. Daily and monthly leaderboard history was not changed.`, 'success');
+    } catch (error) {
+        setVaultStatus(error.message, 'error');
+        if (/session expired/i.test(error.message)) setLoggedIn(false);
+    } finally {
+        setLoading(button, false);
+        button.disabled = !activeAdminVault;
+        adminVaultExecutions.disabled = !activeAdminVault;
     }
 }
 
@@ -804,6 +856,7 @@ adminVaultVm.addEventListener('change', () => {
 });
 adminVaultPreviewButton.addEventListener('click', generateAdminVaultPreview);
 document.getElementById('admin-vault-save-btn').addEventListener('click', saveAdminVault);
+adminVaultSaveExecutions.addEventListener('click', saveAdminVaultExecutions);
 document.getElementById('admin-vault-copy-source').addEventListener('click', async () => {
     if (!activeAdminVault) return;
     const copied = await copyAdminText(adminVaultSource.value, adminVaultSource);

@@ -653,6 +653,9 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 .admin-vault-edit-fields { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
 .admin-vault-title-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, auto); align-items: end; gap: 10px; }
 .admin-vault-title-row > div { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.admin-execution-editor { display: grid; grid-template-columns: minmax(140px, 1fr) auto; align-items: end; gap: 9px; }
+.admin-execution-editor > div { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.admin-execution-editor button { width: auto; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 12px; white-space: nowrap; }
 .admin-vault-meta { max-width: 220px; color: var(--text-muted); font-size: 9px; line-height: 1.5; text-align: right; overflow-wrap: anywhere; }
 .admin-vault-source { min-height: 400px; max-height: 760px; resize: vertical; overflow: auto; white-space: pre; overflow-wrap: normal; font: 10px/1.5 var(--font-mono); tab-size: 4; }
 .admin-vault-protection { display: flex; flex-direction: column; gap: 8px; }
@@ -737,6 +740,8 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
     .admin-stat-card > strong { font-size: 16px; }
     .admin-stat-card > span { font-size: 9px; }
     .admin-form-row { grid-template-columns: 1fr; }
+    .admin-execution-editor { grid-template-columns: minmax(0, 1fr); }
+    .admin-execution-editor button { width: 100%; }
     .admin-announcement-toolbar { align-items: flex-start; flex-direction: column; }
     .admin-announcement-toolbar button { width: 100%; min-height: 40px; }
     .admin-announcement-item { align-items: flex-start; flex-direction: column; }

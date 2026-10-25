@@ -1,5 +1,5 @@
 import { gunzipSync } from 'node:zlib';
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { db } from './_admin.js';
 import { getSourceForEditor } from './_deliveryCode.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
@@ -110,6 +110,17 @@ export default async function handler(req, res) {
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const id = String(body.id || '');
         if (!/^[A-Za-z0-9_-]{1,150}$/.test(id)) return json(res, 400, { ok: false, message: 'Choose a valid vault.' });
+        if (Object.prototype.hasOwnProperty.call(body, 'executions')) {
+            const executions = Number(body.executions);
+            if (!Number.isSafeInteger(executions) || executions < 0 || executions > 1_000_000_000_000) {
+                return json(res, 400, { ok: false, message: 'Execution count must be a whole number from 0 to 1,000,000,000,000.' });
+            }
+            const executionRef = db.collection('vaults').doc(id);
+            const executionSnap = await executionRef.get();
+            if (!executionSnap.exists) return json(res, 404, { ok: false, message: 'That vault no longer exists.' });
+            await executionRef.update({ executions, autoDeleteAt: FieldValue.delete(), executionsEditedAt: Date.now() });
+            return json(res, 200, { ok: true, id, executions });
+        }
         const title = String(body.title || '').trim().slice(0, 80) || 'Untitled Vault';
         let source;
         try {

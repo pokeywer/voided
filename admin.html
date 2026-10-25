@@ -77,6 +77,11 @@
                                 <div><label class="panel-label" for="admin-vault-title">VAULT TITLE</label><input id="admin-vault-title" class="input-field" maxlength="80" disabled></div>
                                 <span id="admin-vault-meta" class="admin-vault-meta"></span>
                             </div>
+                            <div class="admin-execution-editor">
+                                <div><label class="panel-label" for="admin-vault-executions">LIFETIME EXECUTIONS</label><input id="admin-vault-executions" class="input-field" type="number" min="0" max="1000000000000" step="1" inputmode="numeric" required disabled></div>
+                                <button id="admin-vault-save-executions" class="btn-ghost" type="button" disabled><i class="fa-solid fa-hashtag"></i> Update count</button>
+                            </div>
+                            <small class="admin-help">Changes this vault’s lifetime count and overall total. Daily and monthly leaderboard history stays unchanged.</small>
                             <label class="panel-label" for="admin-vault-source">READABLE SOURCE</label>
                             <textarea id="admin-vault-source" class="input-field admin-vault-source" spellcheck="false" wrap="off" disabled placeholder="Select a vault to load its source."></textarea>
                             <div class="admin-vault-protection">
