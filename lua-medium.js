@@ -1,9 +1,9 @@
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
 
-// Prefer High for small and medium-sized scripts so Auto does not reduce
-// obfuscation strength for ordinary client scripts in the 10-64 KiB range.
-export const AUTO_HIGH_BYTE_THRESHOLD = 64 * 1024;
+// Keep Auto's two-layer mode for tiny scripts; larger sources default to the
+// single-layer Medium profile to reduce runtime and vault-size overhead.
+export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
@@ -15,13 +15,16 @@ export const MAX_READABLE_VAULT_SOURCE_BYTES = 128 * 1024;
 export const MAX_OBFUSCATED_OUTPUT_BYTES = 32 * 1024 * 1024;
 export const MAX_STORED_OBFUSCATED_OUTPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
+// Firestore documents are limited to 1 MiB. Keep the app's serialized JSON
+// budget below that hard limit so field/index overhead has room.
+export const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
 
-const PRESETS = Object.freeze({ low: 'Weak', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
-const VM_LAYER_COUNTS = Object.freeze({ low: 1, medium: 2, high: 3, absolute: 4 });
+const PRESETS = Object.freeze({ fast: 'Weak', low: 'Weak', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
+const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 2, absolute: 2 });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
 const MAX_PROMETHEUS_OUTPUT_BYTES = 32 * 1024 * 1024;
-const MAX_STORED_ENCODED_OBFUSCATED_BYTES = 800 * 1024;
+const MAX_STORED_ENCODED_OBFUSCATED_BYTES = 920 * 1024;
 
 export function getUtf8ByteLength(value) {
     const text = typeof value === 'string' ? value : String(value ?? '');
@@ -44,20 +47,22 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
     }
 
     const preset = PRESETS[level];
-    if (!preset) return Promise.reject(new Error('Choose Auto, Low, Medium, High, or Absolute obfuscation.'));
+    if (!preset) return Promise.reject(new Error('Choose Auto, Fast, Low, Medium, High, or Absolute obfuscation.'));
 
     const absoluteMode = level === 'absolute';
+    const fastMode = level === 'fast';
     const tamperCheck = absoluteMode || protection.tamperCheck === true;
-    // Every obfuscated output now goes through the VM pipeline. Strength controls
-    // how many times the generated VM is itself compiled into another VM layer.
+    // Every obfuscated output now goes through the VM pipeline. The two-layer
+    // ceiling limits runtime overhead and keeps larger copies vault-friendly.
     const vmProtection = true;
-    const expandedTransforms = absoluteMode || protection.expandedTransforms === true;
+    const expandedTransforms = absoluteMode || (!fastMode && protection.expandedTransforms === true);
     const vmLayers = VM_LAYER_COUNTS[level] || 1;
     if (lastSuccessfulObfuscation?.source === source
         && lastSuccessfulObfuscation.level === level
         && lastSuccessfulObfuscation.tamperCheck === tamperCheck
         && lastSuccessfulObfuscation.vmProtection === vmProtection
         && lastSuccessfulObfuscation.expandedTransforms === expandedTransforms
+        && lastSuccessfulObfuscation.fastMode === fastMode
         && lastSuccessfulObfuscation.vmLayers === vmLayers) {
         return Promise.resolve(lastSuccessfulObfuscation.output);
     }
@@ -82,7 +87,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
             }
             const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
             if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
-                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, vmLayers, output };
+                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, fastMode, vmLayers, output };
             } else {
                 lastSuccessfulObfuscation = null;
             }
@@ -135,6 +140,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                     tamperCheck,
                     vmProtection,
                     expandedTransforms,
+                    fastMode,
                     vmLayers,
                     prettyPrint: false,
                     seed
@@ -156,7 +162,7 @@ export async function encodeObfuscatedCode(source) {
 
     const encoded = await encodeGzipBase64(source, sourceBytes);
     if (getUtf8ByteLength(encoded.value) > MAX_STORED_ENCODED_OBFUSCATED_BYTES) {
-        throw new Error('This copy is ready to download, but its compressed data is too large for a vault document. Download the preview instead.');
+        throw new Error('This execution copy is too large to store in a vault. Choose Fast or Medium to reduce its size and runtime cost, or download the generated preview.');
     }
     return encoded;
 }

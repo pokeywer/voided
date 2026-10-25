@@ -299,6 +299,7 @@ function markAdminVaultDirty() {
 function getAdminVaultObfuscationSettings() {
     const enabled = adminVaultObfuscation.checked;
     const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
+    const fastMode = enabled && adminVaultLevel.value === 'fast';
     const vmProtection = enabled;
     return {
         enabled,
@@ -307,7 +308,7 @@ function getAdminVaultObfuscationSettings() {
         protection: {
             tamperCheck: absoluteMode || adminVaultTamper.checked,
             vmProtection,
-            expandedTransforms: absoluteMode || adminVaultSplitting.checked
+            expandedTransforms: absoluteMode || (!fastMode && adminVaultSplitting.checked)
         }
     };
 }
@@ -315,6 +316,7 @@ function getAdminVaultObfuscationSettings() {
 function syncAdminVaultProtectionControls() {
     const enabled = !!activeAdminVault && adminVaultObfuscation.checked;
     const absoluteMode = enabled && adminVaultLevel.value === 'absolute';
+    const fastMode = enabled && adminVaultLevel.value === 'fast';
     if (adminVaultVm) {
         adminVaultVm.checked = enabled;
         adminVaultVm.disabled = true;
@@ -323,9 +325,10 @@ function syncAdminVaultProtectionControls() {
         adminVaultTamper.checked = true;
         adminVaultSplitting.checked = true;
     }
+    if (fastMode) adminVaultSplitting.checked = false;
     adminVaultLevel.disabled = !enabled;
     adminVaultTamper.disabled = !enabled || absoluteMode;
-    adminVaultSplitting.disabled = !enabled || absoluteMode;
+    adminVaultSplitting.disabled = !enabled || absoluteMode || fastMode;
     if (adminVaultPreviewButton) adminVaultPreviewButton.disabled = !enabled || !activeAdminVault;
 }
 
@@ -392,7 +395,7 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
         adminVaultSource.value = vault.source || '';
         adminVaultExecutions.value = String(Math.max(0, Number(vault.executions) || 0));
         adminVaultObfuscation.checked = vault.obfuscationEnabled === true;
-        adminVaultLevel.value = ['auto', 'low', 'medium', 'high', 'absolute'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
+        adminVaultLevel.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
         adminVaultTamper.checked = vault.tamperCheckEnabled === true;
         adminVaultVm.checked = vault.vmProtectionEnabled === true;
         adminVaultSplitting.checked = vault.expandedTransformsEnabled === true;
@@ -588,7 +591,19 @@ async function saveAdminVault() {
         }
         setVaultStatus(`Saved “${title}”. The owner's live vault has been updated.`, 'success');
     } catch (error) {
-        setVaultStatus(error.message, 'error');
+        if (generatedOutput) {
+            const inlinePreview = generatedOutputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES;
+            adminVaultOutputText = generatedOutput;
+            adminVaultOutput.value = inlinePreview ? generatedOutput : '';
+            adminVaultPreviewWrap.classList.remove('hidden');
+            adminVaultPreviewIsCurrent = true;
+            adminVaultPreviewSignature = currentAdminVaultSignature();
+            document.getElementById('admin-vault-copy-output').disabled = !inlinePreview;
+            document.getElementById('admin-vault-download-output').disabled = false;
+            setVaultStatus(`${error.message} The generated execution copy is available to download below.`, 'error');
+        } else {
+            setVaultStatus(error.message, 'error');
+        }
         if (/session expired/i.test(error.message)) setLoggedIn(false);
     } finally {
         adminVaultSaving = false;

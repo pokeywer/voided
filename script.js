@@ -6,7 +6,7 @@ import {
 import {
     getFirestore, collection, doc, setDoc, addDoc, getDoc, getDocs, deleteDoc, updateDoc, query, where, serverTimestamp, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES } from './lua-medium.js';
 import { setEmbeddedTokenLoader } from './loader-ui.js';
 
 // --- YOUR FIREBASE CONFIG HERE ---
@@ -27,7 +27,6 @@ let currentUser = null;
 let isSignUpMode = false;
 const ZERO_EXECUTION_VAULT_TTL_MS = 10 * 60 * 60 * 1000;
 const MAX_USER_VAULTS = 5;
-const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 870 * 1024;
 const vaultExpiryTimers = new Map();
 const vaultExpiryWarningIds = new Set();
 let vaultsLoadedForUid = null;
@@ -437,11 +436,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const enabled = !!(chkObfuscation && chkObfuscation.checked);
         const requestedLevel = obfuscationLevelSelect ? obfuscationLevelSelect.value : 'auto';
         const absoluteMode = enabled && requestedLevel === 'absolute';
+        const fastMode = enabled && requestedLevel === 'fast';
         const vmProtection = enabled;
         const protection = {
             tamperCheck: absoluteMode || !!(chkTamperCheck && chkTamperCheck.checked),
             vmProtection,
-            expandedTransforms: absoluteMode || !!(chkExpandedTransforms && chkExpandedTransforms.checked)
+            expandedTransforms: absoluteMode || (!fastMode && !!(chkExpandedTransforms && chkExpandedTransforms.checked))
         };
         return {
             enabled,
@@ -495,6 +495,17 @@ document.addEventListener('DOMContentLoaded', () => {
         obfuscatedPreviewIsCurrent = true;
         copyObfuscatedBtn.disabled = !output || !inlinePreview;
         downloadObfuscatedBtn.disabled = !output;
+    }
+
+    function offerUnstoredObfuscatedPreview(output, level, reason) {
+        if (!output) return;
+        const outputBytes = getUtf8ByteLength(output);
+        const outputKiB = Math.ceil(outputBytes / 1024).toLocaleString();
+        setObfuscatedPreview(
+            output,
+            `${level} execution copy was not saved (${reason}). The generated ${outputKiB} KiB copy is available to download. Choose Fast or Medium to reduce its size and execution cost.`,
+            outputBytes
+        );
     }
 
     function markObfuscatedPreviewStale() {
@@ -1089,13 +1100,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkObfuscation) chkObfuscation.checked = data.obfuscationEnabled === true;
         if (chkFastLoadCache) chkFastLoadCache.checked = data.fastLoadCacheEnabled === true;
         if (obfuscationLevelSelect) {
-            obfuscationLevelSelect.value = ['auto', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
+            obfuscationLevelSelect.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
         }
         if (chkTamperCheck) chkTamperCheck.checked = data.tamperCheckEnabled === true;
         if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 7) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 8) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1148,19 +1159,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncObfuscationProtectionControls() {
         const obfuscationOn = !!(chkObfuscation && chkObfuscation.checked);
         const absoluteMode = obfuscationOn && !!(obfuscationLevelSelect && obfuscationLevelSelect.value === 'absolute');
+        const fastMode = obfuscationOn && !!(obfuscationLevelSelect && obfuscationLevelSelect.value === 'fast');
         if (!obfuscationOn && chkVmProtection) chkVmProtection.checked = false;
         if (absoluteMode) {
             if (chkTamperCheck) chkTamperCheck.checked = true;
             if (chkVmProtection) chkVmProtection.checked = true;
             if (chkExpandedTransforms) chkExpandedTransforms.checked = true;
         }
+        if (fastMode && chkExpandedTransforms) chkExpandedTransforms.checked = false;
         if (chkVmProtection) {
             chkVmProtection.checked = obfuscationOn;
             chkVmProtection.disabled = true;
         }
         if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn;
         if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn || absoluteMode;
-        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || absoluteMode;
+        if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || absoluteMode || fastMode;
     }
 
     if (chkObfuscation) chkObfuscation.addEventListener('change', () => {
@@ -1387,7 +1400,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 generatedObfuscatedCode = await obfuscateLua(code, effectiveObfuscationLevel, obfuscationSettings.protection);
                 encodedObfuscatedCode = await encodeObfuscatedCode(generatedObfuscatedCode);
             } catch (error) {
-                showToast('Prometheus could not obfuscate this script: ' + (error && error.message ? error.message : 'unknown error'), 'error', 8000);
+                const errorMessage = error && error.message ? error.message : 'unknown error';
+                if (generatedObfuscatedCode && saveObfuscationRevision === obfuscationRevision) {
+                    offerUnstoredObfuscatedPreview(generatedObfuscatedCode, effectiveObfuscationLevel, errorMessage);
+                    showToast('Vault saving stopped; the existing vault was left unchanged. The generated copy is available in the preview panel.', 'error', 8000);
+                } else {
+                    showToast('Prometheus could not obfuscate this script: ' + errorMessage, 'error', 8000);
+                }
                 isSaving = false;
                 lockBtn.disabled = false;
                 lockBtn.innerHTML = originalBtnHtml;
@@ -1438,7 +1457,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 7,
+            obfuscationProfileVersion: 8,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,
@@ -1458,9 +1477,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (estimatedDocumentBytes > MAX_VAULT_DOCUMENT_ESTIMATE_BYTES) {
                 const estimatedKiB = Math.ceil(estimatedDocumentBytes / 1024).toLocaleString();
                 const sizeHint = obfuscationEnabled
-                    ? 'Reduce the script or turn off obfuscation.'
+                    ? 'Choose Fast or Medium, reduce the script, or download the generated preview below.'
                     : 'Reduce the script size.';
-                showToast(`This vault is about ${estimatedKiB} KiB, above the safe storage size (~870 KiB). ${sizeHint}`, 'error', 10000);
+                if (generatedObfuscatedCode && saveObfuscationRevision === obfuscationRevision) {
+                    offerUnstoredObfuscatedPreview(generatedObfuscatedCode, effectiveObfuscationLevel, `the vault is about ${estimatedKiB} KiB, above the ~920 KiB safe storage size`);
+                }
+                showToast(`This vault is about ${estimatedKiB} KiB, above the safe storage size (~920 KiB). The save was stopped and the existing vault is unchanged. ${sizeHint}`, 'error', 10000);
                 return;
             }
 

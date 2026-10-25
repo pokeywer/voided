@@ -8,8 +8,8 @@ import { createVaultBackup } from './_vaultBackups.js';
 const PAGE_SIZE = 100;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
-const MAX_DOCUMENT_ESTIMATE_BYTES = 870 * 1024;
-const LEVELS = new Set(['auto', 'low', 'medium', 'high', 'absolute']);
+const MAX_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
+const LEVELS = new Set(['auto', 'fast', 'low', 'medium', 'high', 'absolute']);
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -136,9 +136,10 @@ export default async function handler(req, res) {
         const obfuscationEnabled = body.obfuscationEnabled === true;
         const obfuscationLevel = LEVELS.has(body.obfuscationLevel) ? body.obfuscationLevel : 'auto';
         const absoluteMode = obfuscationEnabled && obfuscationLevel === 'absolute';
+        const fastMode = obfuscationEnabled && obfuscationLevel === 'fast';
         const vmProtectionEnabled = obfuscationEnabled;
         const tamperCheckEnabled = obfuscationEnabled && (absoluteMode || body.tamperCheckEnabled === true);
-        const expandedTransformsEnabled = obfuscationEnabled && (absoluteMode || body.expandedTransformsEnabled === true);
+        const expandedTransformsEnabled = obfuscationEnabled && !fastMode && (absoluteMode || body.expandedTransformsEnabled === true);
         let obfuscatedCode = null;
         let obfuscatedCodeEncoding = null;
         let obfuscatedCodeLevel = null;
@@ -150,7 +151,7 @@ export default async function handler(req, res) {
             }
             obfuscatedCode = body.obfuscatedCode;
             obfuscatedCodeEncoding = body.obfuscatedCodeEncoding;
-            obfuscatedCodeLevel = ['low', 'medium', 'high', 'absolute'].includes(body.obfuscatedCodeLevel) ? body.obfuscatedCodeLevel : null;
+            obfuscatedCodeLevel = ['fast', 'low', 'medium', 'high', 'absolute'].includes(body.obfuscatedCodeLevel) ? body.obfuscatedCodeLevel : null;
             if (!obfuscatedCodeLevel) return json(res, 400, { ok: false, message: 'The obfuscation strength is missing.' });
         }
 
@@ -174,7 +175,7 @@ export default async function handler(req, res) {
             loaderVersion: nextLoaderVersion,
             obfuscationEnabled,
             fastLoadCacheEnabled,
-            obfuscationProfileVersion: 7,
+            obfuscationProfileVersion: 8,
             obfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,
@@ -186,7 +187,7 @@ export default async function handler(req, res) {
         };
         const estimatedDocumentBytes = Buffer.byteLength(JSON.stringify({ ...snap.data(), ...updates }), 'utf8');
         if (estimatedDocumentBytes > MAX_DOCUMENT_ESTIMATE_BYTES) {
-            return json(res, 413, { ok: false, message: 'This vault would exceed the maximum database document size. Reduce the source or use a lower obfuscation strength.' });
+            return json(res, 413, { ok: false, message: 'This vault would exceed the safe database document size (~920 KiB). Choose Fast or Medium, reduce the source, or use the downloadable execution preview.' });
         }
 
         await createVaultBackup(id, snap.data(), 'before_save', 'admin');

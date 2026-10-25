@@ -116,12 +116,12 @@
                     </div>
                     <div class="toggle-list">
                         <label class="toggle-row">
-                            <span class="toggle-label-stack"><span>Luau VM protection</span><small>Auto · 1–4 VM layers</small></span>
+                            <span class="toggle-label-stack"><span>Luau VM protection</span><small>Auto · 1–2 VM layers</small></span>
                             <input type="checkbox" id="chk-obfuscation">
                             <span class="switch"></span>
                         </label>
                         <label class="toggle-row">
-                            <span class="toggle-label-stack"><span>Fast execution but not safe</span><small>First run downloads the script; later runs use the saved copy</small></span>
+                            <span class="toggle-label-stack"><span>Cached loading (faster, less safe)</span><small>First run downloads the script; later runs use the saved copy</small></span>
                             <input type="checkbox" id="chk-fast-load-cache">
                             <span class="switch"></span>
                         </label>
@@ -129,10 +129,11 @@
                             <label for="obfuscation-level">Strength</label>
                             <select id="obfuscation-level" class="input-field">
                                 <option value="auto" selected>Auto (recommended)</option>
+                                <option value="fast">Fast · 1 VM layer (no string splitting)</option>
                                 <option value="low">Low · 1 VM layer</option>
-                                <option value="medium">Medium · 2 VM layers</option>
-                                <option value="high">High · 3 VM layers</option>
-                                <option value="absolute">Absolute · 4 VM layers (slowest)</option>
+                                <option value="medium">Medium · 1 VM layer</option>
+                                <option value="high">High · 2 VM layers</option>
+                                <option value="absolute">Absolute · 2 VM layers (slowest)</option>
                             </select>
                         </div>
                         <div class="obfuscation-protection-options">
@@ -142,7 +143,7 @@
                                 <span class="switch"></span>
                             </label>
                             <label class="toggle-row">
-                                <span class="toggle-label-stack"><span>VM protection</span><small>Always on for obfuscated copies; stronger modes add more VM layers</small></span>
+                                <span class="toggle-label-stack"><span>VM protection</span><small>Always on; High and Absolute use at most two VM layers</small></span>
                                 <input type="checkbox" id="chk-vm-protection">
                                 <span class="switch"></span>
                             </label>
@@ -158,14 +159,15 @@
                             <span class="switch"></span>
                         </label>
                     </div>
-                    <p class="obfuscation-note"><strong>VM protection:</strong> Every obfuscated copy is compiled into a custom VM. Higher strengths compile that VM through additional layers, making static recovery harder at the cost of larger output and slower execution. Keep a readable backup and test before replacing a live vault. If compilation fails, the save is stopped and the existing vault stays unchanged.</p>
-                    <p class="obfuscation-note"><strong>Absolute:</strong> Uses four nested VM layers, tamper checking, and maximum string splitting. It is the slowest option, can break scripts, and may create output too large to save in a vault. Test it first; no obfuscator can make client code impossible to inspect.</p>
+                    <p class="obfuscation-note"><strong>VM protection:</strong> Every obfuscated copy uses a custom VM. Fast, Low, and Medium use one layer; High and Absolute use two. More layers increase analysis cost but can slow execution and enlarge the output. Keep a readable backup and test before replacing a live vault. If compilation fails, the save is stopped and the existing vault stays unchanged.</p>
+                    <p class="obfuscation-note"><strong>Fast:</strong> Uses one VM layer and skips source string splitting to reduce execution work. It should run faster than Low, but is easier to analyze than Low and the multi-layer strengths.</p>
+                    <p class="obfuscation-note"><strong>Absolute:</strong> Uses two VM layers, tamper checking, and extra string splitting. It is slower than High, can break scripts, and may create output too large to save in a vault. Test it first; no obfuscator can make client code impossible to inspect.</p>
                     <p class="obfuscation-note"><strong>What this means:</strong> The server still checks access every time. The saved script can be read or changed on the executor, so use this only if faster repeat loading matters more than that risk. If file or hash support is missing, the loader downloads the script normally.</p>
                     <p class="obfuscation-credit">Voidedx On Top!<a href="https://voidedx.vercel.app" target="_blank" rel="noopener noreferrer">https://voidedx.vercel.app</a></p>
                     <button type="button" id="backup-now-btn" class="btn-ghost backup-now-btn"><i class="fa-solid fa-download"></i> Download backup now</button>
                     <div class="protection-hint">
                         <i class="fa-solid fa-shield-halved"></i>
-                        <span>Scripts up to 128 KiB are stored as readable text; larger sources are compressed, not encrypted. Preview accepts source up to 4 MiB, but vault saves allow 2 MiB of source. Preview and download support output up to 32 MiB; previews over 1 MiB are download-only to keep the page responsive. A saved vault copy is limited to 4 MiB and may hit the database document limit first. Anyone who runs a client script can capture its delivered code, so never include passwords or private API keys.</span>
+                        <span>Scripts up to 128 KiB are stored as readable text; larger sources are compressed, not encrypted. Preview accepts source up to 4 MiB, but vault saves allow 2 MiB of source. Preview and download support output up to 32 MiB; previews over 1 MiB are download-only to keep the page responsive. A vault document has a safe serialized size limit of about 920 KiB, including its source, execution copy, and settings. Anyone who runs a client script can capture its delivered code, so never include passwords or private API keys.</span>
                     </div>
                     <div class="obfuscated-preview-tools">
                         <button type="button" id="preview-obfuscated-btn" class="btn-ghost"><i class="fa-solid fa-eye"></i> Generate obfuscated preview</button>

@@ -10890,16 +10890,18 @@ local ok, outputOrError = xpcall(function()
       -- Apply only compatibility-reviewed source transforms before VM compilation.
       -- Vmify must remain last because it replaces the AST.
       config.Steps = {}
-      local maxStringChunk = ${e.expandedTransforms === true ? `2` : e.preset === "Strong" ? `4` : e.preset === "Medium" ? `5` : `7`}
-      table.insert(config.Steps, {
-        Name = "SplitStrings",
-        Settings = {
-          Threshold = 1,
-          MinLength = 2,
-          MaxLength = maxStringChunk,
-          ConcatenationType = "strcat",
-        },
-      })
+      if not ${e.fastMode === true ? `true` : `false`} then
+        local maxStringChunk = ${e.expandedTransforms === true ? `4` : e.preset === "Strong" ? `8` : e.preset === "Medium" ? `10` : `12`}
+        table.insert(config.Steps, {
+          Name = "SplitStrings",
+          Settings = {
+            Threshold = 1,
+            MinLength = 2,
+            MaxLength = maxStringChunk,
+            ConcatenationType = "strcat",
+          },
+        })
+      end
       if ${e.tamperCheck === true ? `true` : `false`} then
         table.insert(config.Steps, {
           Name = "WatermarkCheck",
@@ -10918,7 +10920,7 @@ local ok, outputOrError = xpcall(function()
         end
         table.insert(config.Steps, { Name = "NumbersToExpressions", Settings = numericSettings })
       end
-      local vmLayers = ${Math.max(1, Math.min(4, Math.floor(Number(e.vmLayers) || 1)))}
+      local vmLayers = ${Math.max(1, Math.min(2, Math.floor(Number(e.vmLayers) || 1)))}
       for layer = 1, vmLayers do
         if layer > 1 then
           table.insert(config.Steps, { Name = "EncryptStrings", Settings = {} })
