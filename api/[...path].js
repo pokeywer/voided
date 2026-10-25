@@ -5,6 +5,8 @@ import adminDashboard from './_route-admin-dashboard.js';
 import adminScripts from './_route-admin-scripts.js';
 import adminVaults from './_route-admin-vaults.js';
 import announcements from './_route-announcements.js';
+import discordAdmin from './_route-discord-admin.js';
+import discordInteractions from './_route-discord-interactions.js';
 import keypage from './_route-keypage.js';
 import leaderboard from './_route-leaderboard.js';
 import linkvertiseConfig from './_route-linkvertise-config.js';
@@ -21,6 +23,8 @@ const handlers = {
     'admin-scripts': adminScripts,
     'admin-vaults': adminVaults,
     announcements,
+    'discord-admin': discordAdmin,
+    'discord-interactions': discordInteractions,
     keypage,
     leaderboard,
     'linkvertise-config': linkvertiseConfig,
@@ -31,6 +35,47 @@ const handlers = {
     vaultinfo,
     verify
 };
+
+// Keep the project on one Vercel API function while preserving Discord's raw
+// request bytes for Ed25519 signature validation.
+export const config = { api: { bodyParser: false } };
+
+async function readJsonBody(req) {
+    if (['GET', 'HEAD'].includes(String(req.method || '').toUpperCase())) return;
+
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += buffer.length;
+        if (size > 12 * 1024 * 1024) {
+            const error = new Error('Request body is too large.');
+            error.status = 413;
+            throw error;
+        }
+        chunks.push(buffer);
+    }
+
+    const rawBody = Buffer.concat(chunks);
+    req.rawBody = rawBody;
+    if (!rawBody.length) {
+        req.body = {};
+        return;
+    }
+
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+        req.body = {};
+        return;
+    }
+    try {
+        req.body = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+        const error = new Error('Request body must be valid JSON.');
+        error.status = 400;
+        throw error;
+    }
+}
 
 function routeName(req) {
     const routeParam = req.query?.path;
@@ -50,6 +95,14 @@ function routeName(req) {
 }
 
 export default async function handler(req, res) {
+    try {
+        await readJsonBody(req);
+    } catch (error) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(error.status || 400).json({ error: error.message || 'Invalid request body.' });
+    }
+
     const name = routeName(req);
     const routeHandler = handlers[name];
 

@@ -32,6 +32,8 @@ const vaultExpiryTimers = new Map();
 const vaultExpiryWarningIds = new Set();
 let vaultsLoadedForUid = null;
 let editorLoadGeneration = 0;
+let requestedVaultOpened = false;
+const requestedVaultId = new URLSearchParams(window.location.search).get('vault');
 
 // ============================================================
 // Small reusable UI helpers (toasts, field errors, confirm modal)
@@ -906,6 +908,16 @@ document.addEventListener('DOMContentLoaded', () => {
             updateVaultCount(cachedVaults.length);
             updateVaultOverview();
             renderVaultList();
+            if (requestedVaultId && !requestedVaultOpened) {
+                const requestedVault = cachedVaults.find(vault => vault.id === requestedVaultId);
+                if (requestedVault) {
+                    requestedVaultOpened = true;
+                    loadVaultIntoEditor(requestedVault.id, requestedVault.data);
+                } else if (!auth.currentUser?.isAnonymous) {
+                    requestedVaultOpened = true;
+                    showToast('That script was not found in your account.', 'error');
+                }
+            }
             if (expiredCount) {
                 showToast(`${expiredCount} unused vault${expiredCount === 1 ? '' : 's'} removed after 10 hours with 0 executions.`, 'info', 7000);
             }

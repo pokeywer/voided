@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>VoidedX // Creator Panel</title>
+    <link rel="icon" type="image/png" href="/voidedx-favicon.png?v=2">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script defer src="/i18n.js"></script>
+</head>
+<body class="creator-panel-page">
+    <main class="creator-panel-shell">
+        <header class="creator-panel-nav">
+            <a href="/" class="brand-unit brand-unit-link">
+                <img src="logo.png" alt="VoidedX logo" class="brand-icon-img">
+                <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">CREATOR PANEL</span></span>
+            </a>
+            <nav class="creator-panel-nav-actions" aria-label="Main navigation">
+                <a class="btn-ghost" href="/"><i class="fa-solid fa-code"></i> Script editor</a>
+                <a class="btn-ghost" href="/scripts"><i class="fa-solid fa-compass"></i> Script library</a>
+                <button id="panel-logout-btn" class="btn-ghost hidden" type="button"><i class="fa-solid fa-right-from-bracket"></i> Sign out</button>
+            </nav>
+        </header>
+
+        <section class="creator-panel-hero" aria-label="VoidedX creator tools">
+            <div class="creator-panel-hero-copy">
+                <span class="creator-panel-eyebrow"><i class="fa-solid fa-shield-halved"></i> SCRIPT CONTROL CENTER</span>
+                <h1>Your scripts.<br><span>Your controls.</span></h1>
+                <p>Obfuscate your scripts, manage verification, and review your protection settings from one place.</p>
+                <div class="creator-panel-hero-actions">
+                    <a class="btn-primary creator-panel-create" href="/"><i class="fa-solid fa-plus"></i> Create or obfuscate a script</a>
+                    <a class="btn-ghost creator-panel-banner-download" href="/voidedx-discord-banner.svg" download><i class="fa-solid fa-download"></i> Animated banner</a>
+                </div>
+            </div>
+            <div class="creator-panel-hero-mark" aria-hidden="true">
+                <span class="creator-panel-orbit orbit-one"></span><span class="creator-panel-orbit orbit-two"></span>
+                <img src="logo.png" alt="">
+                <span class="creator-panel-spark spark-one"></span><span class="creator-panel-spark spark-two"></span>
+            </div>
+            <div class="creator-panel-hero-foot"><span>VERIFY ACCESS</span><span>PROTECT DELIVERY</span><span>MANAGE VAULTS</span></div>
+        </section>
+
+        <section class="creator-brand-kit" aria-labelledby="creator-brand-title">
+            <div class="creator-panel-section-heading">
+                <div><span class="creator-panel-eyebrow">VOIDEDX BRAND KIT</span><h2 id="creator-brand-title">Logo & animated banner</h2></div>
+            </div>
+            <div class="creator-brand-grid">
+                <article class="creator-brand-card">
+                    <div class="creator-brand-logo-preview"><img src="/voidedx-logo.svg" alt="VoidedX logo"></div>
+                    <div class="creator-brand-card-copy"><strong>VoidedX logo</strong><span>Scalable SVG mark</span></div>
+                    <a href="/voidedx-logo.svg" download aria-label="Download VoidedX logo"><i class="fa-solid fa-download"></i> Download logo</a>
+                </article>
+                <article class="creator-brand-card banner-card">
+                    <div class="creator-brand-banner-preview"><img src="/voidedx-discord-banner.svg" alt="Animated VoidedX banner"></div>
+                    <div class="creator-brand-card-copy"><strong>Animated banner</strong><span>960 × 540 SVG animation</span></div>
+                    <a href="/voidedx-discord-banner.svg" download aria-label="Download animated VoidedX banner"><i class="fa-solid fa-download"></i> Download banner</a>
+                </article>
+            </div>
+        </section>
+
+        <section id="panel-login" class="creator-panel-auth admin-card">
+            <div class="creator-panel-auth-heading">
+                <span class="creator-panel-auth-icon"><i class="fa-solid fa-user-shield"></i></span>
+                <div><h2>Sign in to your panel</h2><p>Your vaults are only loaded for your signed-in account.</p></div>
+            </div>
+            <div id="panel-auth-error" class="admin-status hidden" role="alert"></div>
+            <label class="panel-label" for="panel-email">EMAIL</label>
+            <input id="panel-email" class="input-field" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com">
+            <label class="panel-label" for="panel-password">PASSWORD</label>
+            <input id="panel-password" class="input-field" type="password" autocomplete="current-password" maxlength="200" placeholder="Your account password">
+            <div class="creator-panel-auth-actions">
+                <button id="panel-sign-in-btn" class="btn-primary" type="button"><i class="fa-solid fa-right-to-bracket"></i> Sign in</button>
+                <button id="panel-sign-up-btn" class="btn-ghost" type="button"><i class="fa-solid fa-user-plus"></i> Create account</button>
+            </div>
+        </section>
+
+        <section id="panel-dashboard" class="creator-panel-dashboard hidden">
+            <div class="creator-panel-section-heading">
+                <div><span class="creator-panel-eyebrow">YOUR WORKSPACE</span><h2>Script vaults</h2><p id="panel-user-label" class="creator-panel-muted"></p></div>
+                <button id="panel-refresh-btn" class="btn-ghost" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <div class="creator-panel-stats">
+                <article class="creator-stat"><span><i class="fa-solid fa-vault"></i> SAVED SCRIPTS</span><strong id="panel-stat-vaults">0</strong></article>
+                <article class="creator-stat"><span><i class="fa-solid fa-play"></i> EXECUTIONS</span><strong id="panel-stat-executions">0</strong></article>
+                <article class="creator-stat"><span><i class="fa-solid fa-key"></i> VERIFICATION ENABLED</span><strong id="panel-stat-protected">0</strong></article>
+            </div>
+            <div id="panel-feedback" class="admin-status hidden" role="status" aria-live="polite"></div>
+            <div id="panel-vault-list" class="creator-vault-grid"><div class="info-box"><p>Loading your scripts…</p></div></div>
+            <aside class="creator-panel-note"><i class="fa-solid fa-circle-info"></i><p>Client scripts can be inspected by the people who run them. Obfuscation and verification can add friction, but they cannot make delivered client code impossible to recover. Keep secrets and private service credentials on a trusted server.</p></aside>
+        </section>
+
+        <footer class="creator-panel-footer"><span>VOIDEDX CREATOR PANEL</span><span><a href="/voidedx-logo.svg" download>Download logo</a> · <a href="/voidedx-discord-banner.svg" download>Download animated banner</a></span></footer>
+    </main>
+    <script type="module" src="panel.js"></script>
+</body>
+</html>

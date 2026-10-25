@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>VoidedX // Discord Control</title>
+    <link rel="icon" type="image/png" href="/voidedx-favicon.png?v=2">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .dc-shell { width:min(1120px,calc(100% - 28px)); margin:0 auto; padding:22px 0 48px; display:grid; gap:18px; }
+        .dc-topbar,.dc-heading,.dc-actions,.dc-copy-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .dc-topbar { padding-bottom:14px; border-bottom:1px solid var(--border-color); }
+        .dc-topbar-links,.dc-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+        .dc-hero { position:relative; overflow:hidden; padding:clamp(20px,4vw,36px); border:1px solid var(--border-color); border-radius:16px; background:radial-gradient(circle at 90% 0%,rgba(6,182,212,.16),transparent 38%),linear-gradient(145deg,var(--bg-panel),var(--bg-surface)); }
+        .dc-eyebrow { display:inline-flex; align-items:center; gap:7px; color:var(--cyan); font-size:10px; font-weight:900; letter-spacing:1.1px; text-transform:uppercase; }
+        .dc-hero h1 { margin:10px 0 8px; font-size:clamp(28px,5vw,42px); letter-spacing:-1.3px; }
+        .dc-hero p,.dc-muted { color:var(--text-muted); font-size:12px; line-height:1.65; }
+        .dc-status-pill { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border-color); background:rgba(255,255,255,.025); border-radius:999px; padding:7px 11px; color:var(--text-muted); font-size:10px; font-weight:800; white-space:nowrap; }
+        .dc-status-pill.ready { color:#86efac; border-color:rgba(34,197,94,.28); background:rgba(34,197,94,.07); }
+        .dc-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .dc-card { min-width:0; padding:18px; border:1px solid var(--border-color); border-radius:13px; background:var(--bg-surface); }
+        .dc-card h2 { margin:0 0 7px; font-size:15px; }
+        .dc-card h2 i { margin-right:6px; color:var(--cyan); }
+        .dc-meta { display:grid; gap:10px; margin-top:15px; }
+        .dc-meta-row { display:grid; grid-template-columns:minmax(90px,130px) minmax(0,1fr); align-items:center; gap:8px; color:var(--text-muted); font-size:10px; }
+        .dc-meta-row code { overflow-wrap:anywhere; padding:8px; border:1px solid var(--border-color); border-radius:7px; background:var(--bg-panel); color:#dbeafe; font-size:10px; }
+        .dc-copy-btn { width:auto; min-height:30px; padding:5px 9px; font-size:10px; }
+        .dc-notice { margin-top:13px; padding:11px 12px; border:1px solid rgba(6,182,212,.18); border-radius:9px; background:rgba(6,182,212,.045); color:var(--text-muted); font-size:10px; line-height:1.6; }
+        .dc-notice i { color:var(--cyan); margin-right:5px; }
+        .dc-command-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
+        .dc-command { display:flex; align-items:center; gap:8px; min-width:0; padding:10px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-panel); }
+        .dc-command i { color:var(--cyan); }
+        .dc-command code { color:#e8f2ff; font-size:10px; }
+        .dc-command span { min-width:0; overflow:hidden; color:var(--text-muted); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+        .dc-channel-list { display:grid; gap:12px; margin-top:14px; }
+        .dc-channel { padding:13px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-panel); }
+        .dc-channel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+        .dc-channel-title { color:var(--text-primary); font-size:12px; font-weight:800; }
+        .dc-channel-command { color:var(--cyan); font-family:var(--font-mono); font-size:9px; }
+        .dc-channel .panel-label { margin-top:9px; }
+        .dc-channel textarea { min-height:68px; resize:vertical; line-height:1.5; }
+        .dc-channel-id { font-family:var(--font-mono); }
+        .dc-actions .btn-primary,.dc-actions .btn-ghost { width:auto; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+        .dc-auth { max-width:560px; margin:8vh auto; text-align:center; }
+        .dc-auth i { color:var(--cyan); font-size:25px; }
+        .dc-footer { display:flex; justify-content:space-between; gap:12px; color:var(--text-muted); font-size:9px; }
+        @media(max-width:700px) { .dc-grid{grid-template-columns:1fr}.dc-heading{align-items:flex-start;flex-direction:column}.dc-meta-row{grid-template-columns:1fr}.dc-command-list{grid-template-columns:1fr}.dc-topbar{align-items:flex-start;flex-direction:column}.dc-footer{flex-direction:column} }
+    </style>
+</head>
+<body class="admin-page">
+    <main class="dc-shell">
+        <header class="dc-topbar">
+            <a class="brand-unit brand-unit-link" href="/admin.html" style="text-decoration:none">
+                <img src="/logo.png" alt="VoidedX" class="brand-icon-img">
+                <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">DISCORD CONTROL</span></span>
+            </a>
+            <nav class="dc-topbar-links" aria-label="Panel navigation">
+                <a class="btn-ghost" href="/admin.html"><i class="fa-solid fa-shield-halved"></i> Admin panel</a>
+                <a class="btn-ghost" href="/panel.html"><i class="fa-solid fa-code"></i> Creator panel</a>
+                <a class="btn-ghost" href="/"><i class="fa-solid fa-arrow-up-right-from-square"></i> Website</a>
+            </nav>
+        </header>
+
+        <section id="dc-auth-required" class="admin-card dc-auth hidden">
+            <i class="fa-solid fa-lock"></i>
+            <h1>Admin sign-in required</h1>
+            <p class="dc-muted">Sign in to the VoidedX admin panel, then open Discord Control again.</p>
+            <a class="btn-primary" href="/admin.html"><i class="fa-solid fa-right-to-bracket"></i> Open admin sign-in</a>
+        </section>
+
+        <div id="dc-app" class="hidden">
+            <section class="dc-hero">
+                <div class="dc-heading">
+                    <div><span class="dc-eyebrow"><i class="fa-brands fa-discord"></i> SERVER INTEGRATION</span><h1>Discord Control</h1><p>Register VoidedX slash commands, map the server channels, and publish or update their info panels.</p></div>
+                    <span id="dc-bot-status" class="dc-status-pill"><i class="fa-solid fa-circle-notch fa-spin"></i> Checking setup…</span>
+                </div>
+            </section>
+
+            <div id="dc-feedback" class="admin-status hidden" role="status" aria-live="polite"></div>
+
+            <div class="dc-grid">
+                <section class="dc-card">
+                    <h2><i class="fa-solid fa-link"></i> Discord app & server</h2>
+                    <p class="dc-muted">This integration is locked to the server ID below. The public key verifies that incoming interactions really came from Discord.</p>
+                    <div class="dc-meta">
+                        <div class="dc-meta-row"><span>Application ID</span><code id="dc-app-id">—</code></div>
+                        <div class="dc-meta-row"><span>Public key</span><code id="dc-public-key">—</code></div>
+                        <div class="dc-meta-row"><span>Allowed server</span><code id="dc-guild-id">—</code></div>
+                        <div class="dc-meta-row"><span>Commands endpoint</span><code id="dc-endpoint">—</code></div>
+                    </div>
+                    <div class="dc-notice"><i class="fa-solid fa-key"></i> The server reads your private Vercel <code>BOT_TOKEN</code> variable (it also accepts <code>DISCORD_BOT_TOKEN</code>). After changing Vercel variables, redeploy the site. Do not paste the token into this page or source code. The bot needs <strong>Send Messages</strong> and <strong>Embed Links</strong> in channels where you publish panels.</div>
+                </section>
+                <section class="dc-card">
+                    <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Setup actions</h2>
+                    <p class="dc-muted">Register creates or updates these guild-only slash commands. Publish sends a VoidedX info embed to each channel ID configured below and updates the bot’s previous panel when possible.</p>
+                    <div class="dc-actions" style="margin-top:15px">
+                        <button id="dc-register" class="btn-primary" type="button"><i class="fa-solid fa-list-check"></i> Register commands</button>
+                        <button id="dc-publish" class="btn-ghost" type="button"><i class="fa-solid fa-paper-plane"></i> Publish channel panels</button>
+                    </div>
+                    <div class="dc-notice"><i class="fa-solid fa-circle-info"></i> First invite the app to your server with <code>bot</code> and <code>applications.commands</code>. Keep the bot’s server permissions minimal.</div>
+                </section>
+            </div>
+
+            <section class="dc-card">
+                <h2><i class="fa-solid fa-terminal"></i> Slash commands</h2>
+                <p class="dc-muted">Commands are registered only for the configured server. Channel-specific commands use the channel IDs below when an ID is set. Basic help, panel, scripts, and vault verification remain available throughout that server.</p>
+                <div id="dc-command-list" class="dc-command-list"></div>
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-heading"><div><h2><i class="fa-solid fa-hashtag"></i> Channel panels & commands</h2><p class="dc-muted">In Discord, enable Developer Mode and right-click each channel to copy its ID. Leave a channel ID blank to let its command work anywhere in this server.</p></div><button id="dc-save" class="btn-primary" type="button"><i class="fa-solid fa-floppy-disk"></i> Save channel setup</button></div>
+                <div id="dc-channel-list" class="dc-channel-list"></div>
+            </section>
+            <footer class="dc-footer"><span>VOIDEDX · SERVER-LOCKED DISCORD INTEGRATION</span><span>Bot token stays server-side.</span></footer>
+        </div>
+    </main>
+    <script type="module" src="/discord-panel.js"></script>
+</body>
+</html>

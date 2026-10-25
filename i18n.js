@@ -329,6 +329,28 @@
         'Approve': 'Aprovar', 'Reject': 'Rejeitar', 'Hide from library': 'Ocultar da biblioteca', 'Review source code': 'Revisar código-fonte',
         'No description': 'Sem descrição', '(No description)': '(Sem descrição)', '(Empty suggestion)': '(Sugestão vazia)', '(No source code)': '(Sem código-fonte)',
         'Untitled Vault': 'Cofre sem título',
+        'Creator Panel': 'Painel do Criador', 'SCRIPT CONTROL CENTER': 'CENTRAL DE CONTROLE DE SCRIPTS',
+        'Back to Creator Panel': 'Voltar ao Painel do Criador',
+        'VOIDEDX BRAND KIT': 'IDENTIDADE VISUAL VOIDEDX', 'Logo & animated banner': 'Logotipo e banner animado',
+        'VoidedX logo': 'Logotipo VoidedX', 'Scalable SVG mark': 'Marca vetorial SVG',
+        '960 × 540 SVG animation': 'Animação SVG 960 × 540', 'Download logo': 'Baixar logotipo', 'Download banner': 'Baixar banner',
+        'Your scripts.': 'Seus scripts.', 'Your controls.': 'Seus controles.',
+        'Obfuscate your scripts, manage verification, and review your protection settings from one place.': 'Ofusque seus scripts, gerencie a verificação e revise as proteções em um só lugar.',
+        'Create or obfuscate a script': 'Criar ou ofuscar um script', 'Animated banner': 'Banner animado',
+        'Download logo': 'Baixar logotipo', 'Sign in to your panel': 'Entre no seu painel',
+        'Your vaults are only loaded for your signed-in account.': 'Seus cofres só são carregados na sua conta conectada.',
+        'EMAIL': 'E-MAIL', 'PASSWORD': 'SENHA', 'Your account password': 'A senha da sua conta',
+        'Create account': 'Criar conta', 'YOUR WORKSPACE': 'SEU ESPAÇO DE TRABALHO', 'Script vaults': 'Cofres de scripts',
+        'SAVED SCRIPTS': 'SCRIPTS SALVOS', 'EXECUTIONS': 'EXECUÇÕES', 'VERIFICATION ENABLED': 'VERIFICAÇÃO ATIVADA',
+        'Edit & obfuscate': 'Editar e ofuscar', 'Verification & access': 'Verificação e acesso',
+        'Verification on': 'Verificação ativa', 'Verification off': 'Verificação inativa', 'Obfuscated': 'Ofuscado',
+        'Readable delivery': 'Entrega legível', 'Tamper check': 'Verificação de integridade',
+        'VM pass': 'Proteção VM', 'Extra checks off': 'Verificações extras desativadas',
+        'String splitting': 'Divisão de strings', 'Default transforms': 'Transformações padrão',
+        'No saved scripts yet': 'Ainda não há scripts salvos',
+        'Create a vault to start obfuscating scripts and configuring verification.': 'Crie um cofre para começar a ofuscar scripts e configurar a verificação.',
+        'Create your first script': 'Criar seu primeiro script',
+        'Client scripts can be inspected by the people who run them. Obfuscation and verification can add friction, but they cannot make delivered client code impossible to recover. Keep secrets and private service credentials on a trusted server.': 'Quem executa scripts de cliente pode inspecioná-los. Ofuscação e verificação podem dificultar o acesso, mas não impedem a recuperação do código entregue ao cliente. Mantenha segredos e credenciais privadas em um servidor confiável.',
         '1 error': '1 erro', 'errors': 'erros', 'warning': 'aviso', 'warnings': 'avisos', 'report': 'denúncia', 'reports': 'denúncias'
     };
 
@@ -343,7 +365,7 @@
     const originalAttrs = new WeakMap();
     const lastAttrs = new WeakMap();
     const ignoredTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'PRE', 'CODE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'SVG', 'CANVAS']);
-    const ignoredContentSelector = '#site-announcement-title, #site-announcement-message, #announcement-preview-title, #announcement-preview-message, .vault-item-title, .script-card h3, .script-card-description, .script-card-game, .script-card-author, .script-author-copy, #detail-title, #detail-description, #detail-author, #detail-game, #ks-vault-title, #gui-preview-vault-name, #keyprompt-title strong, #getkey-title span, #secured-title strong:first-child, .admin-idea-header, .admin-idea-card > p, .admin-script-review-heading, .admin-script-review-item > p, .manage-user-name, .manage-user-meta';
+    const ignoredContentSelector = '#site-announcement-title, #site-announcement-message, #announcement-preview-title, #announcement-preview-message, .vault-item-title, .script-card h3, .script-card-description, .script-card-game, .script-card-author, .script-author-copy, #detail-title, #detail-description, #detail-author, #detail-game, #ks-vault-title, #gui-preview-vault-name, #keyprompt-title strong, #getkey-title span, #secured-title strong:first-child, .admin-idea-header, .admin-idea-card > p, .admin-script-review-heading, .admin-script-review-item > p, .manage-user-name, .manage-user-meta, #panel-user-label, .creator-vault-title-block h3, .creator-vault-id, .creator-vault-executions';
 
     function normalize(value) { return String(value).replace(/\s+/g, ' ').trim(); }
     function translated(value) {
@@ -362,6 +384,10 @@
         }
         match = key.match(/^Please wait (\d+)s…$/);
         if (match) return `${leading}Aguarde ${match[1]}s…${trailing}`;
+        match = key.match(/^Strength (AUTO|LOW|MEDIUM|HIGH)$/);
+        if (match) return `${leading}Nível ${match[1] === 'AUTO' ? 'automático' : match[1] === 'LOW' ? 'baixo' : match[1] === 'MEDIUM' ? 'médio' : 'alto'}${trailing}`;
+        match = key.match(/^Updated (.+)$/);
+        if (match) return `${leading}Atualizado em ${match[1]}${trailing}`;
         match = key.match(/^Expires in (.+)\.$/);
         if (match) return `${leading}Expira em ${match[1]}.${trailing}`;
         match = key.match(/^Current key expires in (.+)\.$/);
@@ -455,9 +481,9 @@
             updateLanguage();
         });
 
-        const header = document.querySelector('.top-nav, .admin-topbar');
+        const header = document.querySelector('.top-nav, .admin-topbar, .creator-panel-nav');
         if (!header) { document.body.prepend(control); return; }
-        const actionGroup = header.querySelector('.nav-user, .leaderboard-nav, .scripts-account-actions') || header.querySelector('.scripts-nav-links');
+        const actionGroup = header.querySelector('.nav-user, .leaderboard-nav, .scripts-account-actions, .creator-panel-nav-actions') || header.querySelector('.scripts-nav-links');
         if (actionGroup) { actionGroup.append(control); return; }
         const backLink = header.querySelector('.admin-back-link, .ks-back-link');
         if (backLink) {

@@ -15,6 +15,22 @@ Admin sessions use signed, HTTP-only, same-site cookies and expire after eight h
 
 The authenticated Admin dashboard includes a private vault source manager. It lists vault metadata, loads readable source only when a vault is selected, and can update its title, source, obfuscation settings, and execution copy. Admin edits are protected by the same-origin check and session cookie, and update only the chosen vault's script fields while preserving owner keys and execution counts. Saving there changes the live vault used by that vault's loader.
 
+## Discord bot and control panel
+
+The Discord Control page is available at `/discord.html` and is linked from the authenticated Admin dashboard. It uses the existing admin session and stores channel IDs, editable channel panel text, and IDs of bot-posted panels in Firestore. The Discord bot token is never returned to the browser or stored in Firestore.
+
+This integration uses Discord HTTP interactions, so it does not need a continuously running bot process. Its guild commands are registered only for application `1563789940452622397` in guild `1563443676313559100`; the interaction handler independently rejects interactions from all other guilds and validates Discord's Ed25519 request signature. The configured channels are Rules, Notices, Features, Top-Globals, Chat, Suggestions, Site, Blacklist, Bypass, and Commands. `/help`, `/panel`, `/scripts`, and `/verify` work throughout the allowed guild. Channel commands are limited to their mapped channel after a channel ID is entered in Discord Control. The `/bypass` response only directs users to legitimate access help; it does not bypass a protection or verification check.
+
+To connect the bot after deployment:
+
+1. In the Vercel project settings, add `BOT_TOKEN` as a private environment variable and redeploy. The server also accepts the older name `DISCORD_BOT_TOKEN`. Never put this token in HTML, client JavaScript, a commit, or a chat message.
+2. In the Discord Developer Portal, install the application into the specified server with the `bot` and `applications.commands` scopes. Grant the bot only the permissions it needs; publishing channel panels requires Send Messages and Embed Links in those channels.
+3. In the app's General Information settings, set the Interactions Endpoint URL to `https://voidedx.vercel.app/api/discord-interactions`. The app's public key is already configured in the server handler. Discord validates the endpoint with a signed PING request.
+4. Sign into `/admin.html`, open Discord Control, enable Developer Mode in Discord, right-click each text channel and choose Copy Channel ID, then enter the IDs and save.
+5. Click Register commands, then Publish channel panels. Publishing updates the bot's prior panel message when possible; otherwise it sends a new one.
+
+`/verify vault_id:<id>` opens the existing VoidedX vault access page. It does not link a Discord account to a website/Firebase account or assign Discord roles. Those require an additional OAuth and role-management integration; website key-page verification does not by itself prove Discord membership.
+
 ## Loader and key protection
 
 The copied loader keeps the stable `loadstring(game:HttpGet(".../api/raw?id=..."))()` form and contains no token query parameter or format flag. Executor requests to `/api/raw` receive the bootstrap by default; normal browser requests are redirected to the vault page. Each `/api/raw` fetch mints a new signed 45-second loader token and masks it inside the returned `_bsdata0` bootstrap; that bootstrap rechecks the token when run. A copied bootstrap body expires, while the token-free outer URL can fetch a new bootstrap whenever the vault remains available. Owners can increment the vault version to invalidate already-issued bootstrap bodies, pause the vault to block new launches, or revoke a key to block future keyed access. Each successful `/api/verify` call also issues a cryptographically random, one-use delivery ticket; it expires after the vault's configured 20, 30, 45, or 60 seconds (45 by default) and `/api/payload` consumes it once while rechecking the vault, key, player binding, ban, IP-lock state, and pause status. Keyed verification limits can be set to 5, 10, 20, 30, or 50 checks per network in 15 minutes (30 by default); the counter includes successful checks. Pausing does not stop a script that has already been downloaded and is running. Newly generated keys use 16 cryptographically random characters; existing keys continue to work.
