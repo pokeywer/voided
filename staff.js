@@ -223,7 +223,100 @@ function renderCommunityScripts(items, canModerate) {
     }, 'No pending community scripts.');
 }
 
-async function showVaultSource(vaultId) {
+// ── Source access request flow ────────────────────────────────────────────────
+
+// Returns the latest request for a given vaultId from the cached list, or null.
+function getSourceRequest(vaultId) {
+    const requests = window._staffSourceRequests || [];
+    // Most recent first (list is already ordered by createdAt desc from server)
+    return requests.find(r => r.vaultId === vaultId) || null;
+}
+
+// Re-render every vault row's source-access button to reflect current request state.
+function refreshSourceButtons() {
+    document.querySelectorAll('button[data-view-source]').forEach(btn => {
+        const vaultId = btn.dataset.viewSource;
+        const req = getSourceRequest(vaultId);
+        if (!req) {
+            btn.textContent = 'Request access';
+            btn.className = 'btn-ghost admin-operation-action';
+            btn.disabled = false;
+        } else if (req.status === 'approved') {
+            btn.textContent = 'View source';
+            btn.className = 'btn-ghost admin-operation-action';
+            btn.disabled = false;
+        } else if (req.status === 'pending') {
+            btn.textContent = 'Pending admin approval…';
+            btn.className = 'btn-ghost admin-operation-action';
+            btn.disabled = true;
+        } else if (req.status === 'denied') {
+            btn.textContent = 'Denied — re-request';
+            btn.className = 'btn-danger admin-operation-action';
+            btn.disabled = false;
+        }
+    });
+}
+
+// Render the staff member's own source access requests below the vault list.
+function renderMySourceRequests(requests) {
+    window._staffSourceRequests = Array.isArray(requests) ? requests : [];
+    const container = document.getElementById('staff-source-requests-list');
+    if (!container) return;
+    refreshSourceButtons();
+    container.replaceChildren();
+    if (!window._staffSourceRequests.length) {
+        const p = document.createElement('p');
+        p.className = 'creator-panel-muted';
+        p.textContent = 'You have no source access requests yet.';
+        container.appendChild(p);
+        return;
+    }
+    for (const req of window._staffSourceRequests) {
+        const statusLabel = { pending: '⏳ Pending', approved: '✅ Approved', denied: '❌ Denied' }[req.status] || req.status;
+        const expiry = req.status === 'approved' && req.expiresAt
+            ? ` · Expires ${dateText(req.expiresAt)}`
+            : '';
+        const adminNote = req.adminNote ? ` · Admin note: "${req.adminNote}"` : '';
+        const row = textItem(
+            `${req.vaultTitle} (${req.vaultId})`,
+            `${statusLabel}${expiry}${adminNote} · Requested ${dateText(req.createdAt)}`
+        );
+        container.appendChild(row);
+    }
+}
+
+// Show a prompt to request source access for a vault, then submit it.
+async function requestVaultSourceAccess(vaultId, vaultTitle, button) {
+    const reason = window.prompt(`You need admin approval to view the source of "${vaultTitle}".\n\nEnter your reason for needing access:`);
+    if (reason === null) return; // cancelled
+    if (!reason.trim() || reason.trim().length < 8) {
+        message(feedback, 'Write at least 8 characters for your reason.', 'error');
+        return;
+    }
+    if (button) button.disabled = true;
+    try {
+        await api('/api/staff', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'request_source_access', vaultId, reason: reason.trim() })
+        });
+        // Refresh dashboard so request list and button states update
+        await loadDashboard();
+        message(feedback, `Source access request for "${vaultTitle}" sent to admins. You'll be able to view it once approved.`, 'success');
+    } catch (error) {
+        message(feedback, error.message, 'error');
+        if (button) button.disabled = false;
+    }
+}
+
+async function showVaultSource(vaultId, vaultTitle, button) {
+    const req = getSourceRequest(vaultId);
+    // If no approved request, open the request flow instead
+    if (!req || req.status !== 'approved') {
+        await requestVaultSourceAccess(vaultId, vaultTitle || vaultId, button);
+        return;
+    }
+    if (button) button.disabled = true;
     try {
         const result = await api(`/api/staff?vaultId=${encodeURIComponent(vaultId)}`);
         const source = result.data?.vaultSource;
@@ -241,7 +334,11 @@ async function showVaultSource(vaultId) {
             document.getElementById('staff-source-list').appendChild(details);
         }
         details.open = true;
-    } catch (error) { message(feedback, error.message, 'error'); }
+    } catch (error) {
+        message(feedback, error.message, 'error');
+    } finally {
+        if (button) button.disabled = false;
+    }
 }
 
 async function showCommunityScript(id) {
@@ -409,18 +506,24 @@ async function loadDashboard() {
         document.getElementById('staff-community-scripts-help').classList.toggle('hidden', !canModerateScripts);
 
         document.getElementById('staff-vault-count').textContent = String(data.vaults?.length || 0);
+        // Load source requests before rendering vault rows so button states are correct immediately
+        renderMySourceRequests(data.sourceAccessRequests || []);
         renderList('staff-vault-list', data.vaults, item => {
             const row = textItem(item.title, `${item.id} · ${item.executions.toLocaleString()} executions · ${item.requireKey ? 'key access' : 'no key'} · ${item.paused ? 'paused' : 'active'}`);
-            if (grantedScopes.includes('vaults') && grantedScopes.includes('vaultSource')) {
+            if (grantedScopes.includes('vaultSource')) {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'btn-ghost admin-operation-action';
                 button.dataset.viewSource = item.id;
-                button.textContent = 'View source';
+                button.dataset.vaultTitle = item.title || item.id;
+                // Button label/style set by refreshSourceButtons based on current request state
+                button.textContent = 'Request access';
+                button.className = 'btn-ghost admin-operation-action';
                 row.appendChild(button);
             }
             return row;
         }, 'No vaults to show.');
+        // Re-apply button states now that vault rows exist
+        refreshSourceButtons();
 
         if (data.executions) {
             document.getElementById('staff-executions-total').textContent = Number(data.executions.lifetime || 0).toLocaleString();
@@ -462,7 +565,7 @@ document.getElementById('staff-guest-btn').addEventListener('click', () => login
 document.getElementById('staff-sign-out').addEventListener('click', () => signOut(auth));
 document.getElementById('staff-vault-list').addEventListener('click', event => {
     const button = event.target.closest('button[data-view-source]');
-    if (button) showVaultSource(button.dataset.viewSource);
+    if (button) showVaultSource(button.dataset.viewSource, button.dataset.vaultTitle, button);
 });
 document.getElementById('staff-dashboard').addEventListener('click', handleStaffActionClick);
 bindStaffAnnouncementForm();
