@@ -267,7 +267,7 @@ local function vxSha256(value)
             local coerced = tostring(digest)
             if type(coerced) == "string" then
                 coerced = string.lower(coerced)
-                if #coerced == 64 and string.match(coerced, "^[%da-f]+$") then return coerced end
+                if string.len(coerced) == 64 and string.match(coerced, "^[%da-f]+$") then return coerced end
             end
         end
     end
@@ -481,7 +481,7 @@ function packGeneratedLoader(source, { id, key = '', origin, token }) {
     if (key) gateUrl.searchParams.set('key', key);
     const encodedSource = encode(source);
     const encodedGate = encode(gateUrl.href);
-    return `local _bsdata0={1,${mask},"${encodedSource}","${encodedGate}"};local _bsdata1={};for _i0=1,#_bsdata0[3] do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;local _bsdata2={};for _i1=1,#_bsdata0[4] do _bsdata2[_i1]=string.char((string.byte(_bsdata0[4],_i1)-_bsdata0[2])%256) end;local _bsok,_bsresponse=pcall(function()return game:HttpGet(table.concat(_bsdata2))end);if not _bsok or _bsresponse~="ok" then return error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0)end;local _bscompile=loadstring or load;if type(_bscompile)~="function" then return error("[VoidedX] This executor does not support loadstring.",0)end;local _bschunk,_bserror=_bscompile(table.concat(_bsdata1));if not _bschunk then return error(tostring(_bserror),0)end;return _bschunk()`;
+    return `local _bsdata0={1,${mask},"${encodedSource}","${encodedGate}"};local _bsdata1={};for _i0=1,string.len(_bsdata0[3]) do _bsdata1[_i0]=string.char((string.byte(_bsdata0[3],_i0)-_bsdata0[2])%256) end;local _bsdata2={};for _i1=1,string.len(_bsdata0[4]) do _bsdata2[_i1]=string.char((string.byte(_bsdata0[4],_i1)-_bsdata0[2])%256) end;local _bsok,_bsresponse=pcall(function()return game:HttpGet(table.concat(_bsdata2))end);if not _bsok or _bsresponse~="ok" then return error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0)end;local _bscompile=loadstring or load;if type(_bscompile)~="function" then return error("[VoidedX] This executor does not support loadstring.",0)end;local _bschunk,_bserror=_bscompile(table.concat(_bsdata1));if not _bschunk then return error(tostring(_bserror),0)end;return _bschunk()`;
 }
 
 function luaString(str) {
@@ -683,7 +683,7 @@ if BACKGROUND_ANIMATION ~= "none" then
             task.spawn(function()
                 local pointIndex = 1
                 while animationLayer.Parent do
-                    pointIndex = pointIndex % #points + 1
+                    pointIndex = pointIndex % (function() local n=0; for _ in next,points do n=n+1 end; return n end)() + 1
                     local tween = TweenService:Create(glow, TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                         Position = points[pointIndex]
                     })
@@ -1334,7 +1334,7 @@ local function formatKeyTime(seconds)
     if days > 0 then table.insert(parts, string.format("%dd", days)) end
     if hours > 0 then table.insert(parts, string.format("%dh", hours)) end
     if minutes > 0 then table.insert(parts, string.format("%dm", minutes)) end
-    if #parts == 0 then return string.format("%ds", seconds) end
+    if next(parts) == nil then return string.format("%ds", seconds) end
     return table.concat(parts, " ")
 end
 

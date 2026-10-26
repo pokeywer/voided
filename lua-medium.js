@@ -36,77 +36,134 @@ export function resolveObfuscationLevel(source, requestedLevel = 'auto') {
     return getUtf8ByteLength(source) > AUTO_HIGH_BYTE_THRESHOLD ? 'medium' : 'high';
 }
 
-// Prometheus's ConstantArray and VM steps emit bare `#x` length ops. On executors
-// that return userdata from readfile() or crypt APIs, those ops crash with
-// "attempt to get length of a userdata value". This shim prepends a safe length
-// helper and rewrites `#IDENT` patterns inside the generated output to use it.
-// We only touch identifiers (word chars) — not string literals or expressions.
+// ---------------------------------------------------------------------------
+// patchObfuscatedLengthOps
+//
+// Prometheus emits bare `#expr` length operators in its VM decoder and
+// ConstantArray rotation code. On executors that return userdata objects
+// instead of plain Lua strings/tables (some Synapse X builds, Delta, Wave,
+// etc.) those ops crash with "attempt to get length of a userdata value".
+//
+// We post-process the obfuscated output with a proper Lua tokenizer that
+// skips all string literals, long strings, and comments, then rewrites every
+// `#` that appears in actual code to a safe function call.
+//
+// The shim avoids rawlen (not always available) and never uses # itself —
+// it uses string.len for strings and a next() counter for tables.
+// ---------------------------------------------------------------------------
 function patchObfuscatedLengthOps(code) {
     if (typeof code !== 'string' || !code.includes('#')) return code;
-    // The shim: use rawlen for tables, #tostring for strings, 0 for anything else.
-    const shim = `local __vx_len=rawlen or function(v) local t=type(v) if t=="string" then return #tostring(v) elseif t=="table" then local n=0 for _ in pairs(v) do n=n+1 end return n end return 0 end;`;
-    // Replace `#IDENTIFIER` (but not inside string literals or comments) with the shim call.
-    // This regex matches # followed by a Lua identifier that isn't already inside a string.
-    // We do a simple token-aware pass: skip long strings, quoted strings, and comments.
-    let result = '';
+
+    // Safe length shim — zero # operators used inside it at all.
+    const SHIM =
+        'local __vxL;do ' +
+        'local _sl=string.len;' +
+        'local _tp=type;' +
+        'local _ts=tostring;' +
+        '__vxL=function(v)' +
+            'local t=_tp(v);' +
+            'if t=="string" then return _sl(v) end;' +
+            'if t=="table" then local n=0;for _ in next,v do n=n+1 end;return n end;' +
+            'local ok,s=pcall(_ts,v);' +
+            'if ok and _tp(s)=="string" then return _sl(s) end;' +
+            'return 0;' +
+        'end ' +
+        'end;';
+
+    const out = [];
     let i = 0;
     let patched = false;
-    while (i < code.length) {
-        const ch = code[i];
-        // Skip Lua long strings [==[...]==]
-        if (ch === '[') {
-            const lb = code.indexOf('[', i + 1);
-            if (lb !== -1) {
-                let eqCount = 0;
-                let j = i + 1;
-                while (code[j] === '=') { eqCount++; j++; }
-                if (code[j] === '[') {
-                    const close = `]${'='.repeat(eqCount)}]`;
-                    const end = code.indexOf(close, j + 1);
+    const n = code.length;
+
+    while (i < n) {
+        const c = code[i];
+
+        // ── Lua long string / long comment  [=*[...]=*]  ──────────────────
+        if (c === '[') {
+            let eqs = 0;
+            let j = i + 1;
+            while (j < n && code[j] === '=') { eqs++; j++; }
+            if (j < n && code[j] === '[') {
+                const close = ']' + '='.repeat(eqs) + ']';
+                const end = code.indexOf(close, j + 1);
+                if (end !== -1) {
+                    out.push(code.slice(i, end + close.length));
+                    i = end + close.length;
+                    continue;
+                }
+            }
+            out.push(c); i++; continue;
+        }
+
+        // ── Short quoted string  '...' or "..."  ──────────────────────────
+        if (c === '"' || c === "'") {
+            const q = c;
+            let j = i + 1;
+            while (j < n) {
+                if (code[j] === '\\') { j += 2; continue; }
+                if (code[j] === q) { j++; break; }
+                if (code[j] === '\n' || code[j] === '\r') break;
+                j++;
+            }
+            out.push(code.slice(i, j));
+            i = j;
+            continue;
+        }
+
+        // ── Comment  --  ───────────────────────────────────────────────────
+        if (c === '-' && i + 1 < n && code[i + 1] === '-') {
+            let j = i + 2;
+            if (j < n && code[j] === '[') {
+                let eqs = 0;
+                let k = j + 1;
+                while (k < n && code[k] === '=') { eqs++; k++; }
+                if (k < n && code[k] === '[') {
+                    const close = ']' + '='.repeat(eqs) + ']';
+                    const end = code.indexOf(close, k + 1);
                     if (end !== -1) {
-                        result += code.slice(i, end + close.length);
+                        out.push(code.slice(i, end + close.length));
                         i = end + close.length;
                         continue;
                     }
                 }
             }
-        }
-        // Skip single-quoted strings
-        if (ch === "'" || ch === '"') {
-            const q = ch;
-            result += q;
-            i++;
-            while (i < code.length && code[i] !== q) {
-                if (code[i] === '\\') { result += code[i]; i++; }
-                result += code[i] || '';
-                i++;
-            }
-            if (i < code.length) { result += code[i]; i++; }
+            const nl = code.indexOf('\n', j);
+            if (nl === -1) { out.push(code.slice(i)); i = n; }
+            else { out.push(code.slice(i, nl + 1)); i = nl + 1; }
             continue;
         }
-        // Skip line comments
-        if (ch === '-' && code[i + 1] === '-') {
-            const nl = code.indexOf('\n', i);
-            result += nl !== -1 ? code.slice(i, nl + 1) : code.slice(i);
-            i = nl !== -1 ? nl + 1 : code.length;
-            continue;
-        }
-        // Rewrite #IDENTIFIER
-        if (ch === '#') {
-            const rest = code.slice(i + 1);
-            const m = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)/);
-            if (m) {
-                result += `__vx_len(${m[1]})`;
-                i += 1 + m[1].length;
-                patched = true;
-                continue;
+
+        // ── # in code position ─────────────────────────────────────────────
+        if (c === '#') {
+            let j = i + 1;
+            if (j < n && code[j] === '(') {
+                let depth = 1;
+                j++;
+                while (j < n && depth > 0) {
+                    if (code[j] === '(') depth++;
+                    else if (code[j] === ')') depth--;
+                    j++;
+                }
+                const inner = code.slice(i + 2, j - 1);
+                out.push(`__vxL(${inner})`);
+                i = j; patched = true; continue;
             }
+            if (j < n && /[A-Za-z_]/.test(code[j])) {
+                while (j < n && /[A-Za-z0-9_]/.test(code[j])) j++;
+                const ident = code.slice(i + 1, j);
+                out.push(`__vxL(${ident})`);
+                i = j; patched = true; continue;
+            }
+            out.push(c); i++; continue;
         }
-        result += ch;
-        i++;
+
+        out.push(c); i++;
     }
-    return patched ? shim + result : code;
+
+    if (!patched) return code;
+    return SHIM + out.join('');
 }
+
 
 export function obfuscateLua(source, level = 'medium', protection = {}) {
     if (typeof source !== 'string') {
