@@ -434,7 +434,13 @@ async function loadDashboard() {
         if (!currentUser || currentUser.uid !== uid) return;
         dashboard.classList.add('hidden');
         document.getElementById('staff-grant-summary').classList.add('hidden');
-        message(feedback, `${error.message} Your account ID is shown above so the administrator can assign access.`, 'error');
+        // If the server said no grant exists (or the account has no access), show a clean
+        // instruction rather than a raw API error. Any other failure keeps the real message.
+        const noGrant = /no staff grant|not a staff|no access|no grant|unauthori[sz]ed|forbidden/i.test(error.message);
+        const userMsg = noGrant
+            ? `No staff access found for this account. Give the Account ID shown above to your administrator so they can assign a grant.`
+            : `${error.message} If this keeps happening, give the Account ID shown above to your administrator.`;
+        message(feedback, userMsg, noGrant ? 'info' : 'error');
     }
 }
 

@@ -36,6 +36,78 @@ export function resolveObfuscationLevel(source, requestedLevel = 'auto') {
     return getUtf8ByteLength(source) > AUTO_HIGH_BYTE_THRESHOLD ? 'medium' : 'high';
 }
 
+// Prometheus's ConstantArray and VM steps emit bare `#x` length ops. On executors
+// that return userdata from readfile() or crypt APIs, those ops crash with
+// "attempt to get length of a userdata value". This shim prepends a safe length
+// helper and rewrites `#IDENT` patterns inside the generated output to use it.
+// We only touch identifiers (word chars) — not string literals or expressions.
+function patchObfuscatedLengthOps(code) {
+    if (typeof code !== 'string' || !code.includes('#')) return code;
+    // The shim: use rawlen for tables, #tostring for strings, 0 for anything else.
+    const shim = `local __vx_len=rawlen or function(v) local t=type(v) if t=="string" then return #tostring(v) elseif t=="table" then local n=0 for _ in pairs(v) do n=n+1 end return n end return 0 end;`;
+    // Replace `#IDENTIFIER` (but not inside string literals or comments) with the shim call.
+    // This regex matches # followed by a Lua identifier that isn't already inside a string.
+    // We do a simple token-aware pass: skip long strings, quoted strings, and comments.
+    let result = '';
+    let i = 0;
+    let patched = false;
+    while (i < code.length) {
+        const ch = code[i];
+        // Skip Lua long strings [==[...]==]
+        if (ch === '[') {
+            const lb = code.indexOf('[', i + 1);
+            if (lb !== -1) {
+                let eqCount = 0;
+                let j = i + 1;
+                while (code[j] === '=') { eqCount++; j++; }
+                if (code[j] === '[') {
+                    const close = `]${'='.repeat(eqCount)}]`;
+                    const end = code.indexOf(close, j + 1);
+                    if (end !== -1) {
+                        result += code.slice(i, end + close.length);
+                        i = end + close.length;
+                        continue;
+                    }
+                }
+            }
+        }
+        // Skip single-quoted strings
+        if (ch === "'" || ch === '"') {
+            const q = ch;
+            result += q;
+            i++;
+            while (i < code.length && code[i] !== q) {
+                if (code[i] === '\\') { result += code[i]; i++; }
+                result += code[i] || '';
+                i++;
+            }
+            if (i < code.length) { result += code[i]; i++; }
+            continue;
+        }
+        // Skip line comments
+        if (ch === '-' && code[i + 1] === '-') {
+            const nl = code.indexOf('\n', i);
+            result += nl !== -1 ? code.slice(i, nl + 1) : code.slice(i);
+            i = nl !== -1 ? nl + 1 : code.length;
+            continue;
+        }
+        // Rewrite #IDENTIFIER
+        if (ch === '#') {
+            const rest = code.slice(i + 1);
+            const m = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)/);
+            if (m) {
+                result += `__vx_len(${m[1]})`;
+                i += 1 + m[1].length;
+                patched = true;
+                continue;
+            }
+        }
+        result += ch;
+        i++;
+    }
+    return patched ? shim + result : code;
+}
+
 export function obfuscateLua(source, level = 'medium', protection = {}) {
     if (typeof source !== 'string') {
         return Promise.reject(new Error('Paste a LuaU script before obfuscating it.'));
@@ -108,8 +180,12 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                         if (intermediateBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
                             throw new Error('Prometheus produced more than 32 MiB. Try a lower strength or a smaller source.');
                         }
-                        const output = message.result.output;
-                        const outputBytes = intermediateBytes;
+                        // Patch the Prometheus-generated output to fix "attempt to get length of a
+                        // userdata value" crashes on executors whose table/string APIs return userdata
+                        // objects. The ConstantArray VM decoder emits bare `#VAR` length ops; we
+                        // prepend a tiny rawlen-or-select shim and rewrite those ops to use it.
+                        const output = patchObfuscatedLengthOps(message.result.output);
+                        const outputBytes = getUtf8ByteLength(output);
                         if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
                             throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
                         }

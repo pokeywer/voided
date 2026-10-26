@@ -305,13 +305,20 @@ export default async function handler(req, res) {
         const requestedVaultId = String(req.query?.vaultId || '');
         if (scopes.includes('vaultSource') && requestedVaultId) {
             if (!/^[A-Za-z0-9_-]{1,150}$/.test(requestedVaultId)) return json(res, 400, { ok: false, message: 'Choose a valid vault.' });
-            // Only serve source if there is an active admin-approved grant for this staff member + vault
-            const approvedSnap = await db.collection('sourceAccessRequests')
-                .where('staffUid', '==', user.uid)
-                .where('vaultId', '==', requestedVaultId)
-                .where('status', '==', 'approved')
-                .limit(1)
-                .get();
+            // Only serve source if there is an active admin-approved grant for this staff member + vault.
+            // Wrapped in try/catch — the composite index may not be deployed yet; that must not 500 the panel.
+            let approvedSnap = { empty: true, docs: [] };
+            try {
+                approvedSnap = await db.collection('sourceAccessRequests')
+                    .where('staffUid', '==', user.uid)
+                    .where('vaultId', '==', requestedVaultId)
+                    .where('status', '==', 'approved')
+                    .limit(1)
+                    .get();
+            } catch (indexErr) {
+                console.error('sourceAccessRequests approval query failed (deploy firestore.indexes.json):', indexErr);
+                return json(res, 503, { ok: false, message: 'Source access check is temporarily unavailable. The administrator needs to deploy the Firestore indexes. Try again in a moment.', needsApproval: true });
+            }
             if (approvedSnap.empty) {
                 return json(res, 403, { ok: false, message: 'Source access for this vault has not been approved. Submit a request and wait for an administrator to approve it.', needsApproval: true });
             }
@@ -326,27 +333,33 @@ export default async function handler(req, res) {
             }
         }
 
-        // Return this staff member's own source access requests so the panel can show statuses
+        // Return this staff member's own source access requests so the panel can show statuses.
+        // Wrapped in try/catch — missing index must not block the rest of the staff panel load.
         if (scopes.includes('vaultSource')) {
-            const myRequestsSnap = await db.collection('sourceAccessRequests')
-                .where('staffUid', '==', user.uid)
-                .orderBy('createdAt', 'desc')
-                .limit(20)
-                .get();
-            data.sourceAccessRequests = myRequestsSnap.docs.map(doc => {
-                const item = doc.data();
-                return {
-                    id: doc.id,
-                    vaultId: String(item.vaultId || ''),
-                    vaultTitle: String(item.vaultTitle || 'Untitled Vault'),
-                    reason: String(item.reason || ''),
-                    status: String(item.status || 'pending'),
-                    adminNote: String(item.adminNote || ''),
-                    createdAt: Number(item.createdAt) || 0,
-                    handledAt: Number(item.handledAt) || 0,
-                    expiresAt: Number(item.expiresAt) || 0
-                };
-            });
+            try {
+                const myRequestsSnap = await db.collection('sourceAccessRequests')
+                    .where('staffUid', '==', user.uid)
+                    .orderBy('createdAt', 'desc')
+                    .limit(20)
+                    .get();
+                data.sourceAccessRequests = myRequestsSnap.docs.map(doc => {
+                    const item = doc.data();
+                    return {
+                        id: doc.id,
+                        vaultId: String(item.vaultId || ''),
+                        vaultTitle: String(item.vaultTitle || 'Untitled Vault'),
+                        reason: String(item.reason || ''),
+                        status: String(item.status || 'pending'),
+                        adminNote: String(item.adminNote || ''),
+                        createdAt: Number(item.createdAt) || 0,
+                        handledAt: Number(item.handledAt) || 0,
+                        expiresAt: Number(item.expiresAt) || 0
+                    };
+                });
+            } catch (indexErr) {
+                console.error('sourceAccessRequests list query failed (deploy firestore.indexes.json):', indexErr);
+                data.sourceAccessRequests = [];
+            }
         }
         if (scopes.includes('communityScripts') && req.query?.communityScriptId) {
             const scriptId = String(req.query.communityScriptId);

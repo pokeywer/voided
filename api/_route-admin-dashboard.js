@@ -28,12 +28,24 @@ export default async function handler(req, res) {
             return json(res, 200, { ok: true });
         }
 
-        const [vaultsSnap, ideasSnap, ideasCountSnap, sourceRequestsSnap] = await Promise.all([
+        // Run sourceAccessRequests separately — it needs a composite index that may not
+        // exist yet. A missing-index error from that query must not crash the whole dashboard.
+        const [vaultsSnap, ideasSnap, ideasCountSnap] = await Promise.all([
             db.collection('vaults').select('executions').get(),
             db.collection('feature_requests').orderBy('createdAt', 'desc').limit(50).get(),
-            db.collection('feature_requests').count().get(),
-            db.collection('sourceAccessRequests').where('status', '==', 'pending').orderBy('createdAt', 'asc').limit(50).get()
+            db.collection('feature_requests').count().get()
         ]);
+        let sourceRequestsSnap = { docs: [] };
+        try {
+            sourceRequestsSnap = await db.collection('sourceAccessRequests')
+                .where('status', '==', 'pending')
+                .orderBy('createdAt', 'asc')
+                .limit(50)
+                .get();
+        } catch (indexErr) {
+            // Log the real error (usually a missing Firestore index) but don't surface it to the client.
+            console.error('sourceAccessRequests query failed (deploy firestore.indexes.json):', indexErr);
+        }
         const totalExecutions = vaultsSnap.docs.reduce((sum, doc) => sum + (Number(doc.data().executions) || 0), 0);
         const ideas = ideasSnap.docs.map(doc => {
             const data = doc.data();
