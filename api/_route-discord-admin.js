@@ -1,5 +1,6 @@
 import { db } from './_admin.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
+import { pushLeaderboardToChannel } from './_discordBot.js';
 import {
     cleanChannelIds, cleanChannelMessages, DISCORD_APPLICATION_ID, DISCORD_CHANNELS,
     DISCORD_GUILD_ID, DISCORD_PUBLIC_KEY, DISCORD_SITE_URL, discordCommands,
@@ -15,6 +16,7 @@ function json(res, status, body) {
 }
 
 function configBody(data = {}) {
+    // data is the raw Firestore doc, channels/messages extracted below
     const channelIds = cleanChannelIds(data.channels);
     const messages = cleanChannelMessages(data.messages);
     return {
@@ -27,7 +29,9 @@ function configBody(data = {}) {
             ...channel,
             id: channelIds[channel.key],
             message: messages[channel.key]
-        }))
+        })),
+        leaderboardChannelId: String(data.leaderboardChannelId || ''),
+        leaderboardLastPush: Number(data.leaderboardLastPush) || 0
     };
 }
 
@@ -227,6 +231,23 @@ export default async function handler(req, res) {
             const successCount = results.filter(item => item.ok).length;
             return json(res, 200, { ok: true, message: `Published or updated ${successCount} of ${results.length} channel panels.`, results });
         }
+        if (body.action === 'push-leaderboard') {
+            const snap   = await CONFIG_REF().get();
+            const data   = snap.exists ? snap.data() : {};
+            const chId   = String(body.channelId || data.leaderboardChannelId || '');
+            if (!/^\d{17,20}$/.test(chId)) {
+                return json(res, 400, { ok: false, message: 'Set a valid leaderboard channel ID first.' });
+            }
+            const messageId = await pushLeaderboardToChannel(db, chId, DISCORD_SITE_URL);
+            await CONFIG_REF().set({ leaderboardChannelId: chId, leaderboardLastPush: Date.now() }, { merge: true });
+            return json(res, 200, { ok: true, message: `Leaderboard posted/updated in <#${chId}>.`, messageId });
+        }
+        if (body.action === 'set-leaderboard-channel') {
+            const chId = String(body.channelId || '').trim();
+            if (!/^\d{17,20}$/.test(chId)) return json(res, 400, { ok: false, message: 'Provide a valid channel ID.' });
+            await CONFIG_REF().set({ leaderboardChannelId: chId }, { merge: true });
+            return json(res, 200, { ok: true, message: 'Leaderboard channel saved.' });
+        }
         return json(res, 400, { ok: false, message: 'Choose register or publish.' });
     } catch (error) {
         const missingToken = !getBotToken();
@@ -236,3 +257,6 @@ export default async function handler(req, res) {
         });
     }
 }
+// ──────────────────────────────────────────────────────────────────────────────
+// Appended: leaderboard channel push + auto-refresh config
+// ──────────────────────────────────────────────────────────────────────────────

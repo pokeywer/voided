@@ -9,114 +9,191 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .dc-shell { width:min(1120px,calc(100% - 28px)); margin:0 auto; padding:22px 0 48px; display:grid; gap:18px; }
-        .dc-topbar,.dc-heading,.dc-actions,.dc-copy-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .dc-topbar { padding-bottom:14px; border-bottom:1px solid var(--border-color); }
-        .dc-topbar-links,.dc-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-        .dc-hero { position:relative; overflow:hidden; padding:clamp(20px,4vw,36px); border:1px solid var(--border-color); border-radius:16px; background:radial-gradient(circle at 90% 0%,rgba(6,182,212,.16),transparent 38%),linear-gradient(145deg,var(--bg-panel),var(--bg-surface)); }
-        .dc-eyebrow { display:inline-flex; align-items:center; gap:7px; color:var(--cyan); font-size:10px; font-weight:900; letter-spacing:1.1px; text-transform:uppercase; }
-        .dc-hero h1 { margin:10px 0 8px; font-size:clamp(28px,5vw,42px); letter-spacing:-1.3px; }
-        .dc-hero p,.dc-muted { color:var(--text-muted); font-size:12px; line-height:1.65; }
-        .dc-status-pill { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border-color); background:rgba(255,255,255,.025); border-radius:999px; padding:7px 11px; color:var(--text-muted); font-size:10px; font-weight:800; white-space:nowrap; }
-        .dc-status-pill.ready { color:#86efac; border-color:rgba(34,197,94,.28); background:rgba(34,197,94,.07); }
-        .dc-status-pill.warn { color:#fde68a; border-color:rgba(250,204,21,.26); background:rgba(250,204,21,.06); }
-        .dc-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
-        .dc-card { min-width:0; padding:18px; border:1px solid var(--border-color); border-radius:13px; background:var(--bg-surface); }
-        .dc-card h2 { margin:0 0 7px; font-size:15px; }
-        .dc-card h2 i { margin-right:6px; color:var(--cyan); }
-        .dc-meta { display:grid; gap:10px; margin-top:15px; }
-        .dc-meta-row { display:grid; grid-template-columns:minmax(90px,130px) minmax(0,1fr); align-items:center; gap:8px; color:var(--text-muted); font-size:10px; }
-        .dc-meta-row code { overflow-wrap:anywhere; padding:8px; border:1px solid var(--border-color); border-radius:7px; background:var(--bg-panel); color:#dbeafe; font-size:10px; }
-        .dc-copy-btn { width:auto; min-height:30px; padding:5px 9px; font-size:10px; }
-        .dc-notice { margin-top:13px; padding:11px 12px; border:1px solid rgba(6,182,212,.18); border-radius:9px; background:rgba(6,182,212,.045); color:var(--text-muted); font-size:10px; line-height:1.6; }
-        .dc-notice i { color:var(--cyan); margin-right:5px; }
-        .dc-command-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
-        .dc-command { display:flex; align-items:center; gap:8px; min-width:0; padding:10px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-panel); }
-        .dc-command i { color:var(--cyan); }
-        .dc-command code { color:#e8f2ff; font-size:10px; }
-        .dc-command span { min-width:0; overflow:hidden; color:var(--text-muted); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
-        .dc-channel-list { display:grid; gap:12px; margin-top:14px; }
-        .dc-channel { padding:13px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-panel); }
-        .dc-channel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
-        .dc-channel-title { color:var(--text-primary); font-size:12px; font-weight:800; }
-        .dc-channel-command { color:var(--cyan); font-family:var(--font-mono); font-size:9px; }
-        .dc-channel .panel-label { margin-top:9px; }
-        .dc-channel textarea { min-height:68px; resize:vertical; line-height:1.5; }
-        .dc-channel-id { font-family:var(--font-mono); }
-        .dc-actions .btn-primary,.dc-actions .btn-ghost { width:auto; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
-        .dc-auth { max-width:560px; margin:8vh auto; text-align:center; }
-        .dc-auth i { color:var(--cyan); font-size:25px; }
-        .dc-footer { display:flex; justify-content:space-between; gap:12px; color:var(--text-muted); font-size:9px; }
-        @media(max-width:700px) { .dc-grid{grid-template-columns:1fr}.dc-heading{align-items:flex-start;flex-direction:column}.dc-meta-row{grid-template-columns:1fr}.dc-command-list{grid-template-columns:1fr}.dc-topbar{align-items:flex-start;flex-direction:column}.dc-footer{flex-direction:column} }
+        .dc-shell{width:min(1120px,calc(100% - 28px));margin:0 auto;padding:22px 0 48px;display:grid;gap:18px;}
+        .dc-topbar,.dc-heading,.dc-actions,.dc-copy-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+        .dc-topbar{padding-bottom:14px;border-bottom:1px solid var(--border-color);}
+        .dc-topbar-links,.dc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+        .dc-hero{position:relative;overflow:hidden;padding:clamp(20px,4vw,36px);border:1px solid var(--border-color);border-radius:16px;background:radial-gradient(circle at 90% 0%,rgba(6,182,212,.16),transparent 38%),linear-gradient(145deg,var(--bg-panel),var(--bg-surface));}
+        .dc-eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:1.1px;text-transform:uppercase;}
+        .dc-hero h1{margin:10px 0 8px;font-size:clamp(28px,5vw,42px);letter-spacing:-1.3px;}
+        .dc-hero p,.dc-muted{color:var(--text-muted);font-size:12px;line-height:1.65;}
+        .dc-status-pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border-color);background:rgba(255,255,255,.025);border-radius:999px;padding:7px 11px;color:var(--text-muted);font-size:10px;font-weight:800;white-space:nowrap;}
+        .dc-status-pill.ready{color:#86efac;border-color:rgba(34,197,94,.28);background:rgba(34,197,94,.07);}
+        .dc-status-pill.warn{color:#fde68a;border-color:rgba(250,204,21,.26);background:rgba(250,204,21,.06);}
+        .dc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+        .dc-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
+        .dc-card{min-width:0;padding:18px;border:1px solid var(--border-color);border-radius:13px;background:var(--bg-surface);}
+        .dc-card h2{margin:0 0 7px;font-size:15px;}
+        .dc-card h2 i{margin-right:6px;color:var(--cyan);}
+        .dc-card-label{font-size:10px;font-weight:900;letter-spacing:.7px;text-transform:uppercase;color:var(--text-muted);margin:0 0 12px;}
+        .dc-meta{display:grid;gap:10px;margin-top:15px;}
+        .dc-meta-row{display:grid;grid-template-columns:minmax(90px,130px) minmax(0,1fr);align-items:center;gap:8px;color:var(--text-muted);font-size:10px;}
+        .dc-meta-row code{overflow-wrap:anywhere;padding:8px;border:1px solid var(--border-color);border-radius:7px;background:var(--bg-panel);color:#dbeafe;font-size:10px;}
+        .dc-copy-btn{width:auto;min-height:30px;padding:5px 9px;font-size:10px;}
+        .dc-notice{margin-top:13px;padding:11px 12px;border:1px solid rgba(6,182,212,.18);border-radius:9px;background:rgba(6,182,212,.045);color:var(--text-muted);font-size:10px;line-height:1.6;}
+        .dc-notice i{color:var(--cyan);margin-right:5px;}
+        .dc-command-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px;}
+        .dc-command{display:flex;align-items:center;gap:8px;min-width:0;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-panel);}
+        .dc-command i{color:var(--cyan);flex-shrink:0;}
+        .dc-command code{color:#e8f2ff;font-size:10px;white-space:nowrap;}
+        .dc-command span{min-width:0;overflow:hidden;color:var(--text-muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap;}
+        .dc-channel-list{display:grid;gap:12px;margin-top:14px;}
+        .dc-channel{padding:13px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-panel);}
+        .dc-channel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+        .dc-channel-title{color:var(--text-primary);font-size:12px;font-weight:800;}
+        .dc-channel-command{color:var(--cyan);font-family:var(--font-mono);font-size:9px;}
+        .dc-channel .panel-label{margin-top:9px;}
+        .dc-channel textarea{min-height:68px;resize:vertical;line-height:1.5;}
+        .dc-channel-id{font-family:var(--font-mono);}
+        .dc-actions .btn-primary,.dc-actions .btn-ghost{width:auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;}
+        .dc-auth{max-width:560px;margin:8vh auto;text-align:center;}
+        .dc-auth i{color:var(--cyan);font-size:25px;}
+        .dc-footer{display:flex;justify-content:space-between;gap:12px;color:var(--text-muted);font-size:9px;}
+        .dc-lb-activity{display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-panel);font-size:11px;align-items:center;}
+        .dc-lb-activity span{display:flex;align-items:center;gap:5px;}
+        .dc-lb-table{padding:10px 12px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-panel);}
+        .dc-leaderboard-channel-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+        .dc-leaderboard-channel-row input{flex:1;}
+        .dc-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
+        .dc-stat{padding:12px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-panel);text-align:center;}
+        .dc-stat-val{display:block;font-size:18px;font-weight:900;color:var(--cyan);font-variant-numeric:tabular-nums;}
+        .dc-stat-lbl{display:block;font-size:9px;color:var(--text-muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px;}
+        .dc-obf-info{padding:12px;border:1px solid rgba(168,85,247,.25);border-radius:9px;background:rgba(168,85,247,.05);font-size:11px;line-height:1.65;color:var(--text-muted);margin-top:10px;}
+        .dc-obf-info i{color:#a855f7;margin-right:5px;}
+        .dc-obf-steps{margin:8px 0 0 0;padding:0 0 0 1.1em;}
+        .dc-obf-steps li{margin-bottom:4px;}
+        @media(max-width:700px){.dc-grid,.dc-grid-3{grid-template-columns:1fr}.dc-heading{align-items:flex-start;flex-direction:column}.dc-meta-row{grid-template-columns:1fr}.dc-command-list{grid-template-columns:1fr}.dc-topbar{align-items:flex-start;flex-direction:column}.dc-footer{flex-direction:column}}
     </style>
 </head>
 <body class="admin-page">
-    <main class="dc-shell">
-        <header class="dc-topbar">
-            <a class="brand-unit brand-unit-link" href="/admin.html" style="text-decoration:none">
-                <img src="/logo.png" alt="VoidedX" class="brand-icon-img">
-                <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">DISCORD CONTROL</span></span>
-            </a>
-            <nav class="dc-topbar-links" aria-label="Panel navigation">
-                <a class="btn-ghost" href="/admin.html"><i class="fa-solid fa-shield-halved"></i> Admin panel</a>
-                <a class="btn-ghost" href="/panel.html"><i class="fa-solid fa-code"></i> Creator panel</a>
-                <a class="btn-ghost" href="/"><i class="fa-solid fa-arrow-up-right-from-square"></i> Website</a>
-            </nav>
-        </header>
+<main class="dc-shell">
 
-        <section id="dc-auth-required" class="admin-card dc-auth hidden">
-            <i class="fa-solid fa-lock"></i>
-            <h1>Admin sign-in required</h1>
-            <p class="dc-muted">Sign in to the VoidedX admin panel, then open Discord Control again.</p>
-            <a class="btn-primary" href="/admin.html"><i class="fa-solid fa-right-to-bracket"></i> Open admin sign-in</a>
+    <header class="dc-topbar">
+        <a class="brand-unit brand-unit-link" href="/admin.html" style="text-decoration:none">
+            <img src="/logo.png" alt="VoidedX" class="brand-icon-img">
+            <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">DISCORD CONTROL</span></span>
+        </a>
+        <nav class="dc-topbar-links">
+            <a class="btn-ghost" href="/admin.html"><i class="fa-solid fa-shield-halved"></i> Admin</a>
+            <a class="btn-ghost" href="/panel.html"><i class="fa-solid fa-code"></i> Creator Panel</a>
+            <a class="btn-ghost" href="/leaderboard"><i class="fa-solid fa-trophy"></i> Leaderboard</a>
+            <a class="btn-ghost" href="/"><i class="fa-solid fa-arrow-up-right-from-square"></i> Website</a>
+        </nav>
+    </header>
+
+    <div id="dc-feedback" class="admin-status hidden"></div>
+
+    <!-- Auth gate -->
+    <section id="dc-auth-required" class="admin-card dc-auth hidden">
+        <i class="fa-solid fa-lock"></i>
+        <h1>Admin sign-in required</h1>
+        <p class="dc-muted">Sign in to the VoidedX admin panel, then open Discord Control again.</p>
+        <a class="btn-primary" href="/admin.html"><i class="fa-solid fa-right-to-bracket"></i> Sign in</a>
+    </section>
+
+    <div id="dc-app" class="hidden">
+
+        <!-- Hero -->
+        <section class="dc-hero">
+            <div class="dc-heading">
+                <div>
+                    <span class="dc-eyebrow"><i class="fa-brands fa-discord"></i> SERVER INTEGRATION</span>
+                    <h1>Discord Control</h1>
+                    <p>Register slash commands, configure channels, push live leaderboards, and let users obfuscate scripts — all connected to real VoidedX data.</p>
+                </div>
+                <span id="dc-bot-status" class="dc-status-pill"><i class="fa-solid fa-circle-notch fa-spin"></i> Checking…</span>
+            </div>
+            <div class="dc-actions" style="margin-top:16px">
+                <button id="dc-register" class="btn-primary" disabled><i class="fa-solid fa-bolt"></i> Register Commands</button>
+                <button id="dc-publish"  class="btn-ghost"   disabled><i class="fa-solid fa-paper-plane"></i> Publish Panels</button>
+                <button id="dc-save"     class="btn-ghost"><i class="fa-solid fa-floppy-disk"></i> Save Config</button>
+            </div>
         </section>
 
-        <div id="dc-app" class="hidden">
-            <section class="dc-hero">
-                <div class="dc-heading">
-                    <div><span class="dc-eyebrow"><i class="fa-brands fa-discord"></i> SERVER INTEGRATION</span><h1>Discord Control</h1><p>Register VoidedX slash commands, map the server channels, and publish or update their info panels.</p></div>
-                    <span id="dc-bot-status" class="dc-status-pill"><i class="fa-solid fa-circle-notch fa-spin"></i> Checking setup…</span>
+        <!-- Setup info -->
+        <div class="dc-grid">
+            <div class="dc-card">
+                <h2><i class="fa-solid fa-gear"></i> Bot Setup</h2>
+                <p class="dc-muted" style="margin-bottom:12px">Copy these values into the Discord Developer Portal and your Vercel environment.</p>
+                <div class="dc-meta">
+                    <div class="dc-meta-row"><span>Application ID</span>   <div class="dc-copy-row"><code id="dc-app-id">—</code>     <button class="btn-ghost dc-copy-btn" onclick="copyText('dc-app-id')"><i class="fa-solid fa-copy"></i></button></div></div>
+                    <div class="dc-meta-row"><span>Public Key</span>        <div class="dc-copy-row"><code id="dc-public-key" style="word-break:break-all">—</code><button class="btn-ghost dc-copy-btn" onclick="copyText('dc-public-key')"><i class="fa-solid fa-copy"></i></button></div></div>
+                    <div class="dc-meta-row"><span>Guild / Server ID</span> <div class="dc-copy-row"><code id="dc-guild-id">—</code>   <button class="btn-ghost dc-copy-btn" onclick="copyText('dc-guild-id')"><i class="fa-solid fa-copy"></i></button></div></div>
+                    <div class="dc-meta-row"><span>Interactions URL</span>  <div class="dc-copy-row"><code id="dc-endpoint" style="word-break:break-all">—</code><button class="btn-ghost dc-copy-btn" onclick="copyText('dc-endpoint')"><i class="fa-solid fa-copy"></i></button></div></div>
                 </div>
-            </section>
-
-            <div id="dc-feedback" class="admin-status hidden" role="status" aria-live="polite"></div>
-
-            <div class="dc-grid">
-                <section class="dc-card">
-                    <h2><i class="fa-solid fa-link"></i> Discord app & server</h2>
-                    <p class="dc-muted">This integration is locked to the server ID below. The public key verifies that incoming interactions really came from Discord.</p>
-                    <div class="dc-meta">
-                        <div class="dc-meta-row"><span>Application ID</span><code id="dc-app-id">—</code></div>
-                        <div class="dc-meta-row"><span>Public key</span><code id="dc-public-key">—</code></div>
-                        <div class="dc-meta-row"><span>Allowed server</span><code id="dc-guild-id">—</code></div>
-                        <div class="dc-meta-row"><span>Commands endpoint</span><code id="dc-endpoint">—</code></div>
-                    </div>
-                    <div class="dc-notice"><i class="fa-solid fa-key"></i> The website reads your private Vercel <code>BOT_TOKEN</code> variable (it also accepts <code>DISCORD_BOT_TOKEN</code>). This lets the website publish panels and answer slash commands, but does not keep the bot online. To show an online status, run the separate <code>discord-worker</code> process continuously and add the token to that host too. See <a href="/discord-worker/README.md">worker setup steps</a>. Never paste the token into this page or source code.</div>
-                </section>
-                <section class="dc-card">
-                    <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Setup actions</h2>
-                    <p class="dc-muted">Register refreshes the VoidedX guild commands in one rate-limit-friendly update and preserves other commands already on this app. Publish sends or updates the channel panels; the Commands channel panel includes Creator Panel and Script Library buttons.</p>
-                    <div class="dc-actions" style="margin-top:15px">
-                        <button id="dc-register" class="btn-primary" type="button"><i class="fa-solid fa-list-check"></i> Register / refresh commands</button>
-                        <button id="dc-publish" class="btn-ghost" type="button"><i class="fa-solid fa-paper-plane"></i> Publish channel panels</button>
-                    </div>
-                    <div class="dc-notice"><i class="fa-solid fa-circle-info"></i> First invite the app to your server with <code>bot</code> and <code>applications.commands</code>. Keep the bot’s server permissions minimal.</div>
-                </section>
+                <div class="dc-notice"><i class="fa-solid fa-circle-info"></i> Paste the Interactions URL into <strong>Discord Developer Portal → General Information → Interactions Endpoint URL</strong>, then click Save. Register Commands after.</div>
             </div>
 
-            <section class="dc-card">
-                <h2><i class="fa-solid fa-terminal"></i> Slash commands</h2>
-                <p class="dc-muted">Commands are registered only for the configured server. Channel-specific commands use the channel IDs below when an ID is set. Basic help, panel, scripts, and vault verification remain available throughout that server.</p>
+            <!-- Commands list -->
+            <div class="dc-card">
+                <h2><i class="fa-solid fa-terminal"></i> All Commands <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px">(18 total)</span></h2>
+                <p class="dc-muted">Run <strong>/register</strong> from this panel after any change.</p>
                 <div id="dc-command-list" class="dc-command-list"></div>
-            </section>
-
-            <section class="dc-card">
-                <div class="dc-heading"><div><h2><i class="fa-solid fa-hashtag"></i> Channel panels & commands</h2><p class="dc-muted">In Discord, enable Developer Mode and right-click each channel to copy its ID. Leave a channel ID blank to let its command work anywhere in this server.</p></div><button id="dc-save" class="btn-primary" type="button"><i class="fa-solid fa-floppy-disk"></i> Save channel setup</button></div>
-                <div id="dc-channel-list" class="dc-channel-list"></div>
-            </section>
-            <footer class="dc-footer"><span>VOIDEDX · SERVER-LOCKED DISCORD INTEGRATION</span><span>Bot token stays server-side.</span></footer>
+            </div>
         </div>
-    </main>
-    <script type="module" src="/discord-panel.js"></script>
+
+        <!-- Live Leaderboard section -->
+        <div class="dc-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+                <h2 style="margin:0"><i class="fa-solid fa-trophy"></i> Live Leaderboard</h2>
+                <button id="dc-refresh-lb" class="btn-ghost dc-copy-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+            <p class="dc-muted">Preview matches exactly what the bot posts. It auto-refreshes in Discord every 24 hours via Vercel Cron.</p>
+            <div id="dc-leaderboard-preview" style="margin-top:12px"></div>
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">
+                <label class="panel-label">LEADERBOARD CHANNEL — Push & auto-refresh target</label>
+                <div class="dc-leaderboard-channel-row">
+                    <input id="dc-leaderboard-channel" class="input-field dc-channel-id" inputmode="numeric" maxlength="20" placeholder="Right-click channel → Copy Channel ID">
+                    <button id="dc-push-lb" class="btn-primary" disabled style="white-space:nowrap;width:auto"><i class="fa-solid fa-paper-plane"></i> Push Now</button>
+                </div>
+                <p class="dc-muted" style="margin-top:6px"><i class="fa-solid fa-circle-info" style="color:var(--cyan);margin-right:4px"></i>
+                    Pushing posts a new message (or edits the existing one) with all-time, monthly, and today's rankings. The Vercel Cron at <code>0 0 * * *</code> (midnight UTC) auto-refreshes it every 24h. Add <code>CRON_SECRET</code> to Vercel env for security.
+                </p>
+            </div>
+        </div>
+
+        <!-- /obfuscate feature info -->
+        <div class="dc-card">
+            <h2><i class="fa-solid fa-lock"></i> /obfuscate — How it works</h2>
+            <p class="dc-muted">Users run <code>/obfuscate file:&lt;upload&gt;</code> or <code>/obfuscate code:&lt;paste&gt;</code> in Discord. The bot stores the script for 10 minutes and replies with a one-time link.</p>
+            <div class="dc-obf-info">
+                <i class="fa-solid fa-circle-info"></i><strong>Flow:</strong>
+                <ol class="dc-obf-steps">
+                    <li>User uploads a <code>.lua</code> file or pastes code in Discord with <code>/obfuscate</code></li>
+                    <li>Bot saves it to Firestore with a 10-minute expiry, replies with a secure link</li>
+                    <li>Link opens the VoidedX Creator Panel with the script pre-loaded and the chosen strength pre-set</li>
+                    <li>User clicks <strong>Preview &amp; Download</strong> — full Prometheus WASM obfuscation runs in their browser</li>
+                    <li>Download the obfuscated <code>.lua</code> file directly</li>
+                </ol>
+            </div>
+            <div class="dc-obf-info" style="margin-top:8px;border-color:rgba(168,85,247,.25)">
+                <i class="fa-solid fa-shield-halved" style="color:#a855f7"></i>
+                <strong>Obfuscation levels available via Discord:</strong> Auto · Fast · Low · Medium · High · Absolute
+            </div>
+        </div>
+
+        <!-- Channel config -->
+        <div class="dc-card">
+            <h2><i class="fa-solid fa-hashtag"></i> Channel Config</h2>
+            <p class="dc-muted">Map each command to a channel. Leave blank to allow the command anywhere. The message is what gets posted when you click <strong>Publish Panels</strong>.</p>
+            <div id="dc-channel-list" class="dc-channel-list"></div>
+        </div>
+
+        <div class="dc-footer">
+            <span>VoidedX Discord Control</span>
+            <span>Commands register to guild <code id="dc-guild-id-footer"></code></span>
+        </div>
+
+    </div><!-- /dc-app -->
+</main>
+
+<script>
+function copyText(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim()).catch(() => {});
+}
+</script>
+<script src="/discord-panel.js" type="module"></script>
 </body>
 </html>

@@ -358,6 +358,38 @@ function customConfirm({ title, message, confirmLabel = 'Delete' }) {
 
 document.addEventListener('DOMContentLoaded', () => {
     loadSiteAnnouncement();
+
+    // If opened from Discord /obfuscate, pre-load the queued script into the editor.
+    (async () => {
+        const params = new URLSearchParams(location.search);
+        const obfKey = params.get('obfuscate');
+        if (!obfKey || !/^[a-f0-9]{32}$/.test(obfKey)) return;
+        // Remove the param from the URL so reload doesn't re-trigger
+        history.replaceState({}, '', location.pathname);
+        try {
+            const res  = await fetch(`/api/discord-obfuscate-pickup?key=${obfKey}`, { credentials: 'same-origin', cache: 'no-store' });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.message || 'Could not load script from Discord.');
+            // Wait until the editor exists in the DOM
+            let tries = 0;
+            while (!document.getElementById('source-code') && tries++ < 40) {
+                await new Promise(r => setTimeout(r, 250));
+            }
+            const srcEl = document.getElementById('source-code');
+            const lvlEl = document.getElementById('obfuscation-level');
+            const chkEl = document.getElementById('chk-obfuscation');
+            if (srcEl) {
+                srcEl.value = data.source;
+                srcEl.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (lvlEl && data.level) lvlEl.value = data.level;
+            if (chkEl) { chkEl.checked = true; chkEl.dispatchEvent(new Event('change', { bubbles: true })); }
+            showToast(`Script loaded from Discord (${data.filename}). Choose your settings and preview/download.`, 'success', 7000);
+        } catch (err) {
+            showToast(`Discord obfuscate: ${err.message}`, 'error', 6000);
+        }
+    })();
+
     const lockBtn = document.getElementById('lock-vault-btn');
     const newVaultBtn = document.getElementById('new-vault-btn');
     const deleteBtn = document.getElementById('delete-vault-btn');
