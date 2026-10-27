@@ -1,6 +1,12 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/obfuscationvx=:token",
+      "destination": "/obfuscation.html?vx=:token"
+    }
+  ],
   "crons": [
     {
       "path": "/api/discord-leaderboard-refresh",

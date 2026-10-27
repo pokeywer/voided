@@ -8,6 +8,7 @@ import {
     getBotToken, buildLeaderboardEmbeds, buildStatsEmbed, buildVaultEmbed,
     editFollowUp, editFollowUpFile, sendFollowUp
 } from './_discordBot.js';
+import { createDiscordObfuscationSession } from './_obfuscationSessions.js';
 
 const COMMAND_CHANNEL = Object.fromEntries(DISCORD_CHANNELS.map(c => [c.command, c.key]));
 const KEY_PAGE_COMMANDS = new Set(['help', 'panel', 'scripts', 'verify', 'vault', 'leaderboard', 'obfuscate', 'stats']);
@@ -164,7 +165,7 @@ export default async function handler(req, res) {
                     '`/stats` — Live site activity & stats',
                     '`/vault <id>` — Look up vault info',
                     '`/verify <id>` — Open a vault access page',
-                    '`/obfuscate [file] [code] [level]` — Protect a Lua script',
+                    '`/obfuscate [file] [code] [level]` — Get 5 void tokens + obfuscation link',
                     '`/panel` — Open the Creator Panel',
                     '`/scripts` — Browse public scripts'
                 ].join('\n'), inline: false },
@@ -282,12 +283,11 @@ export default async function handler(req, res) {
         const attachmentId = typeof fileOption === 'string' ? fileOption : String(fileOption ?? '');
         const attachment   = attachments[attachmentId];
 
-        if (!inlineCode && !attachment) {
-            return respond(res, 'Provide either a `.lua` file via the `file` option, or paste code with the `code` option.');
-        }
+        const discordUser   = interaction.member?.user || interaction.user || {};
+        const discordUserId = String(discordUser.id || '');
+        const discordName   = String(discordUser.global_name || discordUser.username || '');
 
-        const token = getBotToken();
-        if (!token) {
+        if (!getBotToken()) {
             return respond(res, 'Bot token is not configured. Ask the administrator to set `BOT_TOKEN` in Vercel.');
         }
 
@@ -295,54 +295,48 @@ export default async function handler(req, res) {
         runAsync(async () => {
             try {
                 let source = '';
+                let filename = 'script.lua';
                 if (attachment) {
                     // Validate it's a lua file
-                    const fname = String(attachment.filename || '').toLowerCase();
+                    filename = String(attachment.filename || 'script.lua');
+                    const fname = filename.toLowerCase();
                     if (fname && !fname.endsWith('.lua') && !fname.endsWith('.txt')) {
-                        await editFollowUp(appId, itoken, { content: '❌ Only `.lua` or `.txt` files are accepted.' });
+                        await editFollowUp(appId, itoken, { content: 'Only `.lua` or `.txt` files are accepted.' });
                         return;
                     }
                     source = await fetchAttachment(String(attachment.url || attachment.proxy_url));
-                } else {
+                } else if (inlineCode) {
                     source = inlineCode.slice(0, 50000);
                 }
 
-                if (!source.trim()) {
-                    await editFollowUp(appId, itoken, { content: '❌ The file or code is empty.' });
-                    return;
-                }
-
-                // Obfuscation runs client-side (browser worker), so we redirect to the panel
-                // pre-loaded with the source, with a one-time storage key.
-                // Store the source temporarily in Firestore (TTL 10 minutes).
-                const { randomBytes } = await import('node:crypto');
-                const tempKey = randomBytes(16).toString('hex');
-                await db.collection('discordObfuscateQueue').doc(tempKey).set({
+                const session = await createDiscordObfuscationSession({
+                    discordUserId,
+                    discordUsername: discordName,
                     source,
                     level,
-                    createdAt: Date.now(),
-                    expiresAt: Date.now() + 10 * 60 * 1000,
-                    userId: String(interaction.member?.user?.id || interaction.user?.id || ''),
-                    filename: attachment ? String(attachment.filename || 'script.lua') : 'script.lua'
+                    filename
                 });
 
-                const obfuscateUrl = `${DISCORD_SITE_URL}/panel.html?obfuscate=${tempKey}`;
+                const obfuscateUrl = `${DISCORD_SITE_URL}/obfuscation?vx=${encodeURIComponent(session.token)}`;
+                const expiresUnix = Math.floor((session.expiresAt || Date.now()) / 1000);
 
                 await editFollowUp(appId, itoken, {
                     embeds: [{
-                        title: '🔒 Obfuscate Script',
+                        title: 'VoidedX Obfuscator',
                         description: [
-                            `**File:** \`${attachment ? attachment.filename : 'inline code'}\``,
-                            `**Level:** \`${level}\``,
-                            `**Source size:** ${source.length.toLocaleString()} chars`,
+                            source
+                                ? `**File:** \`${filename}\` (${source.length.toLocaleString()} chars)`
+                                : '**File:** upload or paste it on the page',
+                            `**Default strength:** \`${level}\``,
+                            `**Void tokens:** **${session.credits}**${session.reused ? ' remaining on your link' : ' available'}`,
                             '',
-                            'Click **Open Obfuscator** — your script is pre-loaded in the VoidedX panel.',
-                            'Choose your settings and click **Preview & Download**.',
+                            'Open the page to obfuscate and download the protected file. You can also save the result to a VoidedX vault.',
                             '',
-                            '⏱️ This link expires in **10 minutes**.'
+                            'Each successful obfuscation uses one token. The link is personal, so do not share it.',
+                            `⏱️ Expires <t:${expiresUnix}:R>.`
                         ].join('\n'),
                         color: 0xa855f7,
-                        footer: { text: 'VoidedX  •  Obfuscator  •  Powered by the VoidedX engine' },
+                        footer: { text: 'VoidedX  •  5 void tokens per link' },
                         timestamp: new Date().toISOString()
                     }],
                     components: [{ type: 1, components: [
@@ -351,7 +345,7 @@ export default async function handler(req, res) {
                     allowed_mentions: { parse: [] }
                 });
             } catch (err) {
-                await editFollowUp(appId, itoken, { content: `❌ Obfuscate failed: ${err.message}` }).catch(() => {});
+                await editFollowUp(appId, itoken, { content: `Obfuscate setup failed: ${err.message}` }).catch(() => {});
             }
         });
         return;

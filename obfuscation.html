@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>VoidedX // Obfuscator</title>
+    <link rel="icon" type="image/png" href="/voidedx-favicon.png?v=2">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .obf-main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 80px; }
+        .obf-state { max-width: 620px; margin: 80px auto; text-align: center; }
+        .obf-state h1 { margin: 18px 0 10px; font-size: clamp(26px, 4vw, 38px); }
+        .obf-state p { color: #94a3b8; font-size: 13px; line-height: 1.7; }
+        .obf-state .btn-primary, .obf-state .btn-ghost { width: auto; margin: 22px auto 0; display: inline-flex; }
+        .obf-state-icon { width: 58px; height: 58px; margin: 0 auto; display: grid; place-items: center; border-radius: 16px; background: rgba(6, 182, 212, .12); color: #67e8f9; font-size: 22px; }
+        .obf-head { display: flex; align-items: stretch; justify-content: space-between; gap: 22px; margin-bottom: 18px; }
+        .obf-head-copy { min-width: 0; }
+        .obf-head h1 { margin: 8px 0 8px; font-size: clamp(30px, 4vw, 48px); line-height: 1.05; letter-spacing: -.03em; }
+        .obf-head h1 span { color: #67e8f9; }
+        .obf-head p { max-width: 650px; color: #94a3b8; font-size: 13px; line-height: 1.7; }
+        .obf-token-card { flex: 0 0 190px; display: flex; flex-direction: column; justify-content: center; padding: 18px 20px; border: 1px solid rgba(6, 182, 212, .3); border-radius: 15px; background: linear-gradient(145deg, rgba(6, 182, 212, .12), rgba(99, 102, 241, .12)); text-align: center; }
+        .obf-token-card span { color: #67e8f9; font-size: 9px; font-weight: 900; letter-spacing: .16em; }
+        .obf-token-card strong { margin: 3px 0 -2px; font-size: 46px; line-height: 1; color: #fff; }
+        .obf-token-card small { color: #94a3b8; font-size: 10px; }
+        .obf-token-card.empty { border-color: rgba(239, 68, 68, .35); background: rgba(239, 68, 68, .08); }
+        .obf-token-card.empty span, .obf-token-card.empty strong { color: #fca5a5; }
+        .obf-session-line { margin-bottom: 16px; color: #64748b; font-size: 11px; line-height: 1.6; }
+        .obf-session-line strong { color: #cbd5e1; }
+        .obf-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); gap: 18px; align-items: start; }
+        .obf-panel { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+        .obf-panel h2 { font-size: 16px; margin-bottom: 2px; }
+        .obf-panel h3 { font-size: 13px; }
+        .obf-source { min-height: 300px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; tab-size: 4; }
+        .obf-output { min-height: 130px; resize: vertical; font-family: var(--font-mono); font-size: 10px; line-height: 1.45; }
+        .obf-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background: rgba(22, 26, 36, .5); }
+        .obf-options label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #cbd5e1; font-size: 11px; font-weight: 700; }
+        .obf-options select { width: 62%; }
+        .obf-check { justify-content: flex-start !important; cursor: pointer; }
+        .obf-check input { width: 15px; height: 15px; accent-color: var(--cyan); }
+        .obf-hint { color: #64748b; font-size: 11px; line-height: 1.6; }
+        .obf-hint a { color: #67e8f9; }
+        .obf-result { display: flex; flex-direction: column; gap: 9px; padding-top: 13px; border-top: 1px solid var(--border-color); }
+        .obf-vault-link { display: inline-flex; align-items: center; gap: 7px; width: fit-content; color: #67e8f9; font-size: 11px; font-weight: 800; text-decoration: none; }
+        .obf-vault-link:hover { text-decoration: underline; }
+        .obf-note { margin-top: 18px; color: #64748b; font-size: 10px; line-height: 1.7; }
+        .obf-note strong { color: #94a3b8; }
+        @media (max-width: 820px) {
+            .obf-head { flex-direction: column; }
+            .obf-token-card { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 10px; flex: none; text-align: left; }
+            .obf-token-card strong { font-size: 34px; }
+            .obf-grid { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 520px) {
+            .obf-main { width: calc(100% - 22px); padding-top: 20px; }
+            .obf-options label { align-items: flex-start; flex-direction: column; }
+            .obf-options select { width: 100%; }
+        }
+    </style>
+</head>
+<body class="creator-panel-page">
+    <header class="top-nav">
+        <a href="/" class="brand-unit brand-unit-link">
+            <img src="logo.png" alt="VoidedX logo" class="brand-icon-img">
+            <span class="brand-titles"><span class="brand-name">VOIDEDX</span><span class="brand-tag">OBFUSCATOR</span></span>
+        </a>
+        <nav class="nav-user" aria-label="Site navigation">
+            <a href="/" class="btn-ghost leaderboard-nav-link"><i class="fa-solid fa-code"></i> Script editor</a>
+            <a href="/panel.html" class="btn-ghost leaderboard-nav-link"><i class="fa-solid fa-shield-halved"></i> Creator Panel</a>
+        </nav>
+    </header>
+
+    <main class="obf-main">
+        <section id="obf-loading" class="obf-state" aria-live="polite">
+            <div class="obf-state-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+            <h1>Checking your link</h1>
+            <p>Loading your void tokens and any script sent from Discord.</p>
+        </section>
+
+        <section id="obf-error" class="obf-state hidden" aria-live="assertive">
+            <div class="obf-state-icon"><i class="fa-solid fa-link-slash"></i></div>
+            <h1>Link unavailable</h1>
+            <p id="obf-error-message">Run /obfuscate again in Discord to get a fresh link.</p>
+            <a href="/" class="btn-primary"><i class="fa-solid fa-code"></i> Open the script editor</a>
+        </section>
+
+        <section id="obf-app" class="hidden" aria-live="polite">
+            <div class="obf-head">
+                <div class="obf-head-copy">
+                    <span class="creator-panel-eyebrow"><i class="fa-solid fa-shield-halved"></i> DISCORD OBFUSCATOR</span>
+                    <h1>Your file.<br><span>Protected.</span></h1>
+                    <p>Obfuscate a Lua or Luau script with the VoidedX engine, download the protected copy, or save it to a vault. Each successful obfuscation uses one void token from your personal link.</p>
+                </div>
+                <div id="obf-token-card" class="obf-token-card">
+                    <span>VOID TOKENS</span>
+                    <strong id="obf-credits">5</strong>
+                    <small>left on this link</small>
+                </div>
+            </div>
+
+            <p id="obf-session-line" class="obf-session-line"></p>
+
+            <div class="obf-grid">
+                <article class="admin-card obf-panel" aria-labelledby="obf-source-title">
+                    <h2 id="obf-source-title">1. Your script</h2>
+                    <label class="panel-label" for="obf-file">UPLOAD .LUA OR .TXT</label>
+                    <input id="obf-file" class="input-field" type="file" accept=".lua,.txt,text/plain">
+                    <label class="panel-label" for="obf-source">OR PASTE CODE</label>
+                    <textarea id="obf-source" class="input-field obf-source" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="local Players = game:GetService(&quot;Players&quot;)&#10;-- Paste the script you want to protect"></textarea>
+
+                    <div class="obf-options">
+                        <label for="obf-level">Strength
+                            <select id="obf-level" class="input-field">
+                                <option value="auto" selected>Auto (recommended)</option>
+                                <option value="fast">Fast · smallest output</option>
+                                <option value="low">Low · tamper check</option>
+                                <option value="medium">Medium · balanced</option>
+                                <option value="high">High · layered encryption</option>
+                                <option value="absolute">Absolute · slowest</option>
+                            </select>
+                        </label>
+                        <label class="obf-check" for="obf-tamper"><input id="obf-tamper" type="checkbox" checked> Tamper check</label>
+                        <label class="obf-check" for="obf-expanded"><input id="obf-expanded" type="checkbox"> Extra transforms</label>
+                    </div>
+
+                    <button id="obf-run" class="btn-primary" type="button"><i class="fa-solid fa-wand-magic-sparkles"></i> Obfuscate &amp; download</button>
+                    <div id="obf-status" class="admin-status hidden" role="status"></div>
+                </article>
+
+                <article class="admin-card obf-panel" aria-labelledby="obf-vault-title">
+                    <h2 id="obf-vault-title">2. Save to a vault</h2>
+                    <label class="panel-label" for="obf-title">VAULT TITLE</label>
+                    <input id="obf-title" class="input-field" type="text" maxlength="80" autocomplete="off" placeholder="My protected script">
+                    <p class="obf-hint">Optional. This saves the generated copy to a VoidedX vault under this browser's guest session. Each browser can keep up to five vaults. <a href="/" target="_blank" rel="noopener">Open the editor</a> if you want to sign in with an account.</p>
+                    <button id="obf-save" class="btn-ghost" type="button" disabled><i class="fa-solid fa-vault"></i> Save to vault</button>
+                    <div id="obf-vault-status" class="admin-status hidden" role="status"></div>
+
+                    <div id="obf-result" class="obf-result hidden">
+                        <h3>Generated copy</h3>
+                        <textarea id="obf-output" class="input-field obf-output" readonly spellcheck="false" aria-label="Generated obfuscated script"></textarea>
+                        <button id="obf-download" class="btn-ghost" type="button"><i class="fa-solid fa-download"></i> Download protected file</button>
+                    </div>
+                </article>
+            </div>
+
+            <p class="obf-note"><strong>Keep your link private.</strong> Anyone with it can use your remaining void tokens and read the script sent from Discord. Obfuscation raises the cost of static analysis, but code that runs on a client can still be captured by a compromised executor.</p>
+        </section>
+    </main>
+
+    <script type="module" src="obfuscation.js"></script>
+</body>
+</html>

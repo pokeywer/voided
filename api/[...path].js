@@ -13,6 +13,7 @@ import keypage from './_route-keypage.js';
 import leaderboard from './_route-leaderboard.js';
 import linkvertiseConfig from './_route-linkvertise-config.js';
 import loaderToken from './_route-loader-token.js';
+import obfuscationSession from './_route-obfuscation-session.js';
 import payload from './_route-payload.js';
 import raw from './_route-raw.js';
 import scripts from './_route-scripts.js';
@@ -35,6 +36,7 @@ const handlers = {
     leaderboard,
     'linkvertise-config': linkvertiseConfig,
     'loader-token': loaderToken,
+    'obfuscation-session': obfuscationSession,
     payload,
     raw,
     scripts,

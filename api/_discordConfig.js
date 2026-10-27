@@ -73,10 +73,10 @@ export function discordCommands() {
             options: [{ type: 3, name: 'vault_id', description: 'The vault ID to look up.', required: true }]
         },
         {
-            name: 'obfuscate', description: 'Obfuscate a Lua script with VoidedX protection.',
+            name: 'obfuscate', description: 'Get 5 void tokens and a private obfuscation link.',
             options: [
-                { type: 11, name: 'file',  description: 'Upload a .lua file to obfuscate.', required: false },
-                { type: 3,  name: 'code',  description: 'Paste Lua code directly (max 1500 chars).', required: false },
+                { type: 11, name: 'file',  description: 'Upload a .lua file to preload on the page.', required: false },
+                { type: 3,  name: 'code',  description: 'Paste Lua code to preload on the page.', required: false },
                 {
                     type: 3, name: 'level', description: 'Obfuscation strength.',
                     required: false,

@@ -129,11 +129,11 @@
                             <label for="obfuscation-level">Strength</label>
                             <select id="obfuscation-level" class="input-field">
                                 <option value="auto" selected>Auto (recommended)</option>
-                                <option value="fast">Fast · 1 layer (smallest output)</option>
-                                <option value="low">Low · 1 layer</option>
-                                <option value="medium">Medium · 1 layer</option>
-                                <option value="high">High · 2 layers</option>
-                                <option value="absolute">Absolute · 3 layers (slowest)</option>
+                                <option value="fast">Fast · smallest output</option>
+                                <option value="low">Low · tamper check</option>
+                                <option value="medium">Medium · balanced</option>
+                                <option value="high">High · layered encryption</option>
+                                <option value="absolute">Absolute · slowest</option>
                             </select>
                         </div>
                         <div class="obfuscation-protection-options">
@@ -159,9 +159,9 @@
                             <span class="switch"></span>
                         </label>
                     </div>
-                    <p class="obfuscation-note"><strong>Runtime shield:</strong> Every copy is compressed, encrypted, split into keyed segments, and wrapped in a randomized decoder. Fast, Low, and Medium use one wrapper; High uses two; Absolute uses three plus extra checks. More layers increase analysis cost but can slow execution and enlarge the output. Keep a readable backup and test before replacing a live vault. If the wrapper cannot be built, the save is stopped and the existing vault stays unchanged.</p>
-                    <p class="obfuscation-note"><strong>Fast:</strong> Uses one wrapper with lighter compression work. It produces the smallest, fastest copy but offers the least resistance to analysis.</p>
-                    <p class="obfuscation-note"><strong>Absolute:</strong> Uses three wrappers, tamper checks, and extra transforms. It is the slowest option and may create output too large to save in a vault. Test it first; no obfuscator can make client code impossible to inspect.</p>
+                    <p class="obfuscation-note"><strong>Runtime shield:</strong> Every copy is compiled to encrypted bytecode, split into keyed segments, and run by a bundled interpreter. The interpreter verifies checksums and captured builtin references before decoding and again before running. Low and above enable tamper checks; High and Absolute add a second encryption layer, more checks, and debug-hook detection. Stronger settings increase analysis cost but can slow execution and enlarge the output. Keep a readable backup and test before replacing a live vault. If compilation fails, the save is stopped and the existing vault stays unchanged.</p>
+                    <p class="obfuscation-note"><strong>Fast:</strong> Uses the lightest compression and no tamper checks. It produces the smallest, fastest copy but offers the least resistance to analysis.</p>
+                    <p class="obfuscation-note"><strong>Absolute:</strong> Uses maximum segmentation, layered encryption, tamper checks, and extra transforms. It is the slowest option and may create output too large to save in a vault. Test it first; no obfuscator can make client code impossible to inspect.</p>
                     <p class="obfuscation-note"><strong>What this means:</strong> The server still checks access every time. The saved script can be read or changed on the executor, so use this only if faster repeat loading matters more than that risk. If file or hash support is missing, the loader downloads the script normally.</p>
                     <p class="obfuscation-credit">Voidedx On Top!<a href="https://voidedx.vercel.app" target="_blank" rel="noopener noreferrer">https://voidedx.vercel.app</a></p>
                     <button type="button" id="backup-now-btn" class="btn-ghost backup-now-btn"><i class="fa-solid fa-download"></i> Download backup now</button>
