@@ -175,7 +175,7 @@ export default async function handler(req, res) {
             loaderVersion: nextLoaderVersion,
             obfuscationEnabled,
             fastLoadCacheEnabled,
-            obfuscationProfileVersion: 11,
+            obfuscationProfileVersion: 12,
             obfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

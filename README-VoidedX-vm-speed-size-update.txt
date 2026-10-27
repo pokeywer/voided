@@ -4,17 +4,19 @@ This is the complete VoidedX project with the existing vault recovery and staff 
 
 Changes in this update
 - Vault protection uses the bundled Prometheus fork again; the custom VoidedX bytecode VM has been removed.
-- Fast and Low use the Weak preset, Medium uses Medium, and High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting.
-- Auto uses High only for scripts under 16 KiB; larger scripts use Medium.
+- Fork output is repacked in the VoidedX armor container (lua-voidedx-armor.js): disguised watermark, renamed internals, decoys, LZSS compression, layered masks, shuffled segments, and a randomized loader with integrity checks.
+- Fast uses the Weak preset; Low and Medium use Medium; High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting. Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
+- Auto uses High only for scripts under 16 KiB; larger scripts use Low.
 - The page rewrites bare `#` length operators in the generated decoder to a safe helper so executors that return userdata objects do not crash.
 - Browser and admin vault saves use a 920 KiB serialized-document budget, leaving headroom below Firestore's 1 MiB document limit.
 - If a generated copy cannot fit in a vault, the save is stopped and the generated copy remains available to download in the preview panel.
-- Obfuscation profile version 11 marks old saved copies, including bytecode-VM and Prometheus-generated ones, for rebuild with the current engine.
+- Obfuscation profile version 12 marks the armor container; older saved copies, including bytecode-VM (profile 10) and unarmored profile 11 copies, are rebuilt with the current engine.
 - Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
 
 Files changed for this update
 - prometheus-engine/ (restored prebuilt assets)
 - LICENSE-PROMETHEUS.txt
+- lua-voidedx-armor.js (new)
 - lua-medium.js
 - lua-vault.js (removed)
 - lua-vault-worker.js (removed)

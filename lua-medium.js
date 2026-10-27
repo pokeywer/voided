@@ -1,8 +1,10 @@
+import { armorVoidedxSource, ARMOR_LEVELS } from './lua-voidedx-armor.js';
+
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
 
-// Keep Auto's two-layer mode for tiny scripts; larger sources default to the
-// single-layer Medium profile to reduce runtime and vault-size overhead.
+// Keep Auto's two-layer mode for tiny scripts; larger sources fall back to the
+// single-layer Low profile to reduce runtime and vault-size overhead.
 export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
@@ -19,7 +21,11 @@ export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
 // budget below that hard limit so field/index overhead has room.
 export const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
 
-const PRESETS = Object.freeze({ fast: 'Weak', low: 'Weak', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
+// Low and Medium no longer use the Weak preset: after the Prometheus pass the
+// copy is repacked by the VoidedX armor, so the smallest preset is reserved for
+// Fast only. Low and Medium stay at one VM layer because a second Prometheus
+// layer multiplies the output size (a tiny script went past 100 KiB).
+const PRESETS = Object.freeze({ fast: 'Weak', low: 'Medium', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
 const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 2, absolute: 2 });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
@@ -33,7 +39,7 @@ export function getUtf8ByteLength(value) {
 
 export function resolveObfuscationLevel(source, requestedLevel = 'auto') {
     if (Object.hasOwn(PRESETS, requestedLevel)) return requestedLevel;
-    return getUtf8ByteLength(source) > AUTO_HIGH_BYTE_THRESHOLD ? 'medium' : 'high';
+    return getUtf8ByteLength(source) > AUTO_HIGH_BYTE_THRESHOLD ? 'low' : 'high';
 }
 
 // ---------------------------------------------------------------------------
@@ -54,18 +60,25 @@ export function resolveObfuscationLevel(source, requestedLevel = 'auto') {
 function patchObfuscatedLengthOps(code) {
     if (typeof code !== 'string' || !code.includes('#')) return code;
 
-    // Safe length shim — zero # operators used inside it at all.
+    // Safe length shim — zero bare # operators outside the protected attempt.
+    // The first branch keeps native # semantics, including __len on userdata
+    // (the Strong VM stores its tables behind proxies). Only when # raises do we
+    // fall back to string.len / next counting, which is the executor case this
+    // patch exists for.
     const SHIM =
         'local __vxL;do ' +
         'local _sl=string.len;' +
         'local _tp=type;' +
-        'local _ts=tostring;' +
+        'local _pc=pcall;' +
+        'local _ln=function(v) return #v end;' +
         '__vxL=function(v)' +
+            'local ok,n=_pc(_ln,v);' +
+            'if ok and _tp(n)=="number" then return n end;' +
             'local t=_tp(v);' +
             'if t=="string" then return _sl(v) end;' +
-            'if t=="table" then local n=0;for _ in next,v do n=n+1 end;return n end;' +
-            'local ok,s=pcall(_ts,v);' +
-            'if ok and _tp(s)=="string" then return _sl(s) end;' +
+            'if t=="table" then local c=0;for _ in next,v do c=c+1 end;return c end;' +
+            'local ok2,s=_pc(tostring,v);' +
+            'if ok2 and _tp(s)=="string" then return _sl(s) end;' +
             'return 0;' +
         'end ' +
         'end;';
@@ -227,7 +240,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
             worker = new Worker(workerUrl, { type: 'module' });
             timeoutId = setTimeout(() => finish(new Error(absoluteMode
                 ? 'Absolute obfuscation timed out. Try High strength or reduce the script size.'
-                : 'Prometheus timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
+                : 'Obfuscation timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
             worker.addEventListener('message', event => {
                 const message = event.data;
                 if (!message || message.id !== jobId || message.type !== 'result') return;
@@ -235,13 +248,18 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                     try {
                         const intermediateBytes = getUtf8ByteLength(message.result.output);
                         if (intermediateBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
-                            throw new Error('Prometheus produced more than 32 MiB. Try a lower strength or a smaller source.');
+                            throw new Error('The obfuscator produced more than 32 MiB. Try a lower strength or a smaller source.');
                         }
                         // Patch the Prometheus-generated output to fix "attempt to get length of a
                         // userdata value" crashes on executors whose table/string APIs return userdata
                         // objects. The ConstantArray VM decoder emits bare `#VAR` length ops; we
                         // prepend a tiny rawlen-or-select shim and rewrite those ops to use it.
-                        const output = patchObfuscatedLengthOps(message.result.output);
+                        const patched = patchObfuscatedLengthOps(message.result.output);
+                        // Repack the Prometheus copy inside the VoidedX container so the delivered
+                        // script no longer carries Prometheus shapes (watermark statement, helper
+                        // names, plain `loadstring`-free layout). The inner VM is unchanged.
+                        const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
+                        const output = armorVoidedxSource(patched, { level: armorLevel });
                         const outputBytes = getUtf8ByteLength(output);
                         if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
                             throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
@@ -251,14 +269,14 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                         finish(error instanceof Error ? error : new Error(String(error)));
                     }
                 } else {
-                    finish(new Error(message.result?.error || 'Prometheus could not obfuscate this script.'));
+                    finish(new Error(message.result?.error || 'The obfuscator could not process this script.'));
                 }
             });
             worker.addEventListener('error', event => {
-                finish(new Error(event.message || 'The Prometheus worker could not start.'));
+                finish(new Error(event.message || 'The obfuscation worker could not start.'));
             }, { once: true });
             worker.addEventListener('messageerror', () => {
-                finish(new Error('The Prometheus worker returned data the browser could not read.'));
+                finish(new Error('The obfuscation worker returned data the browser could not read.'));
             }, { once: true });
 
             const seed = Math.floor(Math.random() * 2_147_483_646) + 1;
@@ -286,7 +304,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
 }
 
 export async function encodeObfuscatedCode(source) {
-    if (typeof source !== 'string') throw new Error('Prometheus returned an invalid script.');
+    if (typeof source !== 'string') throw new Error('The obfuscator returned an invalid script.');
 
     const sourceBytes = new TextEncoder().encode(source);
     if (sourceBytes.byteLength > MAX_STORED_OBFUSCATED_OUTPUT_BYTES) {

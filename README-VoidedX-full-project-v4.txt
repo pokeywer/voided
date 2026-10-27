@@ -3,12 +3,12 @@ VoidedX Obfuscator — Full project update
 This project keeps the product name VoidedX Obfuscator. The site language control supports English and Português (Brasil).
 
 Obfuscation and vault size
-- Vault protection uses the bundled Prometheus fork, which compiles the script to VM bytecode in a module worker.
-- Fast and Low use the Weak preset, Medium uses Medium, and High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting.
-- Auto uses High for scripts under 16 KiB and Medium for larger scripts.
+- Vault protection uses the bundled Prometheus fork, which compiles the script to VM bytecode in a module worker, then repacks the result in the VoidedX armor container (lua-voidedx-armor.js): disguised watermark, renamed internals, decoys, LZSS compression, layered masks, shuffled segments, and a randomized loader with integrity checks.
+- Fast uses the Weak preset; Low and Medium use Medium; High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting. Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
+- Auto uses High for scripts under 16 KiB and Low for larger scripts.
 - The page patches bare `#` length operators in the generated decoder so executors that return userdata objects do not crash.
 - Vault saves use a 920 KiB serialized-document budget. If an output does not fit, the save is stopped and the generated copy remains downloadable.
-- Obfuscation profile version 11 causes older saved copies, including bytecode-VM and Prometheus-generated ones, to be regenerated with the current engine.
+- Obfuscation profile version 12 marks the armor container; older saved copies, including bytecode-VM (profile 10) and unarmored profile 11 copies, are regenerated with the current engine.
 - Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
 
 Vault recovery
