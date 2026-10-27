@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from './_admin.js';
 import { getCodeForExecution } from './_deliveryCode.js';
+import { encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -91,6 +92,10 @@ export default async function handler(req, res) {
             const snap = await tx.get(sessionRef);
             if (!snap.exists) return { ok: false, status: 401, message: 'Delivery ticket expired or already used.' };
             const session = snap.data();
+            if (session.blocked === true || isBlockingFlags(session.tamperFlags)) {
+                tx.delete(sessionRef);
+                return { ok: false, status: 403, message: 'This delivery was blocked because the loader environment was tampered with.' };
+            }
             if (!Number(session.expiresAt) || Date.now() >= Number(session.expiresAt)) {
                 tx.delete(sessionRef);
                 return { ok: false, status: 401, message: 'Delivery ticket expired. Run the loader again.' };
@@ -135,6 +140,44 @@ export default async function handler(req, res) {
             return json(res, 500, { ok: false, message: 'Vault payload is unavailable.' });
         }
 
+        const shielded = typeof session.shieldHash === 'string'
+            && typeof session.shieldTrace === 'string'
+            && typeof session.shieldPayloadHash === 'string'
+            && Array.isArray(session.shieldOrder)
+            && Number.isFinite(Number(session.shieldSeed));
+
+        if (shielded) {
+            if (sha256Hex(executionCode) !== session.shieldPayloadHash) {
+                return json(res, 409, { ok: false, message: 'This vault changed while the loader was running. Run the loader again.' });
+            }
+            const watermarked = watermarkPrefix(session.shieldTrace) + executionCode;
+            if (sha256Hex(watermarked) !== session.shieldHash) {
+                return json(res, 409, { ok: false, message: 'The payload no longer matches this loader session. Run the loader again.' });
+            }
+            const order = session.shieldOrder.map(Number);
+            const declaredParts = Number(session.shieldParts);
+            if (order.length !== declaredParts || order.length < 1 || order.length > 64) {
+                return json(res, 500, { ok: false, message: 'The protected payload is unavailable.' });
+            }
+            const parts = encryptParts(watermarked, Number(session.shieldSeed), order);
+            try {
+                await db.collection('loaderDeliveries').doc(session.shieldTrace).set({
+                    deliveredAt: Date.now(),
+                    deliveredIp: getClientIp(req),
+                    deliveredUserAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+                    version: 4
+                }, { merge: true });
+            } catch {}
+            return json(res, 200, {
+                ok: true,
+                version: 4,
+                parts,
+                trace: session.shieldTrace,
+                crc: session.shieldCrc
+            });
+        }
+
+        // Legacy plaintext path for tickets created before the shield deploy.
         if (cacheRequested && vault.fastLoadCacheEnabled === true) {
             const hash = createHash('sha256').update(executionCode, 'utf8').digest('hex');
             if (cacheHash && cacheHash === hash) {

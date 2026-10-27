@@ -2,6 +2,20 @@ VOIDEDX PROMETHEUS LUAU OBFUSCATION IMPROVEMENTS
 
 Vercel deployment note: API endpoints dispatch through api/[...path].js. The underscore-prefixed api/_route-*.js files are internal handlers, so the project deploys as one API function instead of exceeding the Vercel function-count limit. Existing /api/... URLs are preserved.
 
+Loader anti-tamper update: this patch adds an encrypted bootstrap, split and shuffled payload delivery, runtime hook checks, a tamper-report endpoint, and per-session leak tracing. Upload or replace these files together:
+
+  api/_loaderShield.js        (new) keystream, chunk order, CRC32, flag allowlist
+  api/_loaderSource.js        (new) bootstrap packer and loader runtime source
+  api/_route-integrity.js     (new) GET /api/integrity tamper reports
+  api/_loaderToken.js         token binding, bootstrap seed, trace derivation
+  api/_route-raw.js           encrypted bootstrap and seed-releasing gate
+  api/_route-verify.js        shield state, delivery trace, report token
+  api/_route-payload.js       encrypted parts, tamper block, v4 delivery
+  api/[...path].js            registers the integrity route
+  README.md                   updated protection notes
+
+Flow: the outer loadstring still fetches /api/raw with no token. The response carries the inner loader only as Xorshift32 ciphertext. A separate token-check request releases the HMAC-derived seed after the token, network binding, vault version, and key checks pass, so a captured response body cannot be decrypted offline. /api/verify returns a random payload seed, a shuffled chunk order, a CRC32, and a 16-hex trace; /api/payload returns only the shuffled, encrypted chunks. Capturing either response alone is not enough. The runtime compares game.HttpGet, loadstring/load, HttpService.JSONDecode, string.char/byte/sub, table.concat, pcall, rawequal, and debug.info against references captured at start, reports swapped functions to /api/integrity, and high-confidence reports mark the one-use ticket blocked so /api/payload refuses delivery. Every payload carries a --[[vx:TRACE]] watermark; loaderDeliveries/{trace} maps it to the vault, player, key issue, and delivery IP. The fast-load plaintext cache is bypassed for shielded payloads because an on-disk plaintext copy defeats the protection. Set LOADER_TOKEN_IP_BIND=0 if legitimate executor HTTP egress IPs change between the bootstrap and gate requests; set LOADER_TOKEN_SECRET to a random value of at least 32 bytes for stable signing and seed derivation. These checks raise the cost of runtime dumping and make leaks attributable, but they are not DRM: a hook installed before the loader starts, a patched executor, or a loader modified to strip checks can still capture executed code.
+
 This integrates the Prometheus engine into VoidedX's existing Vault Protection panel. It does not include the separate Prometheus website interface.
 
 Upload files into the matching repository paths and replace files when GitHub asks. Keep all five files in prometheus-engine/assets/ together.

@@ -8,6 +8,7 @@ import adminVaults from './_route-admin-vaults.js';
 import announcements from './_route-announcements.js';
 import discordAdmin from './_route-discord-admin.js';
 import discordInteractions from './_route-discord-interactions.js';
+import integrity from './_route-integrity.js';
 import keypage from './_route-keypage.js';
 import leaderboard from './_route-leaderboard.js';
 import linkvertiseConfig from './_route-linkvertise-config.js';
@@ -29,6 +30,7 @@ const handlers = {
     announcements,
     'discord-admin': discordAdmin,
     'discord-interactions': discordInteractions,
+    integrity,
     keypage,
     leaderboard,
     'linkvertise-config': linkvertiseConfig,

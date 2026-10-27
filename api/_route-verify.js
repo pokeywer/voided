@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { db } from './_admin.js';
 import { recordExecution } from './_executionStats.js';
+import { getCodeForExecution } from './_deliveryCode.js';
+import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
+import { traceForSession } from './_loaderToken.js';
 
 const VERIFY_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const VERIFY_LIMIT_ATTEMPTS = 30;
@@ -163,6 +166,45 @@ export default async function handler(req, res) {
             }
         }
 
+        // Build the payload shield before the session is created. The seed and
+        // chunk order travel in this verify response; the ciphertext travels in a
+        // separate payload request, so capturing either one alone is not enough.
+        const reportToken = randomBytes(32).toString('hex');
+        const trace = traceForSession(sessionToken);
+        let shield = null;
+        let payloadHash = '';
+        try {
+            const executionCode = getCodeForExecution(initialVaultData);
+            if (typeof executionCode === 'string' && executionCode.trim()) {
+                const built = buildShield({ code: watermarkPrefix(trace) + executionCode, trace });
+                shield = {
+                    v: 1,
+                    seed: built.seedHex,
+                    order: built.order,
+                    parts: built.parts,
+                    hash: built.hash,
+                    crc: built.crc,
+                    trace
+                };
+                payloadHash = sha256Hex(executionCode);
+            }
+        } catch {}
+
+        const shieldFields = shield
+            ? {
+                shieldSeed: parseInt(shield.seed, 16) >>> 0,
+                shieldOrder: shield.order,
+                shieldParts: shield.parts,
+                shieldHash: shield.hash,
+                shieldCrc: shield.crc,
+                shieldTrace: shield.trace,
+                shieldPayloadHash: payloadHash,
+                reportToken,
+                tamperFlags: [],
+                blocked: false
+            }
+            : { reportToken, tamperFlags: [], blocked: false };
+
         const result = await db.runTransaction(async tx => {
             const freshSnap = await tx.get(vaultRef);
             if (!freshSnap.exists) {
@@ -187,12 +229,25 @@ export default async function handler(req, res) {
                 uses: 0,
                 maxUses: 1,
                 userId,
-                requireKey: initiallyKeyed
+                requireKey: initiallyKeyed,
+                ...shieldFields
             };
+
+            if (shield) {
+                tx.set(db.collection('loaderDeliveries').doc(shield.trace), {
+                    trace: shield.trace,
+                    vaultId: id,
+                    userId,
+                    issuedAt: now,
+                    ip: getClientIp(req),
+                    userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+                    version: 1
+                }, { merge: true });
+            }
 
             if (!initiallyKeyed) {
                 tx.create(sessionRef, sessionBase);
-                return { ok: true, token: sessionToken, ticketExpiresAt: expiresAt, expiresAt: null };
+                return { ok: true, token: sessionToken, ticketExpiresAt: expiresAt, expiresAt: null, shield, report: reportToken };
             }
 
             let matched = null;
@@ -254,7 +309,9 @@ export default async function handler(req, res) {
                 ticketExpiresAt: expiresAt,
                 expiresAt: keyExpiry,
                 remainingSeconds: keyExpiry == null ? null : Math.max(0, Math.ceil((keyExpiry - now) / 1000)),
-                keyExpiresAt: keyExpiry
+                keyExpiresAt: keyExpiry,
+                shield,
+                report: reportToken
             };
         });
 
@@ -273,7 +330,9 @@ export default async function handler(req, res) {
             ticketExpiresAt: result.ticketExpiresAt,
             expiresAt: result.expiresAt,
             remainingSeconds: result.remainingSeconds ?? null,
-            keyExpiresAt: result.keyExpiresAt ?? null
+            keyExpiresAt: result.keyExpiresAt ?? null,
+            shield: result.shield ?? null,
+            report: result.report ?? null
         });
     } catch (error) {
         console.error('Vault verification failed:', error);
