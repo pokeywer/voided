@@ -84,8 +84,11 @@ export function compactGeneratedLoader(source) {
 // The returned bootstrap carries only ciphertext. The gate response releases the
 // token-derived seed, so a captured body alone cannot be decrypted offline.
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
+    // The credit line lives inside the inner loader, so it appears only after a
+    // successful gate decrypt. The outer bootstrap stays ciphertext + decoder.
+    const innerBanner = '-- VoidedX Loader [https://voided.vercel.app]';
     const seed = deriveBootstrapSeed(token);
-    const cipher = xorKeystream(source, seed).toString('base64url');
+    const cipher = xorKeystream(`${innerBanner}\n${source}`, seed).toString('base64url');
     const gateUrl = new URL('/api/raw', origin);
     gateUrl.searchParams.set('id', id);
     gateUrl.searchParams.set('token', token);
@@ -166,6 +169,7 @@ local vxChar = string.char
 local vxByte = string.byte
 local vxSub = string.sub
 local vxFormat = string.format
+local vxRep = string.rep
 local vxConcat = table.concat
 local vxGsub = string.gsub
 local vxMatch = string.match
@@ -173,6 +177,8 @@ local vxPcall = pcall
 local vxInfo = type(debug) == "table" and debug.info or nil
 local vxInfoStable = vxInfo ~= nil and debug.info == vxInfo
 local vxRawEqual = rawequal
+
+vxPcall(print, "[VoidedX] VoidedX Protection - protect your scripts at https://voided.vercel.app")
 
 local vxB64Map = {}
 do
@@ -288,16 +294,16 @@ end
 
 local vxLastProgressBlocks, vxLastProgressStage
 local function vxProgress(percent, stage)
-    percent = math.max(1, math.min(100, math.floor(percent)))
-    local width = 10
-    local filled = math.max(1, math.floor(width * percent / 100))
+    percent = math.max(0, math.min(100, math.floor(percent)))
+    local width = 14
+    local filled = math.floor(width * percent / 100)
     if filled == vxLastProgressBlocks and stage == vxLastProgressStage then return end
     vxLastProgressBlocks = filled
     vxLastProgressStage = stage
-    local line = string.format(
-        "[VoidedX] Loading script %s%s %d%% - %s",
-        string.rep("🟩", filled),
-        string.rep("⬛", width - filled),
+    local line = vxFormat(
+        "[VoidedX] [%s%s] %3d%%  %s",
+        vxRep("=", filled),
+        vxRep("-", width - filled),
         percent,
         stage
     )
@@ -355,8 +361,8 @@ local function vxRunPayload(token, userId, shield, report)
 
     local requestOk, response
     local requestDone = false
-    local progress = 1
-    vxProgress(progress, "Connecting to delivery server")
+    local progress = 2
+    vxProgress(progress, "Connecting to server")
 
     local asyncStarted = false
     if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
@@ -370,12 +376,12 @@ local function vxRunPayload(token, userId, shield, report)
 
     if asyncStarted then
         while not requestDone do
-            progress = math.min(progress + 5, 85)
-            vxProgress(progress, "Downloading script")
+            progress = math.min(progress + 6, 85)
+            vxProgress(progress, "Downloading payload")
             task.wait(0.2)
         end
     else
-        vxProgress(35, "Downloading script")
+        vxProgress(40, "Downloading payload")
         requestOk, response = vxPcall(function() return vxHttpGet(game, payloadUrl) end)
     end
 
@@ -389,10 +395,10 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
     end
 
-    vxProgress(90, "Checking downloaded script")
+    vxProgress(90, "Verifying payload")
     local decodeOk, result = vxPcall(vxJsonDecode, HttpService, response)
     if not decodeOk or type(result) ~= "table" then
-        vxProgress(90, "Invalid server response")
+        vxProgress(90, "Server error")
         return error("[VoidedX] The payload server returned a bad response.", 0)
     end
     if not result.ok then
@@ -412,7 +418,7 @@ local function vxRunPayload(token, userId, shield, report)
             vxReport(report, shield.trace, { reason })
             return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
         end
-        vxProgress(94, "Verified protected payload")
+        vxProgress(95, "Integrity verified")
     else
         if type(result.code) ~= "string" then
             vxProgress(90, "Invalid payload")
@@ -426,13 +432,13 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
     end
 
-    vxProgress(96, "Compiling script")
+    vxProgress(97, "Compiling")
     local scriptChunk, compileError = vxLoad(executionCode)
     if not scriptChunk then
-        vxProgress(96, "Compilation failed")
+        vxProgress(97, "Compilation failed")
         return error("[VoidedX] " .. tostring(compileError), 0)
     end
-    vxProgress(100, "Starting")
+    vxProgress(100, "Ready")
     if type(task) == "table" and type(task.synchronize) == "function" then
         vxPcall(task.synchronize)
     end

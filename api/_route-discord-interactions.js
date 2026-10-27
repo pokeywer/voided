@@ -312,7 +312,7 @@ export default async function handler(req, res) {
                     return;
                 }
 
-                // Obfuscation runs client-side (WASM), so we redirect to the panel
+                // Obfuscation runs client-side (browser worker), so we redirect to the panel
                 // pre-loaded with the source, with a one-time storage key.
                 // Store the source temporarily in Firestore (TTL 10 minutes).
                 const { randomBytes } = await import('node:crypto');
@@ -342,7 +342,7 @@ export default async function handler(req, res) {
                             '⏱️ This link expires in **10 minutes**.'
                         ].join('\n'),
                         color: 0xa855f7,
-                        footer: { text: 'VoidedX  •  Obfuscator  •  Powered by Prometheus' },
+                        footer: { text: 'VoidedX  •  Obfuscator  •  Powered by the VoidedX engine' },
                         timestamp: new Date().toISOString()
                     }],
                     components: [{ type: 1, components: [

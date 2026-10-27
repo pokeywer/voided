@@ -1135,10 +1135,10 @@ document.addEventListener('DOMContentLoaded', () => {
             obfuscationLevelSelect.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
         }
         if (chkTamperCheck) chkTamperCheck.checked = data.tamperCheckEnabled === true;
-        if (chkVmProtection) chkVmProtection.checked = data.vmProtectionEnabled === true;
+        if (chkVmProtection) chkVmProtection.checked = true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 8) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 9) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1437,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     offerUnstoredObfuscatedPreview(generatedObfuscatedCode, effectiveObfuscationLevel, errorMessage);
                     showToast('Vault saving stopped; the existing vault was left unchanged. The generated copy is available in the preview panel.', 'error', 8000);
                 } else {
-                    showToast('Prometheus could not obfuscate this script: ' + errorMessage, 'error', 8000);
+                    showToast('The VoidedX engine could not obfuscate this script: ' + errorMessage, 'error', 8000);
                 }
                 isSaving = false;
                 lockBtn.disabled = false;
@@ -1489,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 8,
+            obfuscationProfileVersion: 9,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             vmProtectionEnabled,

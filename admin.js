@@ -400,7 +400,7 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
         adminVaultObfuscation.checked = vault.obfuscationEnabled === true;
         adminVaultLevel.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(vault.obfuscationLevel) ? vault.obfuscationLevel : 'auto';
         adminVaultTamper.checked = vault.tamperCheckEnabled === true;
-        adminVaultVm.checked = vault.vmProtectionEnabled === true;
+        adminVaultVm.checked = true;
         adminVaultSplitting.checked = vault.expandedTransformsEnabled === true;
         adminVaultDirty = false;
         clearAdminVaultPreview();
