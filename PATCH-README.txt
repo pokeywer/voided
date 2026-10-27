@@ -20,17 +20,21 @@ This patch replaces the Prometheus engine with a custom VoidedX engine that runs
 
 Upload files into the matching repository paths and replace files when GitHub asks. The engine files must stay together:
 
-  lua-vault.js                (new) thin facade over the VM engine
-  lua-vault-worker.js         (new) browser worker entry for the engine
-  lua-medium.js               (replaced) size limits, worker wiring, storage encoding
-  lua-vm-parser.js            (new) Luau tokenizer and parser
-  lua-vm-compiler.js          (new) AST to register bytecode
-  lua-vm-codec.js             (new) LZSS, mask passes, base64 segments
-  lua-vm-engine.js            (new) program serializer, interpreter generator, shields
+  prometheus-engine/          (new) prebuilt Prometheus fork: worker, runner, wasm, glue
+  LICENSE-PROMETHEUS.txt      (new) fork license and attribution terms
+  lua-medium.js               (replaced) worker wiring, timeout, length patch, storage encoding
+  lua-vault-worker.js         (removed) no longer used
+  lua-vault.js                (removed) no longer used
+  lua-vm-parser.js            (removed) no longer used
+  lua-vm-compiler.js          (removed) no longer used
+  lua-vm-codec.js             (removed) no longer used
+  lua-vm-engine.js            (removed) no longer used
 
-The strength selector offers Fast, Low, Medium, High, and Absolute in Luau mode. The engine compiles the source to register bytecode and serializes it into a binary program blob; the delivered file contains that encrypted blob and a bundled interpreter, not the original source text. Instructions are 8 bytes with 24-bit jump and count operands. Fast and Low use one encryption layer; High and Absolute use two and add extra integrity checks and debug-hook detection. Medium and above add decoy functions, and extra transforms adds more. Auto uses High up to 16 KiB of UTF-8 source and Medium above. Every level LZSS-compresses the blob, encrypts it with layered LCG-derived additive masks, encodes it with a per-build shuffled base64url alphabet, and randomizes interpreter names and handler order. The runtime verifies length, Adler32, and a weighted checksum before parsing, and compares captured builtin references (string.byte/char/sub/len, table.concat, rawequal, and debug.gethook at High and above) before decoding and again before running. Large multi-assignments are staged through tables so they stay below Luau's 255-register per-function limit. Obfuscation failures stop saving and preserve the existing vault. Source up to 128 KiB is stored as readable text in Firestore for owner audits; larger source is gzip-base64 compressed to preserve document space, not encrypted. Older plain-text and gzip-base64 records remain supported. The execution copy is stored as plain text when it is ASCII and smaller than its gzip-base64 form, otherwise gzip-base64; the API decompresses base64 records for delivery. Browser previews accept source up to 4 MiB and generated output up to 32 MiB; saving source to a vault remains capped at 2 MiB. Output above 1 MiB is download-only to avoid freezing the page. Saved outputs are capped at 4 MiB, and the estimated Firestore document cap is about 870 KiB, so the document cap can be reached first. Obfuscation jobs may take a few seconds; Absolute is the slowest. Bytecode runs slower than the original source. Unkeyed raw loaders fetch the generated body rather than embedding a second copy inside the bootstrap. Existing /api/raw, /api/verify, and /api/payload routes deliver it. Client code can still be captured and analyzed while running.
+The strength selector offers Fast, Low, Medium, High, and Absolute in Luau mode. The Prometheus fork starts in a module worker and compiles the script to VM bytecode. Fast and Low use the Weak preset, Medium uses Medium, and High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two. Absolute also turns on tamper checking and extra string splitting. Auto uses High up to 16 KiB of UTF-8 source and Medium above. The page rewrites bare `#` length operators in the generated decoder to a safe helper so executors that return userdata objects do not crash. Obfuscation failures stop saving and preserve the existing vault. Source up to 128 KiB is stored as readable text in Firestore for owner audits; larger source is gzip-base64 compressed to preserve document space, not encrypted. Older plain-text and gzip-base64 records remain supported. The execution copy is stored as plain text when it is ASCII and smaller than its gzip-base64 form, otherwise gzip-base64; the API decompresses base64 records for delivery. Browser previews accept source up to 4 MiB and generated output up to 32 MiB; saving source to a vault remains capped at 2 MiB. Output above 1 MiB is download-only to avoid freezing the page. Saved outputs are capped at 4 MiB, and the estimated Firestore document cap is about 870 KiB, so the document cap can be reached first. Obfuscation jobs may take several minutes; Absolute is the slowest and most fragile. Unkeyed raw loaders fetch the generated body rather than embedding a second copy inside the bootstrap. Existing /api/raw, /api/verify, and /api/payload routes deliver it. Client code can still be captured and analyzed while running.
 
-Vaults saved before this engine, including wrapper-engine and Prometheus-generated execution copies, carry an older obfuscation profile number. Open and save them again to regenerate the execution copy. Keep a backup and try the output in a private test place before broad use. A saved vault document is capped at an estimated 870 KiB to leave headroom under Firestore's document-size limit.
+Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
+
+Vaults saved before this engine, including bytecode-VM (profile 10) and Prometheus-generated execution copies, carry an older obfuscation profile number. Open and save them again to regenerate the execution copy. Keep a backup and try the output in a private test place before broad use. A saved vault document is capped at an estimated 870 KiB to leave headroom under Firestore's document-size limit.
 
 DISCORD /obfuscate VOID TOKENS
 
@@ -51,4 +55,4 @@ New Firestore collections: obfuscationSessions/{token} stores the preloaded sour
 
 Discord command registration is unchanged for names and options; only the /obfuscate description and the file/code help text changed, so the existing registered command still works and re-registering is optional.
 
-The link page obfuscates in the browser with the same engine file (lua-medium.js, lua-vault.js, lua-vault-worker.js) used by the Creator Panel, so those files must be deployed with the page.
+The link page obfuscates in the browser with the same engine (lua-medium.js plus the prometheus-engine assets) used by the Creator Panel, so those files must be deployed with the page.

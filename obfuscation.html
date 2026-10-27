@@ -114,15 +114,15 @@
                         <label for="obf-level">Strength
                             <select id="obf-level" class="input-field">
                                 <option value="auto" selected>Auto (recommended)</option>
-                                <option value="fast">Fast · smallest output</option>
-                                <option value="low">Low · tamper check</option>
-                                <option value="medium">Medium · balanced</option>
-                                <option value="high">High · layered encryption</option>
-                                <option value="absolute">Absolute · slowest</option>
+                                <option value="fast">Fast · 1 VM layer (smallest)</option>
+                                <option value="low">Low · 1 VM layer</option>
+                                <option value="medium">Medium · 1 VM layer</option>
+                                <option value="high">High · 2 VM layers</option>
+                                <option value="absolute">Absolute · 2 VM layers (slowest)</option>
                             </select>
                         </label>
                         <label class="obf-check" for="obf-tamper"><input id="obf-tamper" type="checkbox" checked> Tamper check</label>
-                        <label class="obf-check" for="obf-expanded"><input id="obf-expanded" type="checkbox"> Extra transforms</label>
+                        <label class="obf-check" for="obf-expanded"><input id="obf-expanded" type="checkbox"> More string splitting</label>
                     </div>
 
                     <button id="obf-run" class="btn-primary" type="button"><i class="fa-solid fa-wand-magic-sparkles"></i> Obfuscate &amp; download</button>

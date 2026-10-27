@@ -3,12 +3,13 @@ VoidedX Obfuscator — Full project update
 This project keeps the product name VoidedX Obfuscator. The site language control supports English and Português (Brasil).
 
 Obfuscation and vault size
-- The script is compiled to register bytecode; the delivered file contains an encrypted program blob and a bundled interpreter, not the original source text or a loadstring of it.
-- Fast and Low use one encryption layer; Medium uses one layer plus decoy functions; High and Absolute use two layers with more checks and debug-hook detection.
+- Vault protection uses the bundled Prometheus fork, which compiles the script to VM bytecode in a module worker.
+- Fast and Low use the Weak preset, Medium uses Medium, and High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting.
 - Auto uses High for scripts under 16 KiB and Medium for larger scripts.
-- The program blob is LZSS-compressed, encrypted with layered LCG-derived masks, split into independently encoded segments, and checked with Adler32 plus a weighted checksum before parsing.
+- The page patches bare `#` length operators in the generated decoder so executors that return userdata objects do not crash.
 - Vault saves use a 920 KiB serialized-document budget. If an output does not fit, the save is stopped and the generated copy remains downloadable.
-- Obfuscation profile version 10 causes older saved copies, including wrapper-engine and Prometheus-generated ones, to be regenerated with the current engine.
+- Obfuscation profile version 11 causes older saved copies, including bytecode-VM and Prometheus-generated ones, to be regenerated with the current engine.
+- Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
 
 Vault recovery
 - Existing vaults are backed up before save, delete, and restore operations.
