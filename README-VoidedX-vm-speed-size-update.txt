@@ -10,7 +10,7 @@ Changes in this update
 - The page rewrites bare `#` length operators in the generated decoder to a safe helper so executors that return userdata objects do not crash.
 - Browser and admin vault saves use a 920 KiB serialized-document budget, leaving headroom below Firestore's 1 MiB document limit.
 - If a generated copy cannot fit in a vault, the save is stopped and the generated copy remains available to download in the preview panel.
-- Obfuscation profile version 12 marks the armor container; older saved copies, including bytecode-VM (profile 10) and unarmored profile 11 copies, are rebuilt with the current engine.
+- Obfuscation profile version 13 marks the hardened container. Low and above add string encryption and anti-tamper inside the VM, the armor uses more mask passes and segments, and High/Absolute add a second guard; older copies (profiles 10-12) are rebuilt with the current engine.
 - Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
 
 Files changed for this update

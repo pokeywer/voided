@@ -8,7 +8,7 @@ Obfuscation and vault size
 - Auto uses High for scripts under 16 KiB and Low for larger scripts.
 - The page patches bare `#` length operators in the generated decoder so executors that return userdata objects do not crash.
 - Vault saves use a 920 KiB serialized-document budget. If an output does not fit, the save is stopped and the generated copy remains downloadable.
-- Obfuscation profile version 12 marks the armor container; older saved copies, including bytecode-VM (profile 10) and unarmored profile 11 copies, are regenerated with the current engine.
+- Obfuscation profile version 13 marks the hardened container. Low and above add string encryption and anti-tamper inside the VM, the armor uses more mask passes and segments, and High/Absolute add a second guard; older copies (profiles 10-12) are regenerated with the current engine.
 - Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus. See LICENSE-PROMETHEUS.txt.
 
 Vault recovery

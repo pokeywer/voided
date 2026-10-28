@@ -6936,53 +6936,32 @@ function AntiTamper:apply(ast, pipeline)
         ]]
     end
     code = code .. [[
-    local gmatch = string.gmatch;
     local err = function() error("Tamper Detected!") end;
 
-    local pcallIntact2 = false;
-    local pcallIntact = pcall(function()
-        pcallIntact2 = true;
-    end) and pcallIntact2;
-
     local random = math.random;
-    local tblconcat = table.concat;
-    local unpkg = table and table.unpack or unpack;
-    local n = random(3, 65);
-    local acc1 = 0;
-    local acc2 = 0;
-    local pcallRet = {pcall(function() local a = ]] .. tostring(math.random(1, 2^24)) .. [[ - "]] .. RandomStrings.randomString() .. [[" ^ ]] .. tostring(math.random(1, 2^24)) .. [[ return "]] .. RandomStrings.randomString() .. [[" / a; end)};
-    local origMsg = pcallRet[2];
-    local line = tonumber(gmatch(tostring(origMsg), ':(%d*):')());
-    for i = 1, n do
-        local len = math.random(1, 100);
-        local n2 = random(0, 255);
-        local pos = random(1, len);
-        local shouldErr = random(1, 2) == 1;
-        local msg = origMsg:gsub(':(%d*):', ':' .. tostring(random(0, 10000)) .. ':');
-        local arr = {pcall(function()
-            if random(1, 2) == 1 or i == n then
-                local line2 = tonumber(gmatch(tostring(({pcall(function() local a = ]] .. tostring(math.random(1, 2^24)) .. [[ - "]] .. RandomStrings.randomString() .. [[" ^ ]] .. tostring(math.random(1, 2^24)) .. [[ return "]] .. RandomStrings.randomString() .. [[" / a; end)})[2]), ':(%d*):')());
-                valid = valid and line == line2;
-            end
-            if shouldErr then
-                error(msg, 0);
-            end
-            local arr = {};
-            for i = 1, len do
-                arr[i] = random(0, 255);
-            end
-            arr[pos] = n2;
-            return unpkg(arr);
-        end)};
-        if shouldErr then
-            valid = valid and arr[1] == false and arr[2] == msg;
-        else
-            valid = valid and arr[1];
-            acc1 = (acc1 + arr[pos + 1]) % 256;
-            acc2 = (acc2 + n2) % 256;
-        end
+    -- Integrity probes. Each one answers a question whose correct value is
+    -- fixed by the language, never by the interpreter: a raised error is
+    -- observable, a call returns all of its values, byte sums are additive.
+    -- A single probe disagreement is tolerated because executors differ on
+    -- edge behaviour; two or more means pcall, string or table dispatch has
+    -- been replaced, and the copy stops.
+    local fails = 0;
+    local function probe(ok)
+        if not ok then fails = fails + 1 end;
     end
-    valid = valid and acc1 == acc2;
+    local okProbe, probeMsg = pcall(function() error("vx_probe", 0) end);
+    probe(okProbe == false and probeMsg == "vx_probe");
+    local o1, o2, o3, o4 = pcall(function() return 11, 22, 33 end);
+    probe(o1 == true and o2 == 11 and o3 == 22 and o4 == 33);
+    local tag = "VoidedX";
+    local sum = 0;
+    for i = 1, #tag do
+        sum = sum + string.byte(tag, i);
+    end
+    probe(sum == 691);
+    local joined = table.concat({"vx", "guard"});
+    probe(joined == "vxguard");
+    valid = valid and fails < 2;
 
     if valid then else
         repeat
@@ -8103,6 +8082,141 @@ function EncryptStrings:apply(ast, _)
 end
 
 return EncryptStrings
+`,"prometheus.steps.VoidedxSigil":`-- VoidedX Sigil Cipher
+--
+-- Integer-exact replacement for the stock string-encryption step. The stock
+-- cipher derives its keystream through 2^x with fractional exponents and packs
+-- the result into a 44-bit divide; the last-bit rounding of that expression
+-- differs between interpreters, and a single ulp of drift shifts every byte
+-- that follows. This cipher only uses additions and modular products that stay
+-- below 2^53, so the encoder and the emitted decoder agree bit for bit on
+-- LuaJIT, Lua 5.4 and Luau alike.
+
+local Step = require("prometheus.step")
+local Ast = require("prometheus.ast")
+local Parser = require("prometheus.parser")
+local Enums = require("prometheus.enums")
+local visitast = require("prometheus.visitast")
+local util = require("prometheus.util")
+local AstKind = Ast.AstKind
+
+local VoidedxSigil = Step:extend()
+VoidedxSigil.Description = "Seals string literals with a per-copy integer keystream."
+VoidedxSigil.Name = "Sigil Cipher"
+
+VoidedxSigil.SettingsDescriptor = {}
+
+function VoidedxSigil:init(_) end
+
+function VoidedxSigil:CreateEncryptionService()
+	local MOD = 16777216
+	local MUL = math.random(4097, 8191) * 2 + 1
+	local INC = math.random(0, MOD - 1)
+	if INC % 2 == 0 then INC = INC + 1 end
+	local BASE = math.random(1, 255)
+	local usedSeeds = {}
+
+	local function gen_seed()
+		local seed
+		repeat
+			seed = math.random(1, 1073741824)
+		until not usedSeeds[seed]
+		usedSeeds[seed] = true
+		return seed
+	end
+
+	local function encrypt(str)
+		local seed = gen_seed()
+		local state = (seed * MUL + INC) % MOD
+		local out = {}
+		local prev = BASE
+		for i = 1, #str do
+			state = (state * MUL + INC) % MOD
+			local k = math.floor(state / 65536) % 256
+			local byte = string.byte(str, i)
+			out[i] = string.char((byte - k - prev) % 256)
+			prev = byte
+		end
+		return table.concat(out), seed
+	end
+
+	local function genCode()
+		return [[
+do
+	local M = ]] .. tostring(MOD) .. [[
+	local A = ]] .. tostring(MUL) .. [[
+	local C = ]] .. tostring(INC) .. [[
+	local B = ]] .. tostring(BASE) .. [[
+	local fl = math.floor
+	local bc = string.byte
+	local ch = string.char
+	local cc = table.concat
+	local ready = {}
+	function sigil(str, seed)
+		local hit = ready[seed]
+		if hit ~= nil then return hit end
+		local st = (seed * A + C) % M
+		local prev = B
+		local out = {}
+		for i = 1, #str do
+			st = (st * A + C) % M
+			local k = fl(st / 65536) % 256
+			local v = (bc(str, i) + k + prev) % 256
+			out[i] = ch(v)
+			prev = v
+		end
+		local s = cc(out)
+		ready[seed] = s
+		return s
+	end
+end]]
+	end
+
+	return {
+		encrypt = encrypt,
+		genCode = genCode,
+	}
+end
+
+function VoidedxSigil:apply(ast, _)
+	local Encryptor = self:CreateEncryptionService()
+
+	local code = Encryptor.genCode()
+	local newAst = Parser:new({ LuaVersion = Enums.LuaVersion.Lua51 }):parse(code)
+	local doStat = newAst.body.statements[1]
+
+	local scope = ast.body.scope
+	local sigilVar = scope:addVariable()
+
+	doStat.body.scope:setParent(ast.body.scope)
+
+	visitast(newAst, nil, function(node, data)
+		if node.kind == AstKind.FunctionDeclaration then
+			if node.scope:getVariableName(node.id) == "sigil" then
+				data.scope:removeReferenceToHigherScope(node.scope, node.id)
+				data.scope:addReferenceToHigherScope(scope, sigilVar)
+				node.scope = scope
+				node.id = sigilVar
+			end
+		end
+	end)
+
+	visitast(ast, nil, function(node, data)
+		if node.kind == AstKind.StringExpression then
+			data.scope:addReferenceToHigherScope(scope, sigilVar)
+			local encrypted, seed = Encryptor.encrypt(node.value)
+			return Ast.FunctionCallExpression(Ast.VariableExpression(scope, sigilVar), {
+				Ast.StringExpression(encrypted), Ast.NumberExpression(seed),
+			})
+		end
+	end)
+
+	table.insert(ast.body.statements, 1, doStat)
+	table.insert(ast.body.statements, 1, Ast.LocalVariableDeclaration(scope, util.shuffle{ sigilVar }, {}))
+	return ast
+end
+
+return VoidedxSigil
 `,"prometheus.steps.NumbersToExpressions":`-- This Script is Part of the Prometheus Obfuscator by levno-710
 --
 -- NumbersToExpressions.lua
@@ -9115,7 +9229,94 @@ function WrapInFunction:apply(ast)
 	end
 end
 
-return WrapInFunction;`,"prometheus.steps":`-- This Script is Part of the Prometheus Obfuscator by levno-710
+return WrapInFunction;`,"prometheus.steps.VoidedxJunk":`-- This Script is Part of the Prometheus Obfuscator by levno-710
+--
+-- VoidedxJunk.lua
+--
+-- This Script provides a VoidedX-specific step that injects decoy routines
+-- and an opaque guard into the AST before VM compilation.
+
+local Step = require("prometheus.step");
+local Parser = require("prometheus.parser");
+local Enums = require("prometheus.enums");
+
+local VoidedxJunk = Step:extend();
+VoidedxJunk.Description = "Injects VoidedX decoy routines and an opaque guard";
+VoidedxJunk.Name = "VoidedX Decoys";
+
+VoidedxJunk.SettingsDescriptor = {
+	Count = {
+		name = "Count",
+		description = "Number of decoy routines",
+		type = "number",
+		default = 1,
+		min = 0,
+		max = 8,
+	},
+	Guard = {
+		name = "Guard",
+		description = "Insert an opaque guard",
+		type = "boolean",
+		default = true,
+	},
+}
+
+function VoidedxJunk:init(_) end
+
+local function decoyName()
+	local chars = "abcdefghijklmnopqrstuvwxyz";
+	local out = "";
+	for i = 1, 9 do
+		local k = math.random(1, #chars);
+		out = out .. chars:sub(k, k);
+	end
+	return out;
+end
+
+function VoidedxJunk:apply(ast)
+	local count = math.floor(tonumber(self.Count) or 0);
+	if count < 0 then count = 0 end
+	if count > 8 then count = 8 end
+	local parts = { "do" };
+	for i = 1, count do
+		local name = decoyName();
+		local mm = math.random(103, 251);
+		local cc = math.random(7, 997);
+		local aa = math.random(2, 89);
+		local bb = math.random(2, 83);
+		local expected = (aa * bb + cc) % mm;
+		parts[#parts + 1] = "local function " .. name .. "(v)";
+		parts[#parts + 1] = "local out = {};";
+		parts[#parts + 1] = "local step = 1;";
+		parts[#parts + 1] = "while step <= 4 do";
+		parts[#parts + 1] = "out[step] = (v * step + " .. cc .. ") % " .. mm .. ";";
+		parts[#parts + 1] = "step = step + 1;";
+		parts[#parts + 1] = "end;";
+		parts[#parts + 1] = "if (" .. aa .. " * " .. bb .. " + " .. cc .. ") % " .. mm .. " ~= " .. expected .. " then return nil end;";
+		parts[#parts + 1] = "return out;";
+		parts[#parts + 1] = "end;";
+	end
+	if self.Guard ~= false then
+		local mm = math.random(103, 251);
+		local cc = math.random(7, 997);
+		local aa = math.random(2, 89);
+		local bb = math.random(2, 83);
+		local expected = (aa * bb + cc) % mm;
+		parts[#parts + 1] = "local probe = (" .. aa .. " * " .. bb .. " + " .. cc .. ") % " .. mm .. ";";
+		parts[#parts + 1] = "if probe ~= " .. expected .. " then return end;";
+		parts[#parts + 1] = "if select('#', tostring(probe)) ~= 1 then return end;";
+	end
+	parts[#parts + 1] = "end";
+	local code = table.concat(parts, " ");
+	local parsed = Parser:new({ LuaVersion = Enums.LuaVersion.Lua51 }):parse(code);
+	local doStat = parsed.body.statements[1];
+	doStat.body.scope:setParent(ast.body.scope);
+	table.insert(ast.body.statements, 1, doStat);
+	return ast;
+end
+
+return VoidedxJunk;
+`,"prometheus.steps":`-- This Script is Part of the Prometheus Obfuscator by levno-710
 --
 -- steps.lua
 --
@@ -9123,14 +9324,17 @@ return WrapInFunction;`,"prometheus.steps":`-- This Script is Part of the Promet
 
 return {
 	WrapInFunction = require("prometheus.steps.WrapInFunction"),
+	VoidedxJunk = require("prometheus.steps.VoidedxJunk"),
 	SplitStrings = require("prometheus.steps.SplitStrings"),
 	Vmify = require("prometheus.steps.Vmify"),
 	ConstantArray = require("prometheus.steps.ConstantArray"),
 	ProxifyLocals = require("prometheus.steps.ProxifyLocals"),
 	AntiTamper = require("prometheus.steps.AntiTamper"),
 	EncryptStrings = require("prometheus.steps.EncryptStrings"),
+	VoidedxSigil = require("prometheus.steps.VoidedxSigil"),
 	NumbersToExpressions = require("prometheus.steps.NumbersToExpressions"),
 	AddVararg = require("prometheus.steps.AddVararg"),
+	Watermark = require("prometheus.steps.Watermark"),
 	WatermarkCheck = require("prometheus.steps.WatermarkCheck"),
 }`,"prometheus.tokenizer":`-- This Script is Part of the Prometheus Obfuscator by levno-710
 --
@@ -10833,7 +11037,7 @@ package.preload[ ${d(e)} ] = function(...)
   end
   return chunk(...)
 end`}).join(`
-`);function g(e){return`
+`);function g(e){const vxPrefix=(()=>{const A="abcdefghijklmnopqrstuvwxyz";let n=Math.abs(Math.floor(Number(e.seed)||1))||1,s="";for(let i=0;i<3;i++){n=(n*1103515245+12345)%2147483648;s+=A.charAt(n%26)}return s+"_"})();return`
 _G.arg = _G.arg or {}
 ${h}
 
@@ -10883,6 +11087,7 @@ local ok, outputOrError = xpcall(function()
   end
   -- Set the per-run seed before building any seed-derived protection strings.
   config.Seed = ${Math.max(1,Math.floor(e.seed))}
+  config.VarNamePrefix = ${d(vxPrefix)}
 
   config.LuaVersion = ${d(e.luaVersion)}
   if config.LuaVersion == "LuaU" then
@@ -10902,12 +11107,17 @@ local ok, outputOrError = xpcall(function()
           },
         })
       end
-      if ${e.tamperCheck === true ? `true` : `false`} then
-        table.insert(config.Steps, {
-          Name = "WatermarkCheck",
-          Settings = { Content = "VoidedX:" .. tostring(config.Seed) },
-        })
-      end
+      -- VoidedX brand watermark. Prometheus's WatermarkCheck adds a runtime
+      -- early-return gate whose error-scope probing is interpreter-sensitive,
+      -- so the check-free Watermark step is used instead: the copy still
+      -- carries the VoidedX marker, but no seed can make it exit silently.
+      table.insert(config.Steps, {
+        Name = "Watermark",
+        Settings = {
+          Content = "VoidedX:" .. tostring(config.Seed),
+          CustomVariable = "_Voidedx" .. tostring(config.Seed),
+        },
+      })
       if preset ~= "Weak" then
         local numericSettings = {
           Threshold = 1,
@@ -10916,14 +11126,28 @@ local ok, outputOrError = xpcall(function()
           AllowedNumberRepresentations = { "hex", "normal" },
         }
         if preset == "Strong" then
-          numericSettings.NumberRepresentationMutation = true
+          numericSettings.NumberRepresentationMutation = false
         end
         table.insert(config.Steps, { Name = "NumbersToExpressions", Settings = numericSettings })
+        table.insert(config.Steps, { Name = "VoidedxSigil", Settings = {} })
+        if ${e.tamperCheck === true ? `true` : `false`} then
+          table.insert(config.Steps, {
+            Name = "AntiTamper",
+            Settings = { UseDebug = false },
+          })
+        end
       end
+      table.insert(config.Steps, {
+        Name = "VoidedxJunk",
+        Settings = {
+          Count = ${e.fastMode === true ? 0 : e.preset === "Strong" ? 5 : e.preset === "Medium" ? 4 : 3},
+          Guard = true,
+        },
+      })
       local vmLayers = ${Math.max(1, Math.min(2, Math.floor(Number(e.vmLayers) || 1)))}
       for layer = 1, vmLayers do
         if layer > 1 then
-          table.insert(config.Steps, { Name = "EncryptStrings", Settings = {} })
+          table.insert(config.Steps, { Name = "VoidedxSigil", Settings = {} })
           if ${e.tamperCheck === true ? `true` : `false`} then
             table.insert(config.Steps, {
               Name = "AntiTamper",
@@ -10936,7 +11160,7 @@ local ok, outputOrError = xpcall(function()
               Threshold = 1,
               StringsOnly = true,
               Shuffle = true,
-              Rotate = true,
+              Rotate = false,
               LocalWrapperThreshold = 0,
             },
           })
@@ -10946,7 +11170,7 @@ local ok, outputOrError = xpcall(function()
               Settings = {
                 Threshold = 1,
                 InternalThreshold = 0.2,
-                NumberRepresentationMutation = preset == "Strong",
+                NumberRepresentationMutation = false,
                 AllowedNumberRepresentations = { "hex", "normal" },
               },
             })
@@ -11001,12 +11225,13 @@ local ok, outputOrError = xpcall(function()
           ConcatenationType = "strcat",
         },
       })
-      if ${e.tamperCheck === true ? `true` : `false`} then
-        table.insert(config.Steps, {
-          Name = "WatermarkCheck",
-          Settings = { Content = "VoidedX:" .. tostring(config.Seed) },
-        })
-      end
+      table.insert(config.Steps, {
+        Name = "Watermark",
+        Settings = {
+          Content = "VoidedX:" .. tostring(config.Seed),
+          CustomVariable = "_Voidedx" .. tostring(config.Seed),
+        },
+      })
     end
   end
   if config.LuaVersion == "LuaU" and ${e.preset === "Strong" ? `true` : `false`} then

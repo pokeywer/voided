@@ -23,10 +23,13 @@ export const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
 
 // Low and Medium no longer use the Weak preset: after the Prometheus pass the
 // copy is repacked by the VoidedX armor, so the smallest preset is reserved for
-// Fast only. Low and Medium stay at one VM layer because a second Prometheus
-// layer multiplies the output size (a tiny script went past 100 KiB).
+// Fast only. Every level stays at a single VM layer: the bundled VM corrupts a
+// fraction of programs once a second Vmify wraps the first VM's own bytecode
+// (wrong string slots, nil index, silent early return), and every interpreter
+// we test disagrees about which programs break. High and Absolute get their
+// extra weight from the Strong preset and the heavier armor levels instead.
 const PRESETS = Object.freeze({ fast: 'Weak', low: 'Medium', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
-const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 2, absolute: 2 });
+const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 1, absolute: 1 });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;
 const MAX_PROMETHEUS_OUTPUT_BYTES = 32 * 1024 * 1024;
