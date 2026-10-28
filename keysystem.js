@@ -343,13 +343,14 @@ document.addEventListener('DOMContentLoaded', () => {
         guiPreviewCard.style.setProperty('--template-glow', glow);
         guiPreviewAccent.style.background = `linear-gradient(90deg, ${accent}, ${glow})`;
         guiPreviewBadge.style.background = gradient;
+        guiPreviewBadge.style.color = getReadableGradientTextColor(accent, glow);
         guiPreviewButton.style.background = gradient;
         guiPreviewButton.style.color = getReadableGradientTextColor(accent, glow);
         guiPreviewButton.style.boxShadow = `0 6px 16px ${accent}44`;
-        guiPreviewVaultName.style.color = accent;
+        guiPreviewVaultName.style.color = 'inherit';
         if (guiPreviewInput) {
-            guiPreviewInput.style.borderColor = `${accent}88`;
-            guiPreviewInput.style.color = accent;
+            guiPreviewInput.style.borderColor = `${accent}66`;
+            guiPreviewInput.style.color = readableText;
         }
         guiPreviewTitle.textContent = guiTitleInput.value.trim() || defaultGuiAppearance.title;
         guiPreviewSubtitle.textContent = guiSubtitleInput.value.trim() || defaultGuiAppearance.subtitle;
@@ -985,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             currentOwnerLegacy = data.uid === 'guest';
             ksVaultTitle.textContent = data.title || 'Untitled Vault';
-            guiPreviewVaultName.textContent = `Vault: ${ksVaultTitle.textContent}`;
+            guiPreviewVaultName.textContent = ksVaultTitle.textContent;
 
             chkKeySystem.checked = !!data.requireKey;
             keySystemFields.classList.toggle('hidden', !data.requireKey);
@@ -1136,10 +1137,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const existing = existingSnap.exists() ? existingSnap.data() : {};
             const boundIp = ipLock ? (existing.boundIp || null) : null;
 
-            // Preserve the live auto-generated public key entry as-is — it's
-            // managed by Regenerate/Terminate, not rebuilt here.
-            const existingPublicEntry = (Array.isArray(existing.keys) ? existing.keys : []).find(k => k.id === 'k_public');
-            const keysPayload = existingPublicEntry ? [...privateKeysPayload, existingPublicEntry] : privateKeysPayload;
+            // The auto-generated public key entry is only kept while the Public
+            // Key toggle is on. Turning the toggle off drops the entry so the
+            // shared public key stops working for everyone who has it.
+            const publicEntry = publicKeyConfig.enabled
+                ? (Array.isArray(existing.keys) ? existing.keys : []).find(k => k.id === 'k_public')
+                : null;
+            const keysPayload = publicEntry ? [...privateKeysPayload, publicEntry] : privateKeysPayload;
             const primaryKey = privateKeysPayload[0] || null;
 
             await updateDoc(doc(db, "vaults", vaultId), {

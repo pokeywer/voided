@@ -245,16 +245,6 @@ textarea.obfuscated-preview { min-height: 150px; max-height: 360px; resize: vert
 .gui-color-setting { flex-direction: row; align-items: center; justify-content: space-between; padding: 7px 9px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; }
 .gui-color-setting input { width: 34px; height: 26px; border: 0; padding: 0; background: transparent; cursor: pointer; }
 .gui-preview-wrap { display: flex; flex-direction: column; gap: 8px; }
-.gui-preview-screen { min-height: 286px; display: flex; align-items: center; justify-content: center; padding: 16px; border-radius: 8px; background: radial-gradient(ellipse at center, #20283a 0, #10131b 70%); border: 1px solid var(--border-color); }
-.gui-preview-card { width: min(100%, 285px); position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 18px 18px; overflow: hidden; border: 1px solid #33394b; border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.45); font-size: 13px; text-align: center; }
-.gui-preview-accent { position: absolute; inset: 1px 18px auto; height: 3px; border-radius: 999px; }
-.gui-preview-badge { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; font-size: 22px; box-shadow: 0 7px 20px rgba(0,0,0,.3); }
-.gui-preview-card strong { font-size: 14px; }
-.gui-preview-card > span { font-size: 11px; opacity: .7; }
-.gui-preview-vault-name { color: var(--cyan); font-size: 10px !important; font-weight: 700; }
-.gui-preview-input { width: 100%; padding: 11px; border: 1px solid #33394b; border-radius: 8px; background: #161a24; color: #94a3b8; font: 11px Consolas, monospace; text-align: left; transition: border-color .18s, color .18s; }
-.gui-preview-button { width: 100%; padding: 10px; border-radius: 8px; color: #fff; font-size: 12px; font-weight: 800; box-shadow: 0 6px 16px rgba(6, 182, 212, .18); transition: background .18s, box-shadow .18s; }
-.gui-preview-card small { color: #94a3b8; font-size: 9px; }
 .gui-preview-hint { color: var(--text-muted); font-size: 10px; line-height: 1.4; }
 @media (max-width: 520px) { .gui-customizer-fields { grid-template-columns: 1fr; } .gui-template-picker { padding: 9px; } .gui-template-grid { gap: 6px; } .gui-template-card { gap: 6px; padding: 7px; } .gui-template-swatch { flex-basis: 28px; width: 28px; height: 28px; } .gui-template-copybox strong { font-size: 9px; } }
 
@@ -1024,11 +1014,12 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 }
 
 /* Interactive in-game key GUI preview */
+/* Interactive in-game key GUI preview (mirrors api/_guiSource.js) */
 .gui-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .gui-preview-heading .panel-label { margin: 0; }
 .gui-preview-note { color: #6f7d94; font-size: 9px; }
-.gui-preview-screen { position: relative; min-height: 390px; overflow: hidden; }
-.gui-preview-card { position: relative; isolation: isolate; width: min(100%, 350px); gap: 9px; padding: 20px 18px 15px; overflow: hidden; border-radius: 18px; text-align: left; transform-origin: center; transition: opacity .24s ease, transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease; }
+.gui-preview-screen { position: relative; display: flex; align-items: center; justify-content: center; min-height: 400px; padding: 16px; overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at center, #20283a 0, #10131b 70%); border: 1px solid var(--border-color); }
+.gui-preview-card { position: relative; isolation: isolate; display: flex; flex-direction: column; gap: 10px; width: min(100%, 430px); min-width: 0; padding: 22px 22px 18px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--template-accent, #06b6d4) 40%, #33394b); border-radius: 18px; text-align: left; box-shadow: 0 18px 44px rgba(0,0,0,.5); transform-origin: center; transition: opacity .24s ease, transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease; }
 .gui-preview-card::before { position: absolute; z-index: -1; inset: 0; border-radius: inherit; background-size: 180% 180%; content: ''; opacity: .58; pointer-events: none; }
 .gui-preview-card[data-background-animation="aurora"]::before { background-image: radial-gradient(ellipse at 12% 8%, color-mix(in srgb, var(--template-accent) 17%, transparent), transparent 56%), radial-gradient(ellipse at 88% 92%, color-mix(in srgb, var(--template-glow) 17%, transparent), transparent 58%); animation: gui-preview-aurora 14s ease-in-out infinite alternate; }
 .gui-preview-card[data-background-animation="drift"]::before { background-image: radial-gradient(ellipse at 8% 82%, color-mix(in srgb, var(--template-accent) 18%, transparent), transparent 55%), radial-gradient(ellipse at 92% 18%, color-mix(in srgb, var(--template-glow) 16%, transparent), transparent 58%); animation: gui-preview-aurora 20s ease-in-out infinite alternate; }
@@ -1047,40 +1038,54 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 .gui-preview-card.is-entering { animation: gui-preview-enter .52s cubic-bezier(.18,.84,.26,1.18) both; }
 .gui-preview-card.is-hidden { opacity: 0; transform: translateY(22px) scale(.94); pointer-events: none; }
 .gui-preview-card.is-success { box-shadow: 0 0 0 1px color-mix(in srgb, var(--template-accent, #06b6d4) 35%, transparent), 0 0 35px color-mix(in srgb, var(--template-accent, #06b6d4) 25%, transparent), 0 18px 40px rgba(0,0,0,.5); }
-.gui-preview-accent { height: 3px; background-size: 200% 100%; animation: gui-preview-shimmer 2.4s ease-in-out infinite alternate; }
-.gui-preview-close { position: absolute; z-index: 2; top: 11px; right: 11px; display: grid; place-items: center; width: 27px; height: 27px; padding: 0; border: 1px solid rgba(148,163,184,.18); border-radius: 9px; background: rgba(12,16,24,.75); color: #94a3b8; font-size: 18px; cursor: pointer; transition: color .16s, border-color .16s, transform .16s, background .16s; }
-.gui-preview-close:hover { transform: rotate(90deg); border-color: var(--template-accent, #06b6d4); background: rgba(20,28,40,.95); color: #fff; }
-.gui-preview-header { display: flex; align-items: center; gap: 12px; padding-right: 22px; }
-.gui-preview-badge { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 14px; animation: gui-preview-float 2.3s ease-in-out infinite; }
-.gui-preview-title-group { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
-.gui-preview-eyebrow { color: var(--template-accent, #06b6d4) !important; font-size: 8px !important; font-weight: 800; letter-spacing: .14em; }
-.gui-preview-title-group strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.gui-preview-title-group span { overflow: hidden; font-size: 10px !important; text-overflow: ellipsis; white-space: nowrap; }
-.gui-preview-vault-pill { display: flex; align-items: center; gap: 8px; min-height: 27px; padding: 0 10px; border: 1px solid rgba(148,163,184,.12); border-radius: 8px; background: rgba(8,12,19,.56); }
-.gui-preview-vault-pill > i { width: 6px; height: 6px; border-radius: 50%; background: var(--template-accent, #06b6d4); box-shadow: 0 0 9px var(--template-accent, #06b6d4); }
-.gui-preview-vault-name { overflow: hidden; color: var(--template-accent, #06b6d4); font-size: 9px !important; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.gui-preview-key-label { margin: 1px 0 -5px; color: #748198 !important; font-size: 8px !important; font-weight: 800; letter-spacing: .12em; }
-.gui-preview-input { min-height: 36px; padding: 10px 11px; border-radius: 9px; color: var(--template-accent, #06b6d4); }
-.gui-preview-button { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 13px; overflow: hidden; border: 0; border-radius: 10px; cursor: pointer; text-align: left; transition: transform .16s ease, filter .16s ease, box-shadow .2s ease; }
+.gui-preview-accent { position: absolute; z-index: 3; top: 0; left: 50%; width: 72%; height: 2px; border-radius: 999px; background-size: 200% 100%; animation: gui-preview-shimmer 2.4s ease-in-out infinite alternate; transform: translateX(-50%); }
+.gui-preview-close { position: absolute; z-index: 4; top: 14px; right: 14px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid rgba(148,163,184,.22); border-radius: 8px; background: rgba(0,0,0,.35); color: inherit; opacity: .7; font-size: 18px; line-height: 1; cursor: pointer; transition: opacity .16s, border-color .16s, transform .16s; }
+.gui-preview-close:hover { transform: rotate(90deg); border-color: var(--template-accent, #06b6d4); opacity: 1; }
+.gui-preview-header { position: relative; display: flex; align-items: flex-start; gap: 12px; min-height: 52px; padding-top: 2px; }
+.gui-preview-badge { flex: 0 0 48px; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; font-size: 22px; font-weight: 900; animation: gui-preview-float 2.8s ease-in-out infinite; }
+.gui-preview-title-group { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; min-width: 0; gap: 1px; padding-top: 1px; }
+.gui-preview-eyebrow { overflow: hidden; color: var(--template-accent, #06b6d4) !important; font-size: 8px !important; font-weight: 800; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
+.gui-preview-title-group strong { overflow: hidden; color: inherit; font-size: 15px; font-weight: 800; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.gui-preview-title-group span { overflow: hidden; color: inherit; opacity: .68; font-size: 10px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.gui-preview-chip { flex: 0 0 78px; display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; height: 22px; margin: 2px 34px 0 0; padding: 0 10px 0 9px; border: 1px solid rgba(148,163,184,.24); border-radius: 999px; background: rgba(255,255,255,.05); }
+.gui-preview-chip i { width: 5px; height: 5px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,.85); animation: gui-preview-blink 1.8s ease-in-out infinite; }
+.gui-preview-chip small { color: #34d399; font-size: 7px; font-weight: 800; letter-spacing: .09em; }
+.gui-preview-vault-pill { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border: 1px solid rgba(148,163,184,.16); border-radius: 10px; background: rgba(0,0,0,.3); }
+.gui-preview-vault-pill > i { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--template-accent, #06b6d4); box-shadow: 0 0 9px var(--template-accent, #06b6d4); }
+.gui-preview-vault-name { flex: 1 1 auto; overflow: hidden; color: inherit; font-size: 11px !important; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.gui-preview-vault-tag { flex: 0 0 auto; color: inherit; opacity: .5; font-size: 7px !important; font-weight: 800; letter-spacing: .1em; }
+.gui-preview-caption { display: flex; align-items: center; justify-content: space-between; min-height: 11px; }
+.gui-preview-caption small { color: inherit; opacity: .62; font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+.gui-preview-caption .gui-preview-caption-hint { color: var(--template-accent, #06b6d4); opacity: .95; font-size: 7px; }
+.gui-preview-input { display: flex; align-items: center; min-height: 48px; padding: 0 13px; border: 1px solid rgba(148,163,184,.22); border-radius: 11px; background: rgba(0,0,0,.32); color: inherit; font: 13px/1.2 Consolas, "Cascadia Mono", monospace; transition: border-color .18s, color .18s; }
+.gui-preview-button { position: relative; display: flex; align-items: center; min-height: 50px; padding: 0 10px 0 16px; overflow: hidden; border: 0; border-radius: 11px; cursor: pointer; text-align: left; transition: transform .16s ease, filter .16s ease, box-shadow .2s ease; }
+.gui-preview-button #gui-preview-button-text { flex: 1 1 auto; overflow: hidden; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.gui-preview-enter { flex: 0 0 auto; margin-right: 12px; font-size: 7px; font-weight: 800; letter-spacing: .12em; opacity: .45; }
+.gui-preview-button b { flex: 0 0 26px; width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; background: rgba(255,255,255,.24); font-size: 15px; font-weight: 800; }
 .gui-preview-button::before { position: absolute; inset: 0; background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,.2) 48%, transparent 72%); content: ''; transform: translateX(-120%); transition: transform .48s ease; }
-.gui-preview-button:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.gui-preview-button:hover { transform: translateY(-1px); filter: brightness(1.06); }
 .gui-preview-button:hover::before { transform: translateX(120%); }
 .gui-preview-button:active { transform: scale(.975); }
-.gui-preview-button b { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid rgba(255,255,255,.28); border-radius: 7px; font-size: 14px; }
 .gui-preview-button.is-loading b { animation: gui-preview-spin .8s linear infinite; }
 .gui-preview-button.is-success { background: linear-gradient(135deg, #10b981, var(--template-accent, #06b6d4)) !important; }
-.gui-preview-getkey { min-height: 34px; border: 1px solid rgba(148,163,184,.15); border-radius: 9px; background: rgba(15,20,29,.75); color: #c5cfdd; font-size: 10px; cursor: pointer; transition: transform .16s ease, border-color .16s ease, color .16s ease, background .16s ease; }
-.gui-preview-getkey:hover { transform: translateY(-1px); border-color: var(--template-accent, #06b6d4); color: #fff; }
-.gui-preview-getkey.is-pulse { animation: gui-preview-tap .42s ease; border-color: var(--template-accent, #06b6d4); color: var(--template-accent, #06b6d4); }
-.gui-preview-status { max-height: 0; overflow: hidden; opacity: 0; color: #fca5a5; font-size: 9px; line-height: 1.35; text-align: center; transform: translateY(-3px); transition: max-height .18s ease, opacity .18s ease, transform .18s ease; }
-.gui-preview-status.visible { max-height: 32px; opacity: 1; transform: translateY(0); }
+.gui-preview-status { max-height: 0; overflow: hidden; opacity: 0; color: #fca5a5; font-size: 10px; line-height: 1.35; text-align: left; transition: max-height .18s ease, opacity .18s ease; }
+.gui-preview-status.visible { max-height: 40px; opacity: 1; }
 .gui-preview-status.is-success { color: #6ee7b7; }
-.gui-preview-footer { color: #58657a !important; font-size: 7px !important; font-weight: 800; letter-spacing: .12em; text-align: center; }
-.gui-preview-timer { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 5px; min-width: 220px; max-width: calc(100% - 24px); padding: 15px 17px; border: 1px solid var(--template-accent, #06b6d4); border-radius: 12px; background: #0b1019; box-shadow: 0 12px 35px rgba(0,0,0,.45); opacity: 0; transform: translateY(14px) scale(.95); transition: opacity .3s ease, transform .35s cubic-bezier(.18,.84,.26,1.18); }
+.gui-preview-footer-row { display: flex; align-items: center; min-height: 32px; }
+.gui-preview-getkey { flex: 0 0 calc(100% - 104px); display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 10px; border: 1px solid rgba(148,163,184,.16); border-radius: 9px; background: rgba(255,255,255,.04); color: inherit; opacity: .92; font-size: 10px; font-weight: 700; cursor: pointer; transition: transform .16s ease, border-color .16s ease, color .16s ease, opacity .16s ease; }
+.gui-preview-getkey:hover { transform: translateY(-1px); border-color: var(--template-accent, #06b6d4); opacity: 1; }
+.gui-preview-getkey.is-pulse { animation: gui-preview-tap .42s ease; border-color: var(--template-accent, #06b6d4); color: var(--template-accent, #06b6d4); }
+.gui-preview-site { flex: 0 0 104px; padding-left: 8px; color: inherit; opacity: .5; font-size: 8px; font-weight: 800; text-align: right; }
+.gui-preview-footer { color: inherit; opacity: .45; font-size: 7px; font-weight: 800; letter-spacing: .13em; }
+.gui-preview-timer { position: absolute; z-index: 4; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 4px; width: min(290px, calc(100% - 24px)); padding: 14px 15px 13px; overflow: hidden; border: 1px solid var(--template-accent, #06b6d4); border-radius: 14px; background: #0b1019; box-shadow: 0 14px 36px rgba(0,0,0,.5); opacity: 0; transform: translateY(14px) scale(.95); transition: opacity .3s ease, transform .35s cubic-bezier(.18,.84,.26,1.18); }
 .gui-preview-timer.is-active { opacity: 1; transform: translateY(0) scale(1); }
-.gui-preview-timer small { color: #6ee7b7; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.gui-preview-timer strong { color: #f1f5fb; font-size: 12px; }
-.gui-preview-timer span { color: #bac7d8; font-size: 10px; }
+.gui-preview-timer::before { position: absolute; top: 0; left: 50%; width: 55%; height: 2px; border-radius: 999px; background: linear-gradient(90deg, #34d399, var(--template-accent, #06b6d4)); content: ''; transform: translateX(-50%); }
+.gui-preview-timer-tag { color: #34d399; font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+.gui-preview-timer-clock { color: #f1f5fb; font: 700 19px/1.15 Consolas, "Cascadia Mono", monospace; }
+.gui-preview-timer-bar { position: relative; height: 3px; margin: 3px 0 1px; overflow: hidden; border-radius: 999px; background: rgba(148,163,184,.22); }
+.gui-preview-timer-bar i { position: absolute; inset: 0; width: 68%; border-radius: inherit; background: linear-gradient(90deg, #34d399, var(--template-accent, #06b6d4)); }
+.gui-preview-timer-expiry { color: #bac7d8; font-size: 9px; }
+.gui-preview-timer-file { color: #7e8ba2; font-size: 8px; font-style: normal; }
 .gui-preview-closed { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border: 0; background: transparent; color: #9aa8ba; font: inherit; text-align: center; cursor: pointer; animation: gui-preview-fade .25s ease both; }
 .gui-preview-closed i { color: #64748b; font-size: 24px; }
 .gui-preview-closed strong { color: #e2e8f0; font-size: 13px; }
@@ -1090,6 +1095,8 @@ textarea { flex: 1; min-width: 0; min-height: 0; width: 100%; background: var(--
 .gui-preview-control:hover { transform: translateY(-1px); border-color: var(--template-accent, #06b6d4); color: #fff; }
 .gui-preview-control i { margin-right: 4px; color: var(--template-accent, #06b6d4); }
 .gui-preview-hint { line-height: 1.5; }
+@keyframes gui-preview-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (max-width: 520px) { .gui-preview-screen { min-height: 380px; padding: 10px; } .gui-preview-note { max-width: 105px; text-align: right; } .gui-preview-control { padding-inline: 6px; font-size: 9px; } .gui-preview-header { gap: 9px; } }
 @keyframes gui-preview-enter { 0% { opacity: 0; transform: translateY(20px) scale(.92); } 72% { opacity: 1; transform: translateY(-2px) scale(1.01); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes gui-preview-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes gui-preview-shimmer { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }

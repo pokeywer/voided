@@ -1,4 +1,5 @@
 import { db } from './_admin.js';
+import { publicKeyDisabled } from './_keyAccess.js';
 
 // Public data for vault.html. Tells the page whether a key is needed / valid,
 // but never returns the script code or any key values.
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
             : (v.key ? [{ key: v.key, durationDays: null, keyGeneratedAt: v.keyGeneratedAt || null }] : []);
         const found = key ? keys.find(k => k.key === key) : null;
         if (!found) return json(res, 200, { ...base, keyStatus: 'wrong' });
+        if (publicKeyDisabled(v, found)) return json(res, 200, { ...base, keyStatus: 'disabled' });
         if (found.terminated) return json(res, 200, { ...base, keyStatus: 'terminated' });
         let expiresAt = null;
         if (found.durationDays && found.keyGeneratedAt) {

@@ -42,6 +42,10 @@ export function sanitizeGuiAppearance(raw = {}) {
 }
 
 export function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '', loaderToken, options = {}) {
+    return packGeneratedLoader(buildGuiSource(id, origin, rawAppearance, rawVaultName, options), { id, origin, token: loaderToken });
+}
+
+export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = '', options = {}) {
     const verifyBase = `${origin}/api/verify`;
     const keyPageUrl = `${origin}/key.html?id=${id}`;
     const appearance = sanitizeGuiAppearance(rawAppearance);
@@ -66,10 +70,11 @@ export function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = ''
         : [248, 250, 252];
     const backgroundAnimation = appearance.backgroundAnimation;
 
-    return packGeneratedLoader(compactGeneratedLoader(`
+    return compactGeneratedLoader(`
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
+local TextService = game:GetService("TextService")
 local player = Players.LocalPlayer
 local savedKeyPath = ${luaString(savedKeyFile)}
 ${buildPayloadRuntime(origin, options)}
@@ -155,11 +160,16 @@ overlayGradient.Transparency = NumberSequence.new({
 overlayGradient.Parent = overlay
 TweenService:Create(overlay, TweenInfo.new(0.4, EASE_OUT), { BackgroundTransparency = 0 }):Play()
 
+local camera = workspace.CurrentCamera
+local CARD_BASE_HEIGHT = 346
+local cardWidth = 430
+local cardScale = 1
+local statusHeight = 0
+
 local card = Instance.new("Frame")
 card.AnchorPoint = Vector2.new(0.5, 0.5)
 card.Position = UDim2.new(0.5, 0, 0.5, 22)
-card.Size = UDim2.new(0.9, 0, 0, 0)
-card.AutomaticSize = Enum.AutomaticSize.Y
+card.Size = UDim2.fromOffset(cardWidth, CARD_BASE_HEIGHT)
 card.BackgroundColor3 = COL_BG
 card.BackgroundTransparency = 0
 card.BorderSizePixel = 0
@@ -487,11 +497,6 @@ end
 local uiScale = Instance.new("UIScale")
 uiScale.Scale = 0.86
 uiScale.Parent = card
-TweenService:Create(uiScale, TweenInfo.new(0.55, EASE_BACK), { Scale = 1 }):Play()
-TweenService:Create(card, TweenInfo.new(0.48, EASE_OUT), {
-    Position = UDim2.new(0.5, 0, 0.5, 0)
-}):Play()
-TweenService:Create(cardStroke, TweenInfo.new(0.5, EASE_OUT), { Transparency = 0.55 }):Play()
 
 local topLine = Instance.new("Frame")
 topLine.AnchorPoint = Vector2.new(0.5, 0)
@@ -510,8 +515,7 @@ topLineGradient.Parent = topLine
 TweenService:Create(topLine, TweenInfo.new(0.7, EASE_OUT, Enum.EasingDirection.Out, 0, false, 0.12), { Size = UDim2.new(0.72, 0, 0, 2) }):Play()
 
 local content = Instance.new("Frame")
-content.Size = UDim2.new(1, 0, 0, 0)
-content.AutomaticSize = Enum.AutomaticSize.Y
+content.Size = UDim2.fromOffset(cardWidth, CARD_BASE_HEIGHT)
 content.BackgroundTransparency = 1
 content.ZIndex = 3
 content.Parent = card
@@ -528,6 +532,30 @@ layout.Padding = UDim.new(0, 10)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
+
+local function applyLayout()
+    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    cardScale = math.clamp(math.min(viewport.X / 470, viewport.Y / 660), 0.68, 1)
+    cardWidth = math.clamp(math.floor((viewport.X - 28 * cardScale) / cardScale), 250, 430)
+    local height = CARD_BASE_HEIGHT + statusHeight
+    card.Size = UDim2.fromOffset(cardWidth, height)
+    content.Size = UDim2.fromOffset(cardWidth, height)
+    uiScale.Scale = cardScale
+end
+applyLayout()
+uiScale.Scale = cardScale * 0.86
+TweenService:Create(uiScale, TweenInfo.new(0.55, EASE_BACK), { Scale = cardScale }):Play()
+TweenService:Create(card, TweenInfo.new(0.48, EASE_OUT), {
+    Position = UDim2.new(0.5, 0, 0.5, 0)
+}):Play()
+TweenService:Create(cardStroke, TweenInfo.new(0.5, EASE_OUT), { Transparency = 0.55 }):Play()
+if camera then
+    pcall(function()
+        camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+            applyLayout()
+        end)
+    end)
+end
 
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 52)
@@ -577,7 +605,7 @@ end)
 
 local eyebrow = Instance.new("TextLabel")
 eyebrow.Position = UDim2.new(0, 60, 0, 0)
-eyebrow.Size = UDim2.new(1, -142, 0, 10)
+eyebrow.Size = UDim2.new(1, -186, 0, 10)
 eyebrow.BackgroundTransparency = 1
 eyebrow.Text = "VOIDEDX // SECURE ACCESS"
 eyebrow.TextColor3 = COL_CYAN
@@ -589,7 +617,7 @@ eyebrow.Parent = header
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0, 60, 0, 11)
-title.Size = UDim2.new(1, -142, 0, 21)
+title.Size = UDim2.new(1, -186, 0, 21)
 title.BackgroundTransparency = 1
 title.Text = ${luaString(appearance.title)}
 title.TextColor3 = COL_TEXT
@@ -602,7 +630,7 @@ title.Parent = header
 
 local subtitle = Instance.new("TextLabel")
 subtitle.Position = UDim2.new(0, 60, 0, 33)
-subtitle.Size = UDim2.new(1, -142, 0, 13)
+subtitle.Size = UDim2.new(1, -186, 0, 13)
 subtitle.BackgroundTransparency = 1
 subtitle.Text = ${luaString(appearance.subtitle)}
 subtitle.TextColor3 = COL_MUTED
@@ -615,7 +643,7 @@ subtitle.Parent = header
 
 local stateChip = Instance.new("Frame")
 stateChip.AnchorPoint = Vector2.new(1, 0)
-stateChip.Position = UDim2.new(1, 0, 0, 2)
+stateChip.Position = UDim2.new(1, -34, 0, 1)
 stateChip.Size = UDim2.new(0, 78, 0, 22)
 stateChip.BackgroundColor3 = COL_INPUT
 stateChip.BackgroundTransparency = 0.25
@@ -932,7 +960,6 @@ end)
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, 0, 0, 0)
-statusLabel.AutomaticSize = Enum.AutomaticSize.Y
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = ""
 statusLabel.TextColor3 = COL_DANGER
@@ -941,6 +968,7 @@ statusLabel.TextSize = 10
 statusLabel.TextWrapped = true
 statusLabel.TextTransparency = 1
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.TextYAlignment = Enum.TextYAlignment.Top
 statusLabel.LayoutOrder = 6
 statusLabel.Parent = content
 
@@ -1039,7 +1067,7 @@ closeButton.MouseLeave:Connect(function()
 end)
 closeButton.Activated:Connect(function()
     closeButton.Active = false
-    TweenService:Create(uiScale, TweenInfo.new(0.2, EASE_OUT), { Scale = 0.94 }):Play()
+    TweenService:Create(uiScale, TweenInfo.new(0.2, EASE_OUT), { Scale = cardScale * 0.94 }):Play()
     TweenService:Create(card, TweenInfo.new(0.24, EASE_OUT), {
         BackgroundTransparency = 1,
         Position = UDim2.new(0.5, 0, 0.5, 16)
@@ -1076,10 +1104,28 @@ task.spawn(function()
     end
 end)
 
+local function measureStatus(text)
+    if type(text) ~= "string" or text == "" then return 0 end
+    local availableWidth = math.max(120, cardWidth - 44)
+    local ok, bounds = pcall(function()
+        return TextService:GetTextSize(text, 10, Enum.Font.Gotham, Vector2.new(availableWidth, 1000))
+    end)
+    if ok and bounds and type(bounds.Y) == "number" then
+        return math.max(12, math.ceil(bounds.Y))
+    end
+    return 14
+end
+
 local function setStatus(text, color)
     statusLabel.Text = text
     statusLabel.TextColor3 = color
     statusLabel.TextTransparency = 1
+    local measured = measureStatus(text)
+    if measured ~= statusHeight then
+        statusHeight = measured
+        statusLabel.Size = UDim2.new(1, 0, 0, measured)
+        applyLayout()
+    end
     if text ~= "" then
         TweenService:Create(statusLabel, TweenInfo.new(0.2, EASE_OUT), { TextTransparency = 0 }):Play()
     end
@@ -1466,9 +1512,9 @@ local function attemptVerify(fromSavedKey)
     brandGradient.Color = ColorSequence.new(COL_SUCCESS, COL_CYAN)
     brandLetter.Text = "✓"
     bur(COL_SUCCESS, UDim2.new(0, 24, 0, 28))
-    TweenService:Create(uiScale, TweenInfo.new(0.16, EASE_OUT), { Scale = 1.035 }):Play()
+    TweenService:Create(uiScale, TweenInfo.new(0.16, EASE_OUT), { Scale = cardScale * 1.035 }):Play()
     task.wait(0.2)
-    TweenService:Create(uiScale, TweenInfo.new(0.3, EASE_OUT), { Scale = 0.9 }):Play()
+    TweenService:Create(uiScale, TweenInfo.new(0.3, EASE_OUT), { Scale = cardScale * 0.9 }):Play()
     TweenService:Create(card, TweenInfo.new(0.3, EASE_OUT), {
         BackgroundTransparency = 1,
         Position = UDim2.new(0.5, 0, 0.5, 16)
@@ -1505,5 +1551,5 @@ if previouslySavedKey then
     setStatus("Checking the saved key...", COL_MUTED)
     task.defer(function() attemptVerify(true) end)
 end
-`), { id, origin, token: loaderToken });
+`);
 }

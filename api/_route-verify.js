@@ -4,6 +4,7 @@ import { recordExecution } from './_executionStats.js';
 import { getCodeForExecution } from './_deliveryCode.js';
 import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import { traceForSession } from './_loaderToken.js';
+import { publicKeyDisabled } from './_keyAccess.js';
 
 const VERIFY_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const VERIFY_LIMIT_ATTEMPTS = 30;
@@ -264,6 +265,7 @@ export default async function handler(req, res) {
             }
 
             if (!matched) return failure(403, 'Invalid key.');
+            if (publicKeyDisabled(vault, matched)) return failure(403, 'The public key for this vault has been disabled by the owner.');
             if (matched.terminated) return failure(403, 'This key has been terminated by the owner.');
             const keyExpiry = keyExpiresAt(matched);
             if (keyExpiry != null && now >= keyExpiry) return failure(403, 'This key has expired.');

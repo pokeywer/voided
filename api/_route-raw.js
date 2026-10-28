@@ -6,6 +6,7 @@ import { getCodeForExecution } from './_deliveryCode.js';
 import { deriveBootstrapSeed, issueLoaderToken, requestBinding, verifyLoaderToken } from './_loaderToken.js';
 import { buildKeyLoader, buildTrackedScript } from './_loaderSource.js';
 import { buildGuiLoader } from './_guiSource.js';
+import { publicKeyDisabled } from './_keyAccess.js';
 
 function isExecutorRequest(req) {
     const ua = (req.headers['user-agent'] || '').toLowerCase();
@@ -72,9 +73,8 @@ export default async function handler(req, res) {
         }
 
         const vaultData = docSnap.data();
-        // Vaults saved before this option existed default to instant: run the
-        // payload straight away with no console progress lines.
-        const loaderOptions = { instant: vaultData.instantRunEnabled !== false };
+        // Instant run stays off until the owner turns it on for this vault.
+        const loaderOptions = { instant: vaultData.instantRunEnabled === true };
         let activeLoaderToken = loaderToken;
 
         // Public loadstrings stay stable and token-free. The raw endpoint puts a
@@ -176,7 +176,8 @@ async function hasUsableKey(vaultRef, vaultData, key) {
         const issued = await vaultRef.collection('issuedKeys').where('key', '==', key).limit(1).get();
         if (!issued.empty) matched = issued.docs[0].data();
     }
-    return !!matched && !matched.terminated && !isStoredKeyExpired(matched, Date.now());
+    if (!matched || publicKeyDisabled(vaultData, matched)) return false;
+    return !matched.terminated && !isStoredKeyExpired(matched, Date.now());
 }
 
 

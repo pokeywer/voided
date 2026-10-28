@@ -1294,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             obfuscationLevelSelect.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
         }
         if (chkTamperCheck) chkTamperCheck.checked = data.tamperCheckEnabled === true;
-        if (chkInstantRun) chkInstantRun.checked = data.instantRunEnabled !== false;
+        if (chkInstantRun) chkInstantRun.checked = data.instantRunEnabled === true;
         if (chkVmProtection) chkVmProtection.checked = true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
@@ -1659,7 +1659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             obfuscationProfileVersion: 14,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
-            instantRunEnabled: !(chkInstantRun && !chkInstantRun.checked),
+            instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),
             vmProtectionEnabled,
             expandedTransformsEnabled,
             obfuscatedCodeLevel: obfuscationEnabled ? effectiveObfuscationLevel : null,
@@ -1764,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkObfuscation) chkObfuscation.checked = false;
         if (obfuscationLevelSelect) obfuscationLevelSelect.value = 'auto';
         if (chkTamperCheck) chkTamperCheck.checked = true;
-        if (chkInstantRun) chkInstantRun.checked = true;
+        if (chkInstantRun) chkInstantRun.checked = false;
         if (chkVmProtection) chkVmProtection.checked = false;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = false;
         if (chkFastLoadCache) chkFastLoadCache.checked = false;

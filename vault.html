@@ -178,8 +178,12 @@
                 vaultData = data;
                 if (!data.requireKey) { showSecured(data, providedKey); return; }
                 if (data.keyStatus === 'ok') { showSecured(data, providedKey); return; }
-                if (data.keyStatus === 'terminated' || data.keyStatus === 'expired') {
-                    errorMessage.textContent = data.keyStatus === 'terminated' ? 'This key has been terminated by the owner.' : 'This key has expired.';
+                if (data.keyStatus === 'terminated' || data.keyStatus === 'expired' || data.keyStatus === 'disabled') {
+                    errorMessage.textContent = data.keyStatus === 'terminated'
+                        ? 'This key has been terminated by the owner.'
+                        : data.keyStatus === 'disabled'
+                            ? 'Public keys are turned off for this vault. Ask the owner for a private key.'
+                            : 'This key has expired.';
                     showOnly(errorState);
                     return;
                 }
@@ -202,6 +206,7 @@
                 const data = await fetchInfo(entered);
                 if (!data.ok || data.keyStatus !== 'ok') {
                     return fail(data.keyStatus === 'terminated' ? 'This key has been terminated.'
+                        : data.keyStatus === 'disabled' ? 'Public keys are turned off for this vault.'
                         : data.keyStatus === 'expired' ? 'This key has expired.' : 'Incorrect key. Try again.');
                 }
                 providedKey = entered;

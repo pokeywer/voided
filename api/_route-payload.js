@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { db } from './_admin.js';
 import { getCodeForExecution } from './_deliveryCode.js';
 import { encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
+import { publicKeyDisabled } from './_keyAccess.js';
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -53,6 +54,9 @@ async function findSessionKey(session, vault) {
 
     if (!key || keyDigest(key.key) !== session.keyHash || key.terminated) {
         return { ok: false, message: 'This key is no longer valid.' };
+    }
+    if (publicKeyDisabled(vault, key)) {
+        return { ok: false, message: 'The public key for this vault has been disabled by the owner.' };
     }
     const expiresAt = keyExpiresAt(key);
     if (expiresAt != null && Date.now() >= expiresAt) return { ok: false, message: 'This key has expired.' };

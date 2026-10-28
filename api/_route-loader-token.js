@@ -1,6 +1,7 @@
 import { db } from './_admin.js';
 import { sameOriginRequest } from './_adminSession.js';
 import { issueLoaderToken } from './_loaderToken.js';
+import { publicKeyDisabled } from './_keyAccess.js';
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -42,7 +43,8 @@ async function hasUsableKey(vaultRef, vaultData, key) {
         if (!issued.empty) matched = issued.docs[0].data();
     }
 
-    return !!matched && !matched.terminated && !isKeyExpired(matched, Date.now());
+    if (!matched || publicKeyDisabled(vaultData, matched)) return false;
+    return !matched.terminated && !isKeyExpired(matched, Date.now());
 }
 
 export default async function handler(req, res) {
