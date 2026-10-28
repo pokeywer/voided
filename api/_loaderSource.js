@@ -86,7 +86,7 @@ export function compactGeneratedLoader(source) {
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     // The credit line lives inside the inner loader, so it appears only after a
     // successful gate decrypt. The outer bootstrap stays ciphertext + decoder.
-    const innerBanner = '-- VoidedX Loader [https://voided.vercel.app]';
+    const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
     const cipher = xorKeystream(`${innerBanner}\n${source}`, seed).toString('base64url');
     const gateUrl = new URL('/api/raw', origin);
@@ -178,7 +178,7 @@ local vxInfo = type(debug) == "table" and debug.info or nil
 local vxInfoStable = vxInfo ~= nil and debug.info == vxInfo
 local vxRawEqual = rawequal
 
-vxPcall(print, "[VoidedX] VoidedX Protection - protect your scripts at https://voided.vercel.app")
+vxPcall(print, "[VoidedX] VoidedX Protection - protect your scripts at https://voidedx.vercel.app")
 
 local vxB64Map = {}
 do
