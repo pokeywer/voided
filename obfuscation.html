@@ -11,66 +11,204 @@
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .obf-main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 80px; }
-        .obf-state { max-width: 620px; margin: 80px auto; text-align: center; }
-        .obf-state h1 { margin: 18px 0 10px; font-size: clamp(26px, 4vw, 38px); }
-        .obf-state p { color: #94a3b8; font-size: 13px; line-height: 1.7; }
-        .obf-state .btn-primary, .obf-state .btn-ghost { width: auto; margin: 22px auto 0; display: inline-flex; }
-        .obf-state-icon { width: 58px; height: 58px; margin: 0 auto; display: grid; place-items: center; border-radius: 16px; background: rgba(6, 182, 212, .12); color: #67e8f9; font-size: 22px; }
-        .obf-head { display: flex; align-items: stretch; justify-content: space-between; gap: 22px; margin-bottom: 18px; }
-        .obf-head-copy { min-width: 0; }
-        .obf-head h1 { margin: 8px 0 8px; font-size: clamp(30px, 4vw, 48px); line-height: 1.05; letter-spacing: -.03em; }
-        .obf-head h1 span { color: #67e8f9; }
-        .obf-head p { max-width: 650px; color: #94a3b8; font-size: 13px; line-height: 1.7; }
-        .obf-token-card { flex: 0 0 190px; display: flex; flex-direction: column; justify-content: center; padding: 18px 20px; border: 1px solid rgba(6, 182, 212, .3); border-radius: 15px; background: linear-gradient(145deg, rgba(6, 182, 212, .12), rgba(99, 102, 241, .12)); text-align: center; }
-        .obf-token-card span { color: #67e8f9; font-size: 9px; font-weight: 900; letter-spacing: .16em; }
-        .obf-token-card strong { margin: 3px 0 -2px; font-size: 46px; line-height: 1; color: #fff; }
-        .obf-token-card small { color: #94a3b8; font-size: 10px; }
-        .obf-token-card.empty { border-color: rgba(239, 68, 68, .35); background: rgba(239, 68, 68, .08); }
-        .obf-token-card.empty span, .obf-token-card.empty strong { color: #fca5a5; }
-        .obf-session-line { margin-bottom: 16px; color: #64748b; font-size: 11px; line-height: 1.6; }
-        .obf-session-line strong { color: #cbd5e1; }
-        .obf-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); gap: 18px; align-items: start; }
-        .obf-panel { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
-        .obf-panel h2 { font-size: 16px; margin-bottom: 2px; }
-        .obf-panel h3 { font-size: 13px; }
-        .obf-source { min-height: 300px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; tab-size: 4; }
-        .obf-output { min-height: 130px; resize: vertical; font-family: var(--font-mono); font-size: 10px; line-height: 1.45; }
-        .obf-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background: rgba(22, 26, 36, .5); }
-        .obf-options label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #cbd5e1; font-size: 11px; font-weight: 700; }
-        .obf-options select { width: 62%; }
-        .obf-check { justify-content: flex-start !important; cursor: pointer; }
-        .obf-check input { width: 15px; height: 15px; accent-color: var(--cyan); }
-        .obf-hint { color: #64748b; font-size: 11px; line-height: 1.6; }
-        .obf-hint a { color: #67e8f9; }
-        .obf-result { display: flex; flex-direction: column; gap: 9px; padding-top: 13px; border-top: 1px solid var(--border-color); }
-        .obf-result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-        .obf-result-actions .btn-ghost { flex: 1 1 150px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
-        .obf-vault-link { display: inline-flex; align-items: center; gap: 7px; width: fit-content; color: #67e8f9; font-size: 11px; font-weight: 800; text-decoration: none; }
-        .obf-vault-link:hover { text-decoration: underline; }
-        .obf-note { margin-top: 18px; color: #64748b; font-size: 10px; line-height: 1.7; }
-        .obf-note strong { color: #94a3b8; }
-        .obf-features { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 18px; }
-        .obf-feature { position: relative; padding: 12px 13px; border: 1px solid rgba(249, 115, 22, .3); border-radius: 12px; background: linear-gradient(160deg, rgba(249, 115, 22, .08), rgba(15, 23, 42, .55)); }
-        .obf-feature-head { display: flex; align-items: center; gap: 6px; padding-right: 18px; }
-        .obf-feature-head strong { color: #f8fafc; font-size: 12px; letter-spacing: -.01em; }
-        .obf-on { padding: 2px 6px; border-radius: 999px; background: #f97316; color: #0b1120; font-size: 8px; font-weight: 900; letter-spacing: .08em; }
-        .obf-feature-check { position: absolute; top: 10px; right: 10px; color: #fb923c; font-size: 13px; }
-        .obf-feature p { margin: 6px 0 0; color: #94a3b8; font-size: 10px; line-height: 1.5; }
-        @media (max-width: 820px) {
-            .obf-head { flex-direction: column; }
-            .obf-token-card { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 10px; flex: none; text-align: left; }
-            .obf-token-card strong { font-size: 34px; }
-            .obf-grid { grid-template-columns: minmax(0, 1fr); }
-            .obf-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .obf-main {
+            --ob-line: rgba(148, 163, 184, .13);
+            --ob-line-soft: rgba(148, 163, 184, .075);
+            --ob-card: linear-gradient(180deg, rgba(18, 22, 33, .92), rgba(10, 13, 20, .95));
+            --ob-ink: #e8eefb;
+            --ob-soft: #9aa9bf;
+            --ob-dim: #66758c;
+            --ob-cyan: #22d3ee;
+            width: min(1120px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 30px 0 84px;
         }
-        @media (max-width: 520px) {
-            .obf-main { width: calc(100% - 22px); padding-top: 20px; }
-            .obf-options label { align-items: flex-start; flex-direction: column; }
-            .obf-options select { width: 100%; }
-            .obf-features { grid-template-columns: minmax(0, 1fr); }
+
+        /* ---------- Loading / error states ---------- */
+        .obf-state { max-width: 540px; margin: 68px auto; padding: 34px 30px; border: 1px solid var(--ob-line); border-radius: 18px; background: var(--ob-card); box-shadow: 0 22px 60px rgba(2, 4, 10, .28); text-align: center; }
+        .obf-state h1 { margin: 16px 0 8px; font-size: clamp(22px, 3.4vw, 30px); letter-spacing: -.8px; }
+        .obf-state p { color: var(--ob-soft); font-size: 12.5px; line-height: 1.7; }
+        .obf-state .btn-primary { width: auto; margin: 22px auto 0; display: inline-flex; padding: 11px 18px; }
+        .obf-state-icon { width: 54px; height: 54px; margin: 0 auto; display: grid; place-items: center; border-radius: 15px; border: 1px solid rgba(34, 211, 238, .22); background: rgba(34, 211, 238, .1); color: #67e8f9; font-size: 20px; }
+
+        #obf-app { display: flex; flex-direction: column; gap: 16px; }
+
+        /* ---------- Hero ---------- */
+        .obf-hero { display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 16px; align-items: stretch; }
+        .obf-hero-copy { min-width: 0; padding: 4px 2px 2px; }
+        .obf-hero h1 { margin: 11px 0 10px; color: #f6faff; font-size: clamp(34px, 4.4vw, 52px); font-weight: 900; line-height: 1.02; letter-spacing: -2.3px; }
+        .obf-hero h1 span { background: linear-gradient(100deg, #67e8f9, #818cf8 72%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+        .obf-hero p { max-width: 620px; color: var(--ob-soft); font-size: 12.5px; line-height: 1.7; }
+
+        .obf-token-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 16px 17px 15px; border: 1px solid rgba(34, 211, 238, .26); border-radius: 16px; background: radial-gradient(280px 150px at 100% 0%, rgba(34, 211, 238, .18), transparent 68%), linear-gradient(160deg, rgba(16, 24, 38, .96), rgba(9, 12, 20, .98)); box-shadow: 0 18px 44px rgba(2, 4, 10, .38), inset 0 1px 0 rgba(255, 255, 255, .04); overflow: hidden; }
+        .obf-token-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .obf-token-label { display: inline-flex; align-items: center; gap: 7px; color: #7dd3fc; font-size: 9px; font-weight: 900; letter-spacing: .16em; }
+        .obf-token-label i { font-size: 10px; }
+        .obf-token-cap { padding: 3px 7px; border: 1px solid rgba(148, 163, 184, .16); border-radius: 999px; color: #8ea0b8; font-size: 8px; font-weight: 900; letter-spacing: .1em; }
+        .obf-token-count { display: flex; align-items: baseline; gap: 9px; }
+        .obf-token-count strong { color: #f4fbff; font-size: 42px; font-weight: 900; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; text-shadow: 0 0 26px rgba(34, 211, 238, .35); }
+        .obf-token-count small { color: var(--ob-soft); font-size: 11px; font-weight: 650; line-height: 1.35; }
+        .obf-token-meter { display: flex; gap: 4px; }
+        .obf-token-seg { flex: 1; height: 5px; border-radius: 999px; background: rgba(148, 163, 184, .14); transition: background .2s ease, box-shadow .2s ease; }
+        .obf-token-seg.on { background: linear-gradient(90deg, #22d3ee, #6366f1); box-shadow: 0 0 10px rgba(34, 211, 238, .35); }
+        .obf-token-card.empty { border-color: rgba(248, 113, 113, .4); background: radial-gradient(280px 150px at 100% 0%, rgba(248, 113, 113, .16), transparent 68%), linear-gradient(160deg, rgba(30, 18, 24, .96), rgba(12, 9, 14, .98)); }
+        .obf-token-card.empty .obf-token-label, .obf-token-card.empty .obf-token-count strong { color: #fca5a5; text-shadow: none; }
+        .obf-token-card.empty .obf-token-seg.on { background: #f87171; box-shadow: none; }
+
+        .obf-session-line { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border: 1px solid var(--ob-line-soft); border-radius: 10px; background: rgba(148, 163, 184, .035); color: #7b8da6; font-size: 10.5px; line-height: 1.5; }
+        .obf-session-line::before { content: ''; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--ob-cyan); box-shadow: 0 0 10px rgba(34, 211, 238, .6); }
+        .obf-session-line:empty { display: none; }
+
+        /* ---------- Pipeline ---------- */
+        .obf-pipeline { border: 1px solid var(--ob-line); border-radius: 16px; background: var(--ob-card); overflow: hidden; }
+        .obf-pipeline-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--ob-line-soft); }
+        .obf-pipeline-head .panel-label { color: #7b8da6; letter-spacing: .14em; }
+        .obf-pipeline-meta { display: inline-flex; align-items: center; gap: 6px; color: #6ee7b7; font-size: 8.5px; font-weight: 900; letter-spacing: .12em; white-space: nowrap; }
+        .obf-pipeline-meta i { font-size: 8px; }
+        .obf-pipeline-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--ob-line-soft); list-style: none; }
+        .obf-pipeline-item { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 9px; align-items: start; padding: 13px 14px; background: #0b0f17; }
+        .obf-pipeline-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid rgba(34, 211, 238, .16); border-radius: 9px; background: rgba(34, 211, 238, .09); color: #67e8f9; font-size: 11px; }
+        .obf-pipeline-item strong { display: block; color: #d9e4f4; font-size: 11px; font-weight: 800; letter-spacing: -.01em; }
+        .obf-pipeline-item small { display: block; margin-top: 2px; color: #64748b; font-size: 9.5px; line-height: 1.4; }
+
+        /* ---------- Workbench ---------- */
+        .obf-workbench { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr); gap: 16px; align-items: stretch; }
+        .obf-card { display: flex; flex-direction: column; gap: 13px; min-width: 0; padding: 18px; border: 1px solid var(--ob-line); border-radius: 16px; background: var(--ob-card); box-shadow: 0 18px 50px rgba(2, 4, 10, .22); }
+        .obf-card-head { display: flex; align-items: center; gap: 10px; }
+        .obf-step { display: grid; place-items: center; width: 27px; height: 27px; flex: 0 0 auto; border: 1px solid rgba(34, 211, 238, .22); border-radius: 8px; background: rgba(34, 211, 238, .1); color: #7dd3fc; font-size: 9px; font-weight: 900; letter-spacing: .04em; }
+        .obf-card-head h2 { flex: 1; min-width: 0; color: #eef5ff; font-size: 14.5px; font-weight: 850; letter-spacing: -.01em; }
+        .obf-card-meta { color: var(--ob-dim); font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .obf-divider { height: 1px; margin: 1px 0; background: var(--ob-line-soft); }
+
+        .obf-drop { position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 10px; border: 1px dashed rgba(148, 163, 184, .2); border-radius: 11px; background: rgba(8, 11, 18, .55); transition: border-color .16s ease, background .16s ease; }
+        .obf-drop.is-drag { border-color: rgba(34, 211, 238, .6); background: rgba(34, 211, 238, .08); }
+        .obf-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        .obf-drop-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 0 12px; border: 1px solid rgba(34, 211, 238, .3); border-radius: 8px; background: rgba(34, 211, 238, .1); color: #a5f3fc; font-size: 11px; font-weight: 800; cursor: pointer; transition: border-color .16s ease, background .16s ease; }
+        .obf-drop-btn:hover { border-color: rgba(34, 211, 238, .55); background: rgba(34, 211, 238, .16); }
+        .obf-file-input:focus-visible + .obf-drop-btn { outline: 2px solid rgba(34, 211, 238, .6); outline-offset: 2px; }
+        .obf-drop-hint { flex: 1 1 150px; color: #63748c; font-size: 10px; line-height: 1.4; }
+        .obf-drop-tools { display: flex; gap: 6px; margin-left: auto; }
+        .obf-mini { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid var(--ob-line); border-radius: 8px; background: rgba(148, 163, 184, .05); color: #93a5bc; font-size: 10.5px; font-weight: 800; cursor: pointer; transition: border-color .16s ease, color .16s ease, background .16s ease; }
+        .obf-mini:hover { border-color: rgba(34, 211, 238, .4); color: #eafcff; background: rgba(34, 211, 238, .08); }
+        .obf-mini i { font-size: 10px; }
+        .obf-reset { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 9px; border: 1px solid var(--ob-line); border-radius: 7px; background: rgba(148, 163, 184, .05); color: #8ea0b8; font-size: 9.5px; font-weight: 800; cursor: pointer; transition: border-color .16s ease, color .16s ease; }
+        .obf-reset:hover { border-color: rgba(34, 211, 238, .4); color: #eafcff; }
+        .obf-kbd { margin-left: 4px; padding: 2px 6px; border: 1px solid rgba(4, 18, 28, .35); border-radius: 5px; background: rgba(4, 18, 28, .16); font-family: var(--font-mono); font-size: 9px; font-weight: 800; letter-spacing: 0; }
+
+        .obf-source { width: 100%; min-height: 340px; padding: 13px 14px; border: 1px solid var(--ob-line); border-radius: 12px; background: rgba(5, 8, 13, .72); color: #cfe0f2; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.62; tab-size: 4; resize: vertical; outline: none; transition: border-color .16s ease, box-shadow .16s ease; }
+        .obf-source::placeholder { color: #4a5a70; }
+        .obf-source:focus { border-color: rgba(34, 211, 238, .45); box-shadow: 0 0 0 3px rgba(34, 211, 238, .1); }
+
+        /* ---------- Build controls ---------- */
+        .obf-field { display: flex; flex-direction: column; gap: 7px; }
+        .obf-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+        .obf-field-head .panel-label { color: #7d8ca3; letter-spacing: .12em; }
+        .obf-field-hint { color: var(--ob-dim); font-size: 9.5px; font-weight: 650; text-align: right; }
+
+        .obf-seg { display: grid; gap: 6px; }
+        .obf-seg.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .obf-seg.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .obf-seg.layers { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+        .obf-seg-item { position: relative; display: block; min-width: 0; cursor: pointer; }
+        .obf-seg-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+        .obf-seg-face { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--ob-line); border-radius: 10px; background: rgba(148, 163, 184, .04); transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+        .obf-seg-face strong { color: #cfdaea; font-size: 11.5px; font-weight: 800; letter-spacing: -.01em; line-height: 1.2; }
+        .obf-seg-face small { color: var(--ob-dim); font-size: 9px; font-weight: 650; line-height: 1.25; }
+        .obf-seg-item:hover .obf-seg-face { border-color: rgba(148, 163, 184, .26); background: rgba(148, 163, 184, .07); }
+        .obf-seg-item input:checked + .obf-seg-face { border-color: rgba(34, 211, 238, .55); background: linear-gradient(160deg, rgba(34, 211, 238, .16), rgba(99, 102, 241, .12)); box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .2), 0 8px 22px rgba(6, 182, 212, .12); }
+        .obf-seg-item input:checked + .obf-seg-face strong { color: #ecfeff; }
+        .obf-seg-item input:checked + .obf-seg-face small { color: #7dd3fc; }
+        .obf-seg-item input:focus-visible + .obf-seg-face { outline: 2px solid rgba(34, 211, 238, .55); outline-offset: 2px; }
+        .obf-seg-flat .obf-seg-face { align-items: center; min-height: 38px; padding: 0 4px; }
+        .obf-seg-flat .obf-seg-face strong { font-size: 11px; }
+
+        .obf-switch { position: relative; display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 9px 12px; border: 1px solid var(--ob-line); border-radius: 11px; background: rgba(148, 163, 184, .035); cursor: pointer; transition: border-color .16s ease, background .16s ease; }
+        .obf-switch:hover { border-color: rgba(148, 163, 184, .24); }
+        .obf-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+        .obf-switch-copy { flex: 1; min-width: 0; }
+        .obf-switch-copy strong { display: block; color: #d3dfee; font-size: 11.5px; font-weight: 800; letter-spacing: -.01em; }
+        .obf-switch-copy small { display: block; margin-top: 2px; color: #64748b; font-size: 9.5px; line-height: 1.35; }
+        .obf-switch-track { position: relative; flex: 0 0 auto; width: 38px; height: 22px; border-radius: 999px; background: rgba(148, 163, 184, .18); transition: background .18s ease; }
+        .obf-switch-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #94a3b8; transition: transform .18s var(--ease-smooth), background .18s ease; }
+        .obf-switch input:checked ~ .obf-switch-track { background: linear-gradient(120deg, #22d3ee, #6366f1); }
+        .obf-switch input:checked ~ .obf-switch-track::after { transform: translateX(16px); background: #f8feff; }
+        .obf-switch input:focus-visible ~ .obf-switch-track { outline: 2px solid rgba(34, 211, 238, .55); outline-offset: 2px; }
+
+        .obf-name { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 12px; border: 1px solid var(--ob-line); border-radius: 10px; background: rgba(8, 11, 18, .6); transition: border-color .16s ease, box-shadow .16s ease; }
+        .obf-name:focus-within { border-color: rgba(34, 211, 238, .45); box-shadow: 0 0 0 3px rgba(34, 211, 238, .1); }
+        .obf-name > i { color: #4f6076; font-size: 11px; }
+        .obf-name input { flex: 1; min-width: 0; min-height: 40px; border: 0; background: transparent; color: #e2ecf9; font-size: 12px; font-weight: 650; outline: none; }
+        .obf-name input::placeholder { color: #4a5a70; }
+        .obf-name span { color: #5f7188; font-family: var(--font-mono); font-size: 11px; }
+
+        .obf-run { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 52px; margin-top: 1px; border: 0; border-radius: 13px; background: linear-gradient(112deg, #22d3ee, #6366f1 62%, #7c3aed); color: #04121c; font-size: 13.5px; font-weight: 900; letter-spacing: -.01em; cursor: pointer; box-shadow: 0 14px 34px rgba(34, 211, 238, .22); transition: transform .16s var(--ease-smooth), box-shadow .16s ease, filter .16s ease, opacity .16s ease; }
+        .obf-run:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 18px 40px rgba(34, 211, 238, .28); }
+        .obf-run:active:not(:disabled) { transform: translateY(0); }
+        .obf-run:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+        /* ---------- Result ---------- */
+        .obf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--ob-line-soft); border-radius: 12px; background: var(--ob-line-soft); overflow: hidden; }
+        .obf-stat { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 11px 13px; background: #0b0f17; }
+        .obf-stat span { color: #64748b; font-size: 8.5px; font-weight: 900; letter-spacing: .14em; }
+        .obf-stat strong { color: #f2f9ff; font-size: 17px; font-weight: 900; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+        .obf-stat small { color: #64748b; font-size: 9.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; }
+        .obf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .obf-chip { padding: 4px 8px; border: 1px solid var(--ob-line); border-radius: 999px; background: rgba(148, 163, 184, .05); color: #8ea0b8; font-size: 8.5px; font-weight: 900; letter-spacing: .1em; }
+        .obf-chip.on { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .09); color: #7dd3fc; }
+        .obf-output { width: 100%; min-height: 150px; padding: 12px 13px; border: 1px solid var(--ob-line); border-radius: 11px; background: rgba(5, 8, 13, .72); color: #9fb4cc; font-family: var(--font-mono); font-size: 10px; line-height: 1.5; resize: vertical; outline: none; }
+        .obf-result-actions { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+        .obf-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--ob-line); border-radius: 10px; background: rgba(148, 163, 184, .06); color: #d4e0f0; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: border-color .16s ease, color .16s ease, background .16s ease, transform .16s var(--ease-smooth), opacity .16s ease; }
+        .obf-action:hover:not(:disabled) { border-color: rgba(34, 211, 238, .4); color: #eafcff; background: rgba(34, 211, 238, .08); transform: translateY(-1px); }
+        .obf-action:disabled { opacity: .45; cursor: not-allowed; }
+        .obf-save-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 13px; border: 1px solid var(--ob-line-soft); border-radius: 12px; background: rgba(148, 163, 184, .03); }
+        .obf-save-copy strong { display: block; color: #dbe7f7; font-size: 11.5px; font-weight: 800; }
+        .obf-save-copy small { display: block; margin-top: 2px; color: #64748b; font-size: 10px; line-height: 1.45; }
+        .obf-save { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: linear-gradient(112deg, #22d3ee, #6366f1); color: #04121c; font-size: 11.5px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 26px rgba(34, 211, 238, .22); transition: filter .16s ease, transform .16s var(--ease-smooth), opacity .16s ease; }
+        .obf-save:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
+        .obf-save:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+        .obf-vault-link { display: inline-flex; align-items: center; gap: 7px; margin-top: 4px; color: #67e8f9; font-size: 11px; font-weight: 800; text-decoration: none; }
+        .obf-vault-link:hover { text-decoration: underline; }
+
+        /* ---------- Fine print ---------- */
+        .obf-fineprint { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--ob-line-soft); border-radius: 14px; background: var(--ob-line-soft); overflow: hidden; }
+        .obf-fineprint-item { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 9px; padding: 13px 14px; background: rgba(10, 14, 21, .92); }
+        .obf-fineprint-item > i { color: #4f8fa3; font-size: 11px; margin-top: 1px; }
+        .obf-fineprint-item strong { display: block; color: #c3d2e5; font-size: 10.5px; font-weight: 800; }
+        .obf-fineprint-item p { margin: 3px 0 0; color: #5f7188; font-size: 9.5px; line-height: 1.55; }
+
+        @media (max-width: 980px) {
+            .obf-hero { grid-template-columns: minmax(0, 1fr); }
+            .obf-token-card { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px 18px; }
+            .obf-token-head { flex: 0 0 100%; }
+            .obf-token-count { flex: 1 1 auto; }
+            .obf-token-count strong { font-size: 34px; }
+            .obf-token-meter { flex: 0 0 160px; }
+            .obf-workbench { grid-template-columns: minmax(0, 1fr); }
+            .obf-pipeline-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .obf-fineprint { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 560px) {
+            .obf-main { width: calc(100% - 20px); padding-bottom: 62px; }
+            .obf-state { margin: 40px auto; padding: 26px 20px; }
+            .obf-hero h1 { font-size: clamp(30px, 9vw, 40px); letter-spacing: -1.6px; }
+            .obf-card { padding: 15px 14px; border-radius: 14px; }
+            .obf-source { min-height: 260px; font-size: 12px; }
+            .obf-pipeline-grid { grid-template-columns: minmax(0, 1fr); }
+            .obf-seg.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .obf-seg.cols-3 > .obf-seg-item:last-child:nth-child(odd) { grid-column: 1 / -1; }
+            .obf-seg.layers { gap: 4px; }
+            .obf-result-actions { grid-template-columns: minmax(0, 1fr); }
+            .obf-save-row { grid-template-columns: minmax(0, 1fr); }
+            .obf-save { width: 100%; }
+            .obf-token-meter { flex: 1 1 100%; }
+            .obf-field-head { flex-wrap: wrap; }
+            .obf-field-hint { text-align: left; }
+            .obf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .obf-kbd { display: none; }
+            .obf-drop-tools { margin-left: 0; }
         }
     </style>
+<script defer src="/i18n.js"></script>
 <script defer src="/app-shell.js"></script>
 </head>
 <body class="creator-panel-page vx-app">
@@ -100,122 +238,219 @@
         </section>
 
         <section id="obf-app" class="hidden" aria-live="polite">
-            <div class="obf-head">
-                <div class="obf-head-copy">
+            <div class="obf-hero">
+                <div class="obf-hero-copy">
                     <span id="obf-eyebrow" class="creator-panel-eyebrow"><i class="fa-solid fa-shield-halved"></i> VOIDEDX OBFUSCATOR</span>
                     <h1>Your file.<br><span>Protected.</span></h1>
                     <p id="obf-intro">Obfuscate a Lua or Luau script with the VoidedX engine, download the protected copy, or save it to a vault. Each successful obfuscation uses one void token; every account gets 8 tokens per day.</p>
                 </div>
                 <div id="obf-token-card" class="obf-token-card">
-                    <span>VOID TOKENS</span>
-                    <strong id="obf-credits">8</strong>
-                    <small id="obf-credits-note">left today</small>
+                    <div class="obf-token-head">
+                        <span class="obf-token-label"><i class="fa-solid fa-bolt"></i> VOID TOKENS</span>
+                        <span class="obf-token-cap">8 / DAY</span>
+                    </div>
+                    <div class="obf-token-count">
+                        <strong id="obf-credits">8</strong>
+                        <small id="obf-credits-note">left today</small>
+                    </div>
+                    <div id="obf-token-meter" class="obf-token-meter" aria-hidden="true"></div>
                 </div>
             </div>
 
             <p id="obf-session-line" class="obf-session-line"></p>
 
-            <div class="obf-features" aria-label="Protection pipeline">
-                <div class="obf-feature">
-                    <div class="obf-feature-head"><strong>Sigil Cipher</strong><span class="obf-on">ON</span></div>
-                    <i class="fa-solid fa-circle-check obf-feature-check" aria-hidden="true"></i>
-                    <p>String literals are sealed with a per-copy key before the VM reads them.</p>
+            <section class="obf-pipeline" aria-label="Protection pipeline">
+                <div class="obf-pipeline-head">
+                    <span class="panel-label">PROTECTION PIPELINE</span>
+                    <span class="obf-pipeline-meta"><i class="fa-solid fa-circle-check"></i> ALL FIVE ON</span>
                 </div>
-                <div class="obf-feature">
-                    <div class="obf-feature-head"><strong>Path Weaving</strong><span class="obf-on">ON</span></div>
-                    <i class="fa-solid fa-circle-check obf-feature-check" aria-hidden="true"></i>
-                    <p>Opaque guards and decoy branches keep the control flow off the map.</p>
-                </div>
-                <div class="obf-feature">
-                    <div class="obf-feature-head"><strong>Opcode Drift</strong><span class="obf-on">ON</span></div>
-                    <i class="fa-solid fa-circle-check obf-feature-check" aria-hidden="true"></i>
-                    <p>Every numeric constant is rewritten as a fresh expression on each build.</p>
-                </div>
-                <div class="obf-feature">
-                    <div class="obf-feature-head"><strong>Brand Mark</strong><span class="obf-on">ON</span></div>
-                    <i class="fa-solid fa-circle-check obf-feature-check" aria-hidden="true"></i>
-                    <p>Each copy carries a VoidedX watermark bound to its own build seed.</p>
-                </div>
-                <div class="obf-feature">
-                    <div class="obf-feature-head"><strong>Shell Packing</strong><span class="obf-on">ON</span></div>
-                    <i class="fa-solid fa-circle-check obf-feature-check" aria-hidden="true"></i>
-                    <p>The armored payload is compressed, split into shuffled segments, and nested in extra containers on stronger levels.</p>
-                </div>
-            </div>
+                <ol class="obf-pipeline-grid">
+                    <li class="obf-pipeline-item">
+                        <span class="obf-pipeline-icon"><i class="fa-solid fa-lock"></i></span>
+                        <div><strong>Sigil Cipher</strong><small>Strings sealed with a per-copy key.</small></div>
+                    </li>
+                    <li class="obf-pipeline-item">
+                        <span class="obf-pipeline-icon"><i class="fa-solid fa-diagram-project"></i></span>
+                        <div><strong>Path Weaving</strong><small>Opaque guards and decoy branches.</small></div>
+                    </li>
+                    <li class="obf-pipeline-item">
+                        <span class="obf-pipeline-icon"><i class="fa-solid fa-shuffle"></i></span>
+                        <div><strong>Opcode Drift</strong><small>Constants rewritten every build.</small></div>
+                    </li>
+                    <li class="obf-pipeline-item">
+                        <span class="obf-pipeline-icon"><i class="fa-solid fa-fingerprint"></i></span>
+                        <div><strong>Brand Mark</strong><small>Watermark tied to the build seed.</small></div>
+                    </li>
+                    <li class="obf-pipeline-item">
+                        <span class="obf-pipeline-icon"><i class="fa-solid fa-box-archive"></i></span>
+                        <div><strong>Shell Packing</strong><small>Payload split and nested in shells.</small></div>
+                    </li>
+                </ol>
+            </section>
 
-            <div class="obf-grid">
-                <article class="admin-card obf-panel" aria-labelledby="obf-source-title">
-                    <h2 id="obf-source-title">1. Your script</h2>
-                    <label class="panel-label" for="obf-file">UPLOAD .LUA OR .TXT</label>
-                    <input id="obf-file" class="input-field" type="file" accept=".lua,.txt,text/plain">
-                    <label class="panel-label" for="obf-source">OR PASTE CODE</label>
-                    <textarea id="obf-source" class="input-field obf-source" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="local Players = game:GetService(&quot;Players&quot;)&#10;-- Paste the script you want to protect"></textarea>
-
-                    <div class="obf-options">
-                        <label for="obf-level">Strength
-                            <select id="obf-level" class="input-field">
-                                <option value="auto" selected>Auto (recommended)</option>
-                                <option value="fast">Fast · light armor (smallest)</option>
-                                <option value="low">Low · sealed strings + armor</option>
-                                <option value="medium">Medium · sealed strings + 3-pass armor</option>
-                                <option value="high">High · Strong preset + hardened armor</option>
-                                <option value="absolute">Absolute · Strong preset + heavy armor (slowest)</option>
-                            </select>
-                        </label>
-                        <label for="obf-layers">Armor layers
-                            <select id="obf-layers" class="input-field">
-                                <option value="" selected>Auto (strength default)</option>
-                                <option value="1">1 · fastest startup</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4 · default for Absolute</option>
-                                <option value="5">5 · slow startup</option>
-                                <option value="6">6 · slowest startup</option>
-                            </select>
-                        </label>
-                        <label for="obf-junk">Junk preamble
-                            <select id="obf-junk" class="input-field">
-                                <option value="normal" selected>Normal (16-29 blocks)</option>
-                                <option value="heavy">Heavy (34-55 blocks)</option>
-                                <option value="off">Off (banner only)</option>
-                            </select>
-                        </label>
-                        <label for="obf-layout">Output layout
-                            <select id="obf-layout" class="input-field">
-                                <option value="messy" selected>Messy VM style</option>
-                                <option value="compact">Compact (long packed lines)</option>
-                            </select>
-                        </label>
-                        <label class="obf-check" for="obf-comments"><input id="obf-comments" type="checkbox" checked> Gibberish comments</label>
-                        <label class="obf-check" for="obf-tamper"><input id="obf-tamper" type="checkbox" checked> Tamper check</label>
-                        <label class="obf-check" for="obf-expanded"><input id="obf-expanded" type="checkbox"> More string splitting</label>
-                        <label class="obf-check" for="obf-autodownload"><input id="obf-autodownload" type="checkbox" checked> Download automatically</label>
+            <div class="obf-workbench">
+                <article class="obf-card" aria-labelledby="obf-source-title">
+                    <div class="obf-card-head">
+                        <span class="obf-step">01</span>
+                        <h2 id="obf-source-title">Source</h2>
+                        <span id="obf-source-meta" class="obf-card-meta">0 chars</span>
                     </div>
-
-                    <button id="obf-run" class="btn-primary" type="button"><i class="fa-solid fa-wand-magic-sparkles"></i> Obfuscate &amp; download</button>
-                    <div id="obf-status" class="admin-status hidden" role="status"></div>
-                </article>
-
-                <article class="admin-card obf-panel" aria-labelledby="obf-vault-title">
-                    <h2 id="obf-vault-title">2. Save to a vault</h2>
-                    <label class="panel-label" for="obf-title">VAULT TITLE</label>
-                    <input id="obf-title" class="input-field" type="text" maxlength="80" autocomplete="off" placeholder="My protected script">
-                    <p class="obf-hint">Optional. This saves the generated copy to a VoidedX vault under this browser's guest session. Each browser can keep up to five vaults. <a href="/" target="_blank" rel="noopener">Open the editor</a> if you want to sign in with an account.</p>
-                    <button id="obf-save" class="btn-ghost" type="button" disabled><i class="fa-solid fa-vault"></i> Save to vault</button>
-                    <div id="obf-vault-status" class="admin-status hidden" role="status"></div>
-
-                    <div id="obf-result" class="obf-result hidden">
-                        <h3>Generated copy</h3>
-                        <textarea id="obf-output" class="input-field obf-output" readonly spellcheck="false" aria-label="Generated obfuscated script"></textarea>
-                        <div class="obf-result-actions">
-                            <button id="obf-download" class="btn-ghost" type="button"><i class="fa-solid fa-download"></i> Download protected file</button>
-                            <button id="obf-copy" class="btn-ghost" type="button"><i class="fa-solid fa-copy"></i> Copy</button>
+                    <div id="obf-drop" class="obf-drop">
+                        <input id="obf-file" class="obf-file-input" type="file" accept=".lua,.txt,text/plain">
+                        <label class="obf-drop-btn" for="obf-file"><i class="fa-solid fa-file-arrow-up"></i> Choose file</label>
+                        <span class="obf-drop-hint">Drop a .lua or .txt here, or paste below</span>
+                        <div class="obf-drop-tools">
+                            <button id="obf-paste" class="obf-mini" type="button" title="Paste the clipboard into the editor"><i class="fa-solid fa-paste"></i> Paste</button>
+                            <button id="obf-clear" class="obf-mini" type="button" title="Clear the source editor"><i class="fa-solid fa-eraser"></i> Clear</button>
                         </div>
                     </div>
+                    <textarea id="obf-source" class="obf-source" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="local Players = game:GetService(&quot;Players&quot;)&#10;-- Paste the script you want to protect"></textarea>
+                </article>
+
+                <article class="obf-card" aria-labelledby="obf-build-title">
+                    <div class="obf-card-head">
+                        <span class="obf-step">02</span>
+                        <h2 id="obf-build-title">Build</h2>
+                        <span class="obf-card-meta">PROFILE 17</span>
+                        <button id="obf-reset" class="obf-reset" type="button" title="Reset the build options"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+                    </div>
+
+                    <div class="obf-field">
+                        <div class="obf-field-head">
+                            <span class="panel-label">STRENGTH</span>
+                            <span class="obf-field-hint">Auto picks the best preset</span>
+                        </div>
+                        <div class="obf-seg cols-3" role="radiogroup" aria-label="Obfuscation strength">
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="auto" checked><span class="obf-seg-face"><strong>Auto</strong><small>balanced</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="fast"><span class="obf-seg-face"><strong>Fast</strong><small>smallest</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="low"><span class="obf-seg-face"><strong>Low</strong><small>sealed strings</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="medium"><span class="obf-seg-face"><strong>Medium</strong><small>3-pass armor</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="high"><span class="obf-seg-face"><strong>High</strong><small>hardened</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-level" value="absolute"><span class="obf-seg-face"><strong>Absolute</strong><small>maximum</small></span></label>
+                        </div>
+                    </div>
+
+                    <div class="obf-field">
+                        <div class="obf-field-head">
+                            <span class="panel-label">ARMOR LAYERS</span>
+                            <span class="obf-field-hint">More layers, slower startup</span>
+                        </div>
+                        <div class="obf-seg layers obf-seg-flat" role="radiogroup" aria-label="Armor layers">
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="" checked><span class="obf-seg-face"><strong>Auto</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="1"><span class="obf-seg-face"><strong>1</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="2"><span class="obf-seg-face"><strong>2</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="3"><span class="obf-seg-face"><strong>3</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="4"><span class="obf-seg-face"><strong>4</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="5"><span class="obf-seg-face"><strong>5</strong></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layers" value="6"><span class="obf-seg-face"><strong>6</strong></span></label>
+                        </div>
+                    </div>
+
+                    <div class="obf-field">
+                        <div class="obf-field-head">
+                            <span class="panel-label">JUNK PREAMBLE</span>
+                            <span class="obf-field-hint">Noise before the payload</span>
+                        </div>
+                        <div class="obf-seg cols-3" role="radiogroup" aria-label="Junk preamble">
+                            <label class="obf-seg-item"><input type="radio" name="obf-junk" value="normal" checked><span class="obf-seg-face"><strong>Normal</strong><small>16-29 blocks</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-junk" value="heavy"><span class="obf-seg-face"><strong>Heavy</strong><small>34-55 blocks</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-junk" value="off"><span class="obf-seg-face"><strong>Off</strong><small>banner only</small></span></label>
+                        </div>
+                    </div>
+
+                    <div class="obf-field">
+                        <div class="obf-field-head">
+                            <span class="panel-label">OUTPUT LAYOUT</span>
+                            <span class="obf-field-hint">How the file reads</span>
+                        </div>
+                        <div class="obf-seg cols-2" role="radiogroup" aria-label="Output layout">
+                            <label class="obf-seg-item"><input type="radio" name="obf-layout" value="messy" checked><span class="obf-seg-face"><strong>Messy VM</strong><small>scrambled style</small></span></label>
+                            <label class="obf-seg-item"><input type="radio" name="obf-layout" value="compact"><span class="obf-seg-face"><strong>Compact</strong><small>long packed lines</small></span></label>
+                        </div>
+                    </div>
+
+                    <div class="obf-field">
+                        <div class="obf-field-head">
+                            <label class="panel-label" for="obf-title">FILE NAME</label>
+                            <span class="obf-field-hint">Saved as .lua</span>
+                        </div>
+                        <div class="obf-name">
+                            <i class="fa-solid fa-file-code"></i>
+                            <input id="obf-title" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="my-protected-script">
+                            <span>.lua</span>
+                        </div>
+                    </div>
+
+                    <div class="obf-divider"></div>
+
+                    <label class="obf-switch">
+                        <span class="obf-switch-copy"><strong>Tamper check</strong><small>Rejects modified copies at load.</small></span>
+                        <input id="obf-tamper" type="checkbox" checked>
+                        <span class="obf-switch-track" aria-hidden="true"></span>
+                    </label>
+                    <label class="obf-switch">
+                        <span class="obf-switch-copy"><strong>More string splitting</strong><small>Splits and re-joins more literals.</small></span>
+                        <input id="obf-expanded" type="checkbox">
+                        <span class="obf-switch-track" aria-hidden="true"></span>
+                    </label>
+                    <label class="obf-switch">
+                        <span class="obf-switch-copy"><strong>Gibberish comments</strong><small>Decoy notes salted through the file.</small></span>
+                        <input id="obf-comments" type="checkbox" checked>
+                        <span class="obf-switch-track" aria-hidden="true"></span>
+                    </label>
+                    <label class="obf-switch">
+                        <span class="obf-switch-copy"><strong>Download automatically</strong><small>Saves the file when the build finishes.</small></span>
+                        <input id="obf-autodownload" type="checkbox" checked>
+                        <span class="obf-switch-track" aria-hidden="true"></span>
+                    </label>
+
+                    <button id="obf-run" class="obf-run" type="button"><i class="fa-solid fa-wand-magic-sparkles"></i> Obfuscate &amp; download <kbd class="obf-kbd">Ctrl ↵</kbd></button>
+                    <div id="obf-status" class="admin-status hidden" role="status"></div>
                 </article>
             </div>
 
-            <p class="obf-note"><strong>Tokens.</strong> Each account gets 8 void tokens per day, refilled at midnight UTC. Admins can grant bonus tokens, which are spent after the daily ones. Website use is tied to this browser's guest account; the Discord link uses your Discord balance. <strong>Keep your link private</strong> if you opened one — anyone with it can spend your tokens and read the preloaded script. Obfuscation raises the cost of static analysis, but code that runs on a client can still be captured by a compromised executor.</p>
+            <article id="obf-result" class="obf-card hidden" aria-labelledby="obf-result-title">
+                <div class="obf-card-head">
+                    <span class="obf-step">03</span>
+                    <h2 id="obf-result-title">Result</h2>
+                    <span class="obf-card-meta">THIS BUILD</span>
+                </div>
+                <div class="obf-stats">
+                    <div class="obf-stat"><span>SIZE</span><strong id="obf-stat-size">—</strong><small id="obf-stat-size-note">—</small></div>
+                    <div class="obf-stat"><span>CHARACTERS</span><strong id="obf-stat-chars">—</strong><small id="obf-stat-chars-note">—</small></div>
+                    <div class="obf-stat"><span>LINES</span><strong id="obf-stat-lines">—</strong><small id="obf-stat-lines-note">—</small></div>
+                    <div class="obf-stat"><span>BUILD TIME</span><strong id="obf-stat-time">—</strong><small id="obf-stat-time-note">—</small></div>
+                </div>
+                <div id="obf-result-config" class="obf-chips" aria-label="Build settings used for this copy"></div>
+                <textarea id="obf-output" class="obf-output" readonly spellcheck="false" aria-label="Generated obfuscated script"></textarea>
+                <div class="obf-result-actions">
+                    <button id="obf-download" class="obf-action" type="button"><i class="fa-solid fa-download"></i> Download protected file</button>
+                    <button id="obf-copy" class="obf-action" type="button"><i class="fa-solid fa-copy"></i> Copy</button>
+                </div>
+                <div class="obf-save-row">
+                    <div class="obf-save-copy">
+                        <strong>Store this build</strong>
+                        <small>Keeps the protected copy in a VoidedX vault under this browser's guest session, up to five per browser. Signed-in editors can manage the same vaults from the Creator Panel.</small>
+                    </div>
+                    <button id="obf-save" class="obf-save" type="button" disabled><i class="fa-solid fa-vault"></i> Save to vault</button>
+                </div>
+                <div id="obf-vault-status" class="admin-status hidden" role="status"></div>
+            </article>
+
+            <footer class="obf-fineprint">
+                <div class="obf-fineprint-item">
+                    <i class="fa-solid fa-bolt"></i>
+                    <div><strong>8 void tokens a day</strong><p>Refilled at 00:00 UTC. Admins can add bonus tokens, which are spent after the daily ones.</p></div>
+                </div>
+                <div class="obf-fineprint-item">
+                    <i class="fa-solid fa-user-secret"></i>
+                    <div><strong>Private by default</strong><p>Website builds use this browser's guest account. A Discord link spends that balance, so keep it to yourself.</p></div>
+                </div>
+                <div class="obf-fineprint-item">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div><strong>Raises the bar</strong><p>Obfuscation slows static analysis, but code that runs on a client can still be captured. Vaults with no executions are removed after 10 hours.</p></div>
+                </div>
+            </footer>
         </section>
     </main>
 

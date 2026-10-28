@@ -43,13 +43,11 @@ const els = {
     tokenCard: document.getElementById('obf-token-card'),
     credits: document.getElementById('obf-credits'),
     creditsNote: document.getElementById('obf-credits-note'),
+    tokenMeter: document.getElementById('obf-token-meter'),
     sessionLine: document.getElementById('obf-session-line'),
     file: document.getElementById('obf-file'),
     source: document.getElementById('obf-source'),
-    level: document.getElementById('obf-level'),
-    layers: document.getElementById('obf-layers'),
-    junk: document.getElementById('obf-junk'),
-    layout: document.getElementById('obf-layout'),
+    sourceMeta: document.getElementById('obf-source-meta'),
     comments: document.getElementById('obf-comments'),
     tamper: document.getElementById('obf-tamper'),
     expanded: document.getElementById('obf-expanded'),
@@ -60,6 +58,15 @@ const els = {
     save: document.getElementById('obf-save'),
     vaultStatus: document.getElementById('obf-vault-status'),
     result: document.getElementById('obf-result'),
+    statSize: document.getElementById('obf-stat-size'),
+    statSizeNote: document.getElementById('obf-stat-size-note'),
+    statChars: document.getElementById('obf-stat-chars'),
+    statCharsNote: document.getElementById('obf-stat-chars-note'),
+    statLines: document.getElementById('obf-stat-lines'),
+    statLinesNote: document.getElementById('obf-stat-lines-note'),
+    statTime: document.getElementById('obf-stat-time'),
+    statTimeNote: document.getElementById('obf-stat-time-note'),
+    resultConfig: document.getElementById('obf-result-config'),
     output: document.getElementById('obf-output'),
     download: document.getElementById('obf-download'),
     copy: document.getElementById('obf-copy')
@@ -87,6 +94,112 @@ let running = false;
 let saving = false;
 let savedVaultId = null;
 let authUser = null;
+
+function radioValue(name, fallback) {
+    const checked = document.querySelector(`input[name="${name}"]:checked`);
+    return checked ? checked.value : fallback;
+}
+
+function setRadioValue(name, value) {
+    const input = Array.from(document.querySelectorAll(`input[name="${name}"]`))
+        .find(node => node.value === String(value));
+    if (input) input.checked = true;
+}
+
+function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+    return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${bytes} B`;
+}
+
+function lineCount(text) {
+    return text ? text.split('\n').length : 0;
+}
+
+function updateSourceMeta() {
+    const value = els.source.value;
+    if (!value) {
+        els.sourceMeta.textContent = '0 chars';
+        return;
+    }
+    els.sourceMeta.textContent = `${value.length.toLocaleString()} chars · ${lineCount(value).toLocaleString()} lines · ${formatBytes(getUtf8ByteLength(value))}`;
+}
+
+const SETTINGS_KEY = 'voidedx-obfuscator-settings';
+const DEFAULT_SETTINGS = {
+    level: 'auto', layers: '', junk: 'normal', layout: 'messy',
+    tamper: true, expanded: false, comments: true, autodownload: true
+};
+
+function readSettings() {
+    return {
+        level: radioValue('obf-level', 'auto') || 'auto',
+        layers: radioValue('obf-layers', ''),
+        junk: radioValue('obf-junk', 'normal'),
+        layout: radioValue('obf-layout', 'messy'),
+        tamper: els.tamper.checked,
+        expanded: els.expanded.checked,
+        comments: els.comments.checked,
+        autodownload: els.autodownload.checked
+    };
+}
+
+function applySettings(settings) {
+    const next = { ...DEFAULT_SETTINGS, ...settings };
+    setRadioValue('obf-level', next.level);
+    setRadioValue('obf-layers', next.layers);
+    setRadioValue('obf-junk', next.junk);
+    setRadioValue('obf-layout', next.layout);
+    els.tamper.checked = next.tamper !== false;
+    els.expanded.checked = next.expanded === true;
+    els.comments.checked = next.comments !== false;
+    els.autodownload.checked = next.autodownload !== false;
+}
+
+function restoreSettings() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch { saved = null; }
+    applySettings(saved && typeof saved === 'object' ? saved : DEFAULT_SETTINGS);
+}
+
+function persistSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(readSettings())); } catch { /* Storage may be blocked. */ }
+}
+
+function clearResultStats() {
+    [els.statSize, els.statChars, els.statLines, els.statTime].forEach(node => { node.textContent = '—'; });
+    [els.statSizeNote, els.statCharsNote, els.statLinesNote, els.statTimeNote].forEach(node => { node.textContent = '—'; });
+    els.resultConfig.replaceChildren();
+}
+
+function renderResultStats(result, outputBytes, elapsedMs) {
+    const sourceBytes = Math.max(1, getUtf8ByteLength(result.source));
+    const sourceLines = lineCount(result.source);
+    const outputLines = lineCount(result.output);
+    els.statSize.textContent = formatBytes(outputBytes);
+    els.statSizeNote.textContent = `${formatBytes(getUtf8ByteLength(result.source))} source`;
+    els.statChars.textContent = result.output.length.toLocaleString();
+    els.statCharsNote.textContent = `${(outputBytes / sourceBytes).toFixed(1)}× source size`;
+    els.statLines.textContent = outputLines.toLocaleString();
+    els.statLinesNote.textContent = `${sourceLines.toLocaleString()} source line${sourceLines === 1 ? '' : 's'}`;
+    els.statTime.textContent = elapsedMs >= 1000 ? `${(elapsedMs / 1000).toFixed(1)} s` : `${Math.max(1, Math.round(elapsedMs))} ms`;
+    els.statTimeNote.textContent = `${result.effectiveLevel} · ${result.armorLayers ? `${result.armorLayers} layer${result.armorLayers === 1 ? '' : 's'}` : 'auto layers'}`;
+
+    const chips = [
+        `${result.effectiveLevel.toUpperCase()}${result.requestedLevel === 'auto' ? ' AUTO' : ''}`,
+        result.armorLayers ? `${result.armorLayers} LAYERS` : 'AUTO LAYERS',
+        `${result.junk.toUpperCase()} JUNK`,
+        result.layout.toUpperCase(),
+        result.tamperCheck ? 'TAMPER ON' : 'TAMPER OFF',
+        result.expandedTransforms ? 'EXTRA SPLIT' : 'STD SPLIT',
+        result.comments ? 'COMMENTS ON' : 'NO COMMENTS'
+    ];
+    els.resultConfig.replaceChildren(...chips.map(label => {
+        const chip = document.createElement('span');
+        chip.className = label.endsWith('OFF') || label === 'NO COMMENTS' ? 'obf-chip' : 'obf-chip on';
+        chip.textContent = label;
+        return chip;
+    }));
+}
 
 function setMessage(element, message, kind = 'info') {
     element.textContent = message;
@@ -149,10 +262,27 @@ function applyTokenState(data) {
     renderSessionLine();
 }
 
+function renderTokenMeter() {
+    const total = Math.max(1, Math.min(12, dailyLimit));
+    if (els.tokenMeter.childElementCount !== total) {
+        const segments = Array.from({ length: total }, () => {
+            const segment = document.createElement('span');
+            segment.className = 'obf-token-seg';
+            return segment;
+        });
+        els.tokenMeter.replaceChildren(...segments);
+    }
+    const filled = Math.max(0, Math.min(total, dailyRemaining));
+    Array.from(els.tokenMeter.children).forEach((segment, index) => {
+        segment.classList.toggle('on', index < filled);
+    });
+}
+
 function updateCredits() {
     els.credits.textContent = String(Math.max(0, Number(credits) || 0));
     els.creditsNote.textContent = bonus > 0 ? `left today + ${bonus} bonus` : 'left today';
     els.tokenCard.classList.toggle('empty', credits <= 0);
+    renderTokenMeter();
     refreshButtons();
 }
 
@@ -281,7 +411,8 @@ async function loadSession() {
         els.loading.classList.add('hidden');
         els.app.classList.remove('hidden');
         if (data.source) els.source.value = data.source;
-        if (data.level) els.level.value = data.level;
+        updateSourceMeta();
+        if (data.level) setRadioValue('obf-level', data.level);
         if (data.filename && data.filename !== 'script.lua') {
             els.title.value = data.filename.replace(/\.(lua|txt)$/i, '').slice(0, 80);
         }
@@ -314,6 +445,7 @@ els.file.addEventListener('change', async () => {
             return;
         }
         els.source.value = text;
+        updateSourceMeta();
         if (!els.title.value.trim()) {
             els.title.value = file.name.replace(/\.(lua|txt)$/i, '').slice(0, 80);
         }
@@ -324,7 +456,79 @@ els.file.addEventListener('change', async () => {
     }
 });
 
-els.source.addEventListener('input', refreshButtons);
+const dropZone = document.getElementById('obf-drop');
+if (dropZone) {
+    ['dragenter', 'dragover'].forEach(type => {
+        dropZone.addEventListener(type, event => {
+            event.preventDefault();
+            dropZone.classList.add('is-drag');
+        });
+    });
+    ['dragleave', 'dragend'].forEach(type => {
+        dropZone.addEventListener(type, () => dropZone.classList.remove('is-drag'));
+    });
+    dropZone.addEventListener('drop', event => {
+        event.preventDefault();
+        dropZone.classList.remove('is-drag');
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        els.file.files = transfer.files;
+        els.file.dispatchEvent(new Event('change'));
+    });
+}
+
+els.run.closest('.obf-card')?.addEventListener('change', persistSettings);
+
+document.getElementById('obf-reset').addEventListener('click', () => {
+    applySettings(DEFAULT_SETTINGS);
+    try { localStorage.removeItem(SETTINGS_KEY); } catch { /* Storage may be blocked. */ }
+    setMessage(els.status, 'Build options reset to the defaults.', 'info');
+});
+
+document.getElementById('obf-paste').addEventListener('click', async () => {
+    try {
+        if (!navigator.clipboard?.readText) throw new Error('this browser blocks clipboard reads');
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) {
+            setMessage(els.status, 'The clipboard is empty.', 'error');
+            return;
+        }
+        els.source.value = text;
+        updateSourceMeta();
+        refreshButtons();
+        setMessage(els.status, `Pasted ${text.length.toLocaleString()} characters from the clipboard.`, 'info');
+    } catch (error) {
+        setMessage(els.status, `Could not read the clipboard: ${error.message || 'permission denied'}. Use Ctrl+V instead.`, 'error');
+    }
+});
+
+document.getElementById('obf-clear').addEventListener('click', async () => {
+    if (!els.source.value) return;
+    if (window.vxDialog) {
+        const confirmed = await window.vxDialog.confirm('Clear the source editor? The code is not saved anywhere yet.', {
+            title: 'Clear source', tone: 'warning', confirmLabel: 'Clear'
+        });
+        if (!confirmed) return;
+    }
+    els.source.value = '';
+    updateSourceMeta();
+    refreshButtons();
+    els.source.focus();
+});
+
+document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        if (!els.run.disabled) els.run.click();
+    }
+});
+
+els.source.addEventListener('input', () => {
+    updateSourceMeta();
+    refreshButtons();
+});
 els.title.addEventListener('input', () => {
     if (generated && !savedVaultId) {
         els.vaultStatus.classList.add('hidden');
@@ -348,21 +552,23 @@ els.run.addEventListener('click', async () => {
         return;
     }
 
-    const requestedLevel = els.level.value;
+    const requestedLevel = radioValue('obf-level', 'auto') || 'auto';
     const effectiveLevel = resolveObfuscationLevel(source, requestedLevel);
     const tamperCheck = requestedLevel === 'absolute' || els.tamper.checked;
     const expandedTransforms = requestedLevel === 'absolute' || (requestedLevel !== 'fast' && els.expanded.checked);
-    const layerChoice = Number(els.layers.value);
+    const layerChoice = Number(radioValue('obf-layers', ''));
     const armorLayers = Number.isFinite(layerChoice) && layerChoice > 0 ? Math.min(6, Math.floor(layerChoice)) : 0;
-    const junk = els.junk.value;
-    const layout = els.layout.value;
+    const junk = radioValue('obf-junk', 'normal');
+    const layout = radioValue('obf-layout', 'messy');
     const comments = els.comments.checked;
 
     running = true;
+    const startedAt = performance.now();
     setBusy(els.run, true, 'Obfuscating...');
     setMessage(els.status, `Running the VoidedX engine at ${effectiveLevel} strength...`, 'info');
     els.result.classList.add('hidden');
     els.vaultStatus.classList.add('hidden');
+    clearResultStats();
     savedVaultId = null;
 
     try {
@@ -397,13 +603,14 @@ els.run.addEventListener('click', async () => {
             els.output.value = '';
             els.output.placeholder = `Generated copy is ${(outputBytes / (1024 * 1024)).toFixed(1)} MiB. Use the download button.`;
         }
+        renderResultStats(generated, outputBytes, performance.now() - startedAt);
         els.result.classList.remove('hidden');
         refreshButtons();
         if (els.autodownload.checked) triggerDownload();
 
         try {
             await consumeToken();
-            setMessage(els.status, `Protected file generated at ${effectiveLevel} strength. ${credits} void token${credits === 1 ? '' : 's'} left today.`, 'success');
+            setMessage(els.status, `Protected file generated at ${effectiveLevel} strength · ${formatBytes(outputBytes)}. ${credits} void token${credits === 1 ? '' : 's'} left today.`, 'success');
         } catch (error) {
             if (error.status === 429) {
                 applyTokenState({ credits: 0, dailyRemaining: 0, dailyLimit, bonus, resetsAt });
@@ -553,4 +760,6 @@ function makeId(length) {
     return out;
 }
 
+restoreSettings();
+updateSourceMeta();
 loadSession();

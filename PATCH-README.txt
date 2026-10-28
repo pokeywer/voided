@@ -44,7 +44,7 @@ VOID TOKENS: 8 PER DAY
 
 Every account gets 8 void tokens per day for the obfuscator. A token is spent after a copy is generated; the allowance resets at 00:00 UTC and does not bank. Admins can add bonus tokens, which are spent after the daily ones and never expire, or clear an account's bonus balance from Admin → Void tokens.
 
-The public page (/obfuscation) no longer needs a link: it signs the browser in anonymously and spends that guest account's balance through /api/obfuscation-tokens. /obfuscate in Discord still issues a private link of the form https://voidedx.vercel.app/obfuscation?vx=<token> (with the /obfuscationvx=<token> rewrite) that uses the user's Discord balance; upload a .lua/.txt file or paste code in the command, or open the link and paste it there. Both paths expose strength, armor layers (1-6 or the strength default), junk preamble (off/normal/heavy), gibberish comments, messy or compact layout, tamper check, and extra string splitting, and the page can still save the generated copy to a new vault.
+The public page (/obfuscation) no longer needs a link: it signs the browser in anonymously and spends that guest account's balance through /api/obfuscation-tokens. /obfuscate in Discord still issues a private link of the form https://voidedx.vercel.app/obfuscation?vx=<token> (with the /obfuscationvx=<token> rewrite) that uses the user's Discord balance; upload a .lua/.txt file or paste code in the command, or open the link and paste it there. Both paths expose strength, armor layers (1-6 or the strength default), junk preamble (off/normal/heavy), gibberish comments, messy or compact layout, tamper check, and extra string splitting, and the page can still save the generated copy to a new vault. The page was rebuilt with segmented controls and switches instead of native selects, a token card that draws one segment per daily credit, a live source readout (characters, lines, bytes), result stats (size, characters, lines, build time) plus a chip row of the settings used, remembered build choices with a Reset button, Paste/Clear source tools with a confirmation dialog, Ctrl/Cmd+Enter to build, and the English/Português do Brasil switcher from i18n.js.
 
 Upload or replace these files together:
 
@@ -56,8 +56,9 @@ Upload or replace these files together:
   api/_route-admin-operations.js     (replaced) grant_tokens/revoke_tokens actions and grant history
   api/_discordConfig.js              (replaced) command description and option text
   api/[...path].js                   (replaced) registers both obfuscation routes
-  obfuscation.html                   (new) obfuscator page with the build options
-  obfuscation.js                     (new) page logic, token spend, obfuscation, download, vault save
+  obfuscation.html                   (replaced) rebuilt page: segmented controls, stat cards, source tools
+  obfuscation.js                     (replaced) token meter, result stats, remembered settings, shortcuts
+  i18n.js                            (replaced) English/Português do Brasil strings for the obfuscator page
   admin.html, admin.js, style.css    (replaced) Void tokens card for bonus grants
   index.html, script.js              (replaced) armor layers, junk preamble, layout, comments in the editor
   lua-voidedx-armor.js, lua-medium.js (replaced) configurable layers, junk count, comments, layout

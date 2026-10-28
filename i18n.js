@@ -397,7 +397,63 @@
         'Announcement status updated.': 'Status do aviso atualizado.', 'Announcement saved and published.': 'Aviso salvo e publicado.', 'Announcement saved and paused.': 'Aviso salvo e pausado.',
         'Idea marked as reviewed.': 'Ideia marcada como revisada.', 'Idea reopened.': 'Ideia reaberta.', 'Restore request sent to an administrator.': 'Solicitação enviada ao administrador.',
         'Restore request assigned for review.': 'Solicitação atribuída para análise.', 'Community script approved.': 'Script da comunidade aprovado.', 'Community script rejected.': 'Script da comunidade recusado.',
-        '1 error': '1 erro', 'errors': 'erros', 'warning': 'aviso', 'warnings': 'avisos', 'report': 'denúncia', 'reports': 'denúncias'
+        '1 error': '1 erro', 'errors': 'erros', 'warning': 'aviso', 'warnings': 'avisos', 'report': 'denúncia', 'reports': 'denúncias',
+
+        /* Obfuscator page */
+        'VoidedX // Obfuscator': 'VoidedX // Ofuscador',
+        'Checking your link': 'Verificando seu link', 'Loading your void tokens': 'Carregando suas fichas void',
+        'Loading your void tokens and any script sent from Discord.': 'Carregando suas fichas void e qualquer script enviado pelo Discord.',
+        'Preparing the obfuscator and counting today\'s allowance.': 'Preparando o ofuscador e contando a cota de hoje.',
+        'Link unavailable': 'Link indisponível', 'Run /obfuscate again in Discord to get a fresh link.': 'Use /obfuscate novamente no Discord para gerar um link novo.',
+        'Open the script editor': 'Abrir o editor de scripts', 'Could not load the obfuscator': 'Não foi possível carregar o ofuscador',
+        'Reload the page': 'Recarregar a página',
+        'VOIDEDX OBFUSCATOR': 'OFUSCADOR VOIDEDX', 'Your file.': 'Seu arquivo.', 'Protected.': 'Protegido.',
+        'Obfuscate a Lua or Luau script with the VoidedX engine, download the protected copy, or save it to a vault. Each successful obfuscation uses one void token; every account gets 8 tokens per day.':
+            'Ofusque um script Lua ou Luau com o motor VoidedX, baixe a cópia protegida ou salve em um cofre. Cada ofuscação bem-sucedida usa uma ficha void; cada conta recebe 8 fichas por dia.',
+        'Obfuscate a Lua or Luau script with the VoidedX engine, then download the protected copy or save it to a vault. Every account gets 8 void tokens per day; each successful obfuscation uses one, and admins can add bonus tokens.':
+            'Ofusque um script Lua ou Luau com o motor VoidedX, baixe a cópia protegida ou salve em um cofre. Cada conta recebe 8 fichas void por dia; cada ofuscação usa uma, e administradores podem adicionar fichas bônus.',
+        'This private link is tied to your Discord balance. Pick any options you want, obfuscate, and download the protected copy. Each run spends one of your 8 daily void tokens.':
+            'Este link privado está ligado ao seu saldo do Discord. Escolha as opções, ofusque e baixe a cópia protegida. Cada execução gasta uma das suas 8 fichas void diárias.',
+        'VOID TOKENS': 'FICHAS VOID', '8 / DAY': '8 / DIA', 'left today': 'restantes hoje',
+        'PROTECTION PIPELINE': 'PIPELINE DE PROTEÇÃO', 'ALL FIVE ON': 'TODOS ATIVOS',
+        'Strings sealed with a per-copy key.': 'Strings seladas com chave por cópia.',
+        'Opaque guards and decoy branches.': 'Guardas opacas e ramos falsos.',
+        'Constants rewritten every build.': 'Constantes reescritas a cada build.',
+        'Watermark tied to the build seed.': 'Marca d\'água ligada à semente do build.',
+        'Payload split and nested in shells.': 'Payload dividido e aninhado em camadas.',
+        'Source': 'Código', 'Build': 'Montagem', 'Result': 'Resultado', 'PROFILE 17': 'PERFIL 17', 'THIS BUILD': 'ESTE BUILD',
+        'Choose file': 'Escolher arquivo', 'Drop a .lua or .txt here, or paste below': 'Solte um .lua ou .txt aqui ou cole abaixo',
+        'Paste': 'Colar', 'Clear': 'Limpar', 'Reset': 'Redefinir', 'Reset the build options': 'Redefinir as opções de montagem',
+        'Paste the clipboard into the editor': 'Colar a área de transferência no editor', 'Clear the source editor': 'Limpar o editor de código',
+        'STRENGTH': 'NÍVEL', 'Auto picks the best preset': 'Auto escolhe o melhor preset', 'Auto': 'Auto', 'balanced': 'equilibrado',
+        'Fast': 'Rápido', 'smallest': 'menor', 'Low': 'Baixo', 'sealed strings': 'strings seladas', 'Medium': 'Médio',
+        '3-pass armor': 'armadura em 3 passos', 'High': 'Alto', 'hardened': 'reforçado', 'Absolute': 'Absoluto', 'maximum': 'máximo',
+        'ARMOR LAYERS': 'CAMADAS DE ARMADURA', 'More layers, slower startup': 'Mais camadas, início mais lento',
+        'JUNK PREAMBLE': 'RUÍDO INICIAL', 'Noise before the payload': 'Ruído antes do payload', 'Normal': 'Normal',
+        '16-29 blocks': '16-29 blocos', 'Heavy': 'Pesado', '34-55 blocks': '34-55 blocos', 'Off': 'Desligado', 'banner only': 'só o banner',
+        'OUTPUT LAYOUT': 'FORMATO DE SAÍDA', 'How the file reads': 'Como o arquivo aparece', 'Messy VM': 'VM bagunçada',
+        'scrambled style': 'estilo embaralhado', 'Compact': 'Compacto', 'long packed lines': 'linhas longas',
+        'FILE NAME': 'NOME DO ARQUIVO', 'Saved as .lua': 'Salvo como .lua',
+        'Tamper check': 'Verificação de adulteração', 'Rejects modified copies at load.': 'Rejeita cópias modificadas ao carregar.',
+        'More string splitting': 'Mais divisão de strings', 'Splits and re-joins more literals.': 'Divide e remonta mais literais.',
+        'Gibberish comments': 'Comentários sem sentido', 'Decoy notes salted through the file.': 'Notas falsas espalhadas pelo arquivo.',
+        'Download automatically': 'Baixar automaticamente', 'Saves the file when the build finishes.': 'Salva o arquivo quando a montagem termina.',
+        'Obfuscate & download': 'Ofuscar e baixar',
+        'SIZE': 'TAMANHO', 'CHARACTERS': 'CARACTERES', 'LINES': 'LINHAS', 'BUILD TIME': 'TEMPO DE MONTAGEM',
+        'Build settings used for this copy': 'Configurações usadas nesta cópia', 'Generated obfuscated script': 'Script ofuscado gerado',
+        'Download protected file': 'Baixar arquivo protegido', 'Store this build': 'Guardar esta montagem',
+        'Keeps the protected copy in a VoidedX vault under this browser\'s guest session, up to five per browser. Signed-in editors can manage the same vaults from the Creator Panel.':
+            'Guarda a cópia protegida em um cofre VoidedX nesta sessão de visitante, até cinco por navegador. Editores logados podem gerenciar os mesmos cofres pelo Painel do Criador.',
+        'Save to vault': 'Salvar em cofre',
+        '8 void tokens a day': '8 fichas void por dia', 'Refilled at 00:00 UTC. Admins can add bonus tokens, which are spent after the daily ones.':
+            'Renovadas às 00:00 UTC. Administradores podem adicionar fichas bônus, gastas depois das diárias.',
+        'Private by default': 'Privado por padrão', 'Website builds use this browser\'s guest account. A Discord link spends that balance, so keep it to yourself.':
+            'Montagens no site usam a conta de visitante deste navegador. Um link do Discord gasta aquele saldo, então não compartilhe.',
+        'Raises the bar': 'Aumenta a barreira', 'Obfuscation slows static analysis, but code that runs on a client can still be captured. Vaults with no executions are removed after 10 hours.':
+            'A ofuscação atrasa a análise estática, mas código que roda no cliente ainda pode ser capturado. Cofres sem execuções são removidos após 10 horas.',
+        'Build options reset to the defaults.': 'Opções de montagem redefinidas para o padrão.', 'The clipboard is empty.': 'A área de transferência está vazia.',
+        'Clear the source editor? The code is not saved anywhere yet.': 'Limpar o editor de código? O código ainda não foi salvo em lugar nenhum.',
+        'Clear source': 'Limpar código'
     };
 
     let language = 'en';
@@ -412,6 +468,9 @@
     const lastAttrs = new WeakMap();
     const ignoredTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'PRE', 'CODE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'SVG', 'CANVAS']);
     const ignoredContentSelector = '#site-announcement-title, #site-announcement-message, #announcement-preview-title, #announcement-preview-message, .vault-item-title, .script-card h3, .script-card-description, .script-card-game, .script-card-author, .script-author-copy, #detail-title, #detail-description, #detail-author, #detail-game, #ks-vault-title, #gui-preview-vault-name, #keyprompt-title strong, #getkey-title span, #secured-title strong:first-child, .admin-idea-header, .admin-idea-card > p, .admin-script-review-heading, .admin-script-review-item > p, .manage-user-name, .manage-user-meta, #panel-user-label, .creator-vault-title-block h3, .creator-vault-id, .creator-vault-executions';
+
+    const LEVEL_PT = { auto: 'automático', fast: 'rápido', low: 'baixo', medium: 'médio', high: 'alto', absolute: 'absoluto' };
+    function levelPt(value) { return LEVEL_PT[String(value).toLowerCase()] || value; }
 
     function normalize(value) { return String(value).replace(/\s+/g, ' ').trim(); }
     function translated(value) {
@@ -457,6 +516,14 @@
         }
         match = key.match(/^Showing “(.+)” from your vault\. This is the saved Luau source, not the website’s index\.html\.$/);
         if (match) return `${leading}Exibindo “${match[1]}” do seu cofre. Este é o código-fonte Luau salvo, não o index.html do site.${trailing}`;
+        match = key.match(/^left today \+ (\d+) bonus$/);
+        if (match) return `${leading}restantes hoje + ${match[1]} bônus${trailing}`;
+        match = key.match(/^Running the VoidedX engine at (\w+) strength\.\.\.$/);
+        if (match) return `${leading}Executando o motor VoidedX em nível ${levelPt(match[1])}...${trailing}`;
+        match = key.match(/^Protected file generated at (\w+) strength · (.+)\. (\d+) void tokens? left today\.$/);
+        if (match) return `${leading}Arquivo protegido gerado em nível ${levelPt(match[1])} · ${match[2]}. ${match[3]} ${Number(match[3]) === 1 ? 'ficha restante' : 'fichas restantes'} hoje.${trailing}`;
+        match = key.match(/^Pasted ([\d.,]+) characters from the clipboard\.$/);
+        if (match) return `${leading}${match[1]} caracteres colados da área de transferência.${trailing}`;
         match = key.match(/^Loaded "(.+)" into the editor\.$/);
         if (match) return `${leading}“${match[1]}” carregado no editor.${trailing}`;
         match = key.match(/^Error loading vaults: (.+)$/);
