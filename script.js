@@ -1298,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkVmProtection) chkVmProtection.checked = true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 16) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 17) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1656,7 +1656,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 16,
+            obfuscationProfileVersion: 17,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),

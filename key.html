@@ -143,8 +143,18 @@
         import { setEmbeddedTokenLoader } from './loader-ui.js';
 
         const params = new URLSearchParams(window.location.search);
-        const vaultId = (params.get('id') || '').trim();
-        const incomingTicket = (params.get('ticket') || '').trim();
+        // Providers that append their return code with "?hash=" can produce a
+        // doubled query string (?id=...?hash=...). Scan the raw query for the
+        // values so both forms work.
+        function queryValue(name) {
+            const direct = params.get(name);
+            if (direct) return direct.trim();
+            const match = window.location.search.match(new RegExp(`[?&]${name}=([^&#]*)`));
+            return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')).trim() : '';
+        }
+        const vaultId = queryValue('id');
+        const incomingTicket = queryValue('ticket');
+        const incomingHash = queryValue('hash');
 
         const $ = id => document.getElementById(id);
         const els = {
@@ -187,7 +197,15 @@
 
         let publicKey = null;
         let waitTimer = null;
+        let pollTimer = null;
         let busy = false;
+
+        const gatewayProvider = () => (publicKey && publicKey.gatewayProvider) || 'none';
+        const gatewayLabel = () => (publicKey && publicKey.gatewayLabel) || 'link step';
+        const isReturnProvider = () => ['linkvertise', 'workink'].includes(gatewayProvider());
+        const isPostbackProvider = () => gatewayProvider() === 'lootlabs';
+        const hasLinkStep = () => isReturnProvider() || isPostbackProvider() ||
+            !!(publicKey && publicKey.customLinkUrl && isSafeUrl(publicKey.customLinkUrl));
 
         const ticketStoreKey = () => `vx.keyTicket.${vaultId}`;
 
@@ -344,17 +362,41 @@
 
         function configureMode() {
             const label = els.steps[0].querySelector('.key-step-label');
-            if (publicKey.customLinkBlocked) {
+            els.openLinkBtn.disabled = false;
+            if (publicKey && publicKey.customLinkBlocked) {
                 label.textContent = 'Link unavailable';
                 els.openLinkBtn.disabled = true;
                 els.openLinkBtn.innerHTML = '<i class="fa-solid fa-link-slash"></i> Owner link is blocked';
                 els.linkHelp.classList.remove('hidden');
-                els.linkHelp.textContent = "The owner's custom link is blocked or invalid. Contact the vault owner for a working key link.";
+                els.linkHelp.textContent = "The owner's link step is blocked or invalid. Contact the vault owner for a working key link.";
                 setPhase('link');
                 return;
             }
-            if (publicKey.customLinkUrl && isSafeUrl(publicKey.customLinkUrl)) {
+            if (isReturnProvider()) {
+                label.textContent = `Open ${gatewayLabel()}`;
+                els.cardSubtitle.textContent = `This vault uses ${gatewayLabel()}. Complete the step once and you will be sent back here automatically.`;
+                els.openLinkBtn.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Open link';
+                els.finishedLinkBtn.classList.add('hidden');
+                setPhase('link');
+                return;
+            }
+            if (isPostbackProvider()) {
+                label.textContent = 'Open locker';
+                els.cardSubtitle.textContent = `This vault uses ${gatewayLabel()}. Complete the locker in the new tab — this page updates by itself.`;
+                els.openLinkBtn.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Open locker';
+                const pending = recallTicket();
+                if (pending) {
+                    els.finishedLinkBtn.classList.remove('hidden');
+                    els.finishedLinkBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Check again';
+                    els.linkHelp.classList.remove('hidden');
+                    els.linkHelp.textContent = 'Complete the locker, then this page picks up your key automatically. If it does not, tap "Check again".';
+                }
+                setPhase('link');
+                return;
+            }
+            if (publicKey && publicKey.customLinkUrl && isSafeUrl(publicKey.customLinkUrl)) {
                 label.textContent = 'Open link';
+                els.openLinkBtn.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Open link';
                 els.cardSubtitle.textContent = 'This vault uses a custom link step. Complete it once to receive your key.';
                 setPhase('link');
                 const pending = recallTicket();
@@ -366,7 +408,8 @@
                 return;
             }
             label.textContent = 'Start';
-            els.cardSubtitle.textContent = 'This vault issues a public key without a custom link.';
+            els.openLinkBtn.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Open link';
+            els.cardSubtitle.textContent = 'This vault issues a public key without a link step.';
             setPhase('idle');
         }
 
@@ -403,8 +446,10 @@
                 const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
                 if (!data.ok) throw new Error(data.message || 'The key request could not be started.');
                 if (data.requiresReturn) {
-                    // The owner added a custom link after this page was loaded.
-                    publicKey.customLinkUrl = data.gateUrl || publicKey.customLinkUrl;
+                    // The owner added a link step after this page was loaded.
+                    publicKey.gatewayProvider = data.provider || publicKey.gatewayProvider;
+                    publicKey.gatewayUrl = data.gateUrl || publicKey.gatewayUrl;
+                    publicKey.customLinkUrl = data.provider === 'custom' ? (data.gateUrl || publicKey.customLinkUrl) : '';
                     publicKey.customLinkBlocked = false;
                     configureMode();
                     showToast('The owner added a link step. Use the link button to continue.', 'info', 5000);
@@ -422,28 +467,46 @@
 
         async function openCustomLink() {
             if (busy) return;
-            const tab = window.open('about:blank', '_blank');
-            if (!tab) {
-                showToast('Allow pop-ups for this page, then tap the button again.', 'error', 6000);
-                return;
-            }
             busy = true;
             els.openLinkBtn.disabled = true;
-            try { tab.opener = null; } catch { /* ignore */ }
             try {
                 const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
                 if (!data.ok || !data.requiresReturn || !isSafeUrl(data.gateUrl)) {
-                    tab.close();
-                    throw new Error(data.message || 'The custom link could not be opened safely.');
+                    throw new Error(data.message || 'The link step could not be opened safely.');
                 }
                 rememberTicket(data.token, data.expiresAt);
-                tab.location.replace(data.gateUrl);
-                els.finishedLinkBtn.classList.remove('hidden');
-                els.linkHelp.classList.remove('hidden');
-                els.linkHelp.textContent = 'Link opened in a new tab. Finish the step there, then come back here and tap "I finished the step — continue".';
-                showToast('Finish the link step, then return to this page.', 'info', 6000);
+                stopPoll();
+                if (data.provider === 'lootlabs') {
+                    const tab = window.open(data.gateUrl, '_blank', 'noopener');
+                    if (!tab) {
+                        forgetTicket();
+                        throw new Error('Allow pop-ups for this page, then tap the button again.');
+                    }
+                    els.finishedLinkBtn.classList.remove('hidden');
+                    els.finishedLinkBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Check again';
+                    els.linkHelp.classList.remove('hidden');
+                    els.linkHelp.textContent = 'Finish the locker in the other tab. This page checks automatically every few seconds.';
+                    startStatusPoll(data.token);
+                    showToast('Finish the locker, then come back — the key appears on its own.', 'info', 6000);
+                } else if (data.provider === 'linkvertise' || data.provider === 'workink') {
+                    // Redirect home with ?hash= after the step, so the same tab finishes the flow.
+                    window.location.href = data.gateUrl;
+                } else {
+                    const tab = window.open('about:blank', '_blank');
+                    if (!tab) {
+                        forgetTicket();
+                        throw new Error('Allow pop-ups for this page, then tap the button again.');
+                    }
+                    try { tab.opener = null; } catch { /* ignore */ }
+                    tab.location.replace(data.gateUrl);
+                    els.finishedLinkBtn.classList.remove('hidden');
+                    els.finishedLinkBtn.innerHTML = '<i class="fa-solid fa-check"></i> I finished the step — continue';
+                    els.linkHelp.classList.remove('hidden');
+                    els.linkHelp.textContent = 'Link opened in a new tab. Finish the step there, then come back here and tap "I finished the step — continue".';
+                    showToast('Finish the link step, then return to this page.', 'info', 6000);
+                }
             } catch (err) {
-                showToast(err.message || 'The custom link could not be opened.', 'error', 6000);
+                showToast(err.message || 'The link step could not be opened.', 'error', 6000);
             } finally {
                 busy = false;
                 els.openLinkBtn.disabled = false;
@@ -475,10 +538,72 @@
             }
         }
 
+        async function gatewayReturn(ticket, hash) {
+            if (busy) return;
+            busy = true;
+            stopWait();
+            setPhase('waiting');
+            els.waitLabel.textContent = 'Checking the link step…';
+            els.waitFill.style.width = '0%';
+            els.waitSeconds.textContent = '…';
+            try {
+                const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=gateway-return`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticket, hash })
+                });
+                if (!data.ok) throw new Error(data.message || 'The link step could not be verified.');
+                rememberTicket(data.token || ticket, data.expiresAt || Date.now() + 20 * 60 * 1000);
+                startWait(data.token || ticket, data.waitMs, 'Issuing your key…');
+            } catch (err) {
+                showFlowFailure(err.message, 'Complete the link step again to get a fresh ticket.');
+            } finally {
+                busy = false;
+            }
+        }
+
+        async function checkStepStatus(ticket, quiet = true) {
+            const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=status&token=${encodeURIComponent(ticket)}`);
+            if (!data.ok) throw new Error(data.message || 'This link step expired.');
+            if (data.status === 'returned') {
+                stopPoll();
+                rememberTicket(ticket, data.expiresAt || Date.now() + 20 * 60 * 1000);
+                if (!quiet) showToast('Link step confirmed.', 'success', 3000);
+                startWait(ticket, data.waitMs, 'Issuing your key…');
+                return true;
+            }
+            if (!quiet) showToast('Not finished yet — complete the locker, then check again.', 'info', 4000);
+            return false;
+        }
+
+        function stopPoll() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function startStatusPoll(ticket) {
+            stopPoll();
+            let ticks = 0;
+            pollTimer = window.setInterval(async () => {
+                ticks += 1;
+                try {
+                    if (await checkStepStatus(ticket)) return;
+                } catch (err) {
+                    stopPoll();
+                    showFlowFailure(err.message);
+                    return;
+                }
+                if (ticks >= 100) stopPoll();
+            }, 3000);
+        }
+
         function showFlowFailure(message, label) {
             stopWait();
+            stopPoll();
             showToast(message || 'Something went wrong. Please try again.', 'error', 6000);
-            if (publicKey && publicKey.customLinkUrl && !publicKey.customLinkBlocked) {
+            if (publicKey && hasLinkStep() && !publicKey.customLinkBlocked) {
                 setPhase('link');
                 els.finishedLinkBtn.classList.remove('hidden');
                 if (label) {
@@ -535,6 +660,7 @@
 
         function resetFlow() {
             stopWait();
+            stopPoll();
             forgetTicket();
             els.finishedLinkBtn.classList.add('hidden');
             els.linkHelp.classList.add('hidden');
@@ -588,7 +714,17 @@
                 showOnly(els.card);
                 configureMode();
 
-                if (incomingTicket) {
+                if (incomingHash) {
+                    window.history.replaceState(null, document.title, `${window.location.pathname}?id=${encodeURIComponent(vaultId)}`);
+                    const pending = recallTicket();
+                    if (!pending) {
+                        showFlowFailure('This return link is missing its ticket. Start again from the key page.');
+                    } else if (!isReturnProvider()) {
+                        showFlowFailure('This vault does not use a return-verified link step.');
+                    } else {
+                        await gatewayReturn(pending.token, incomingHash);
+                    }
+                } else if (incomingTicket) {
                     window.history.replaceState(null, document.title, `${window.location.pathname}?id=${encodeURIComponent(vaultId)}`);
                     await verifyTicket(incomingTicket);
                 }
@@ -599,10 +735,18 @@
 
         els.getKeyBtn.addEventListener('click', startSimple);
         els.openLinkBtn.addEventListener('click', openCustomLink);
-        els.finishedLinkBtn.addEventListener('click', () => {
+        els.finishedLinkBtn.addEventListener('click', async () => {
             const pending = recallTicket();
             if (!pending) {
                 showToast('Open the link step first, then finish it and return here.', 'error', 5000);
+                return;
+            }
+            if (isPostbackProvider()) {
+                try {
+                    await checkStepStatus(pending.token, false);
+                } catch (err) {
+                    showFlowFailure(err.message, 'The link step expired. Open the locker again.');
+                }
                 return;
             }
             verifyTicket(pending.token);

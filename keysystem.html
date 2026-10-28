@@ -154,11 +154,31 @@
                                     </label>
                                 </div>
 
-                                <label class="panel-label" style="margin-top:8px; display:block;">CUSTOM LINK STEP (OPTIONAL)</label>
-                                <input type="url" id="public-custom-link-input" class="input-field" placeholder="https://your-link.example/…" autocomplete="off">
-                                <div class="info-box custom-link-help">
-                                    <i class="fa-solid fa-circle-info text-cyan"></i>
-                                    <p>Leave empty for a simple key page. Add an HTTPS link if visitors must complete a step first. The server adds a one-time <code>vx_ticket</code> to your link; send visitors back with the return template from the <em>Share link</em> tab.</p>
+                                <label class="panel-label" style="margin-top:8px; display:block;">LINK STEP (OPTIONAL)</label>
+                                <select id="public-gateway-provider" class="input-field" aria-label="Link step provider">
+                                    <option value="none">No link step</option>
+                                    <option value="linkvertise">Linkvertise — anti-bypass</option>
+                                    <option value="workink">Work.ink</option>
+                                    <option value="lootlabs">LootLabs — postback</option>
+                                    <option value="custom">Custom link — return ticket</option>
+                                </select>
+                                <div id="public-gateway-fields" class="hidden" style="margin-top:8px;">
+                                    <input type="url" id="public-gateway-url" class="input-field" placeholder="https://your-link.example/…" autocomplete="off">
+                                    <div id="public-gateway-secret-wrap" class="hidden" style="margin-top:8px;">
+                                        <input type="text" id="public-gateway-secret" class="input-field" placeholder="64-character Anti-Bypass token" autocomplete="off" spellcheck="false">
+                                        <p id="public-gateway-secret-status" class="key-inline-note"></p>
+                                    </div>
+                                    <div id="public-gateway-postback-wrap" class="hidden" style="margin-top:8px;">
+                                        <div class="key-input-row">
+                                            <input type="text" id="public-gateway-postback" class="input-field" readonly placeholder="Save the vault to generate the postback URL">
+                                            <button type="button" id="public-gateway-postback-copy" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy</button>
+                                        </div>
+                                        <p class="key-inline-note"><i class="fa-solid fa-circle-info"></i><span>Paste this as the Postback URL in LootLabs → Advanced. It contains a secret — share it only with LootLabs.</span></p>
+                                    </div>
+                                    <div class="info-box custom-link-help">
+                                        <i class="fa-solid fa-circle-info text-cyan"></i>
+                                        <p id="public-gateway-help">Leave this off for a simple key page. Choose a provider to require a completed step before a key is issued.</p>
+                                    </div>
                                 </div>
 
                                 <div class="key-toolbar" id="public-key-actions">
@@ -400,15 +420,15 @@
                             </div>
                         </div>
 
-                        <div class="ks-section-card">
+                        <div class="ks-section-card" id="keysystem-return-card">
                             <div class="ks-section-head">
                                 <div>
                                     <h2><i class="fa-solid fa-arrow-turn-down"></i> Return template</h2>
-                                    <p>Only needed if you set a custom link step. Use it as the reward destination in your link service.</p>
+                                    <p id="keysystem-return-intro">Only needed if you set a custom link step. Use it as the reward destination in your link service.</p>
                                 </div>
                             </div>
                             <div class="ks-link-row">
-                                <span class="ks-link-row-label"><i class="fa-solid fa-ticket"></i> One-time reward URL</span>
+                                <span class="ks-link-row-label" id="keysystem-return-label"><i class="fa-solid fa-ticket"></i> One-time reward URL</span>
                                 <div class="copy-input">
                                     <input type="text" id="keysystem-reward-output" readonly placeholder="Save this vault to generate a link">
                                 </div>
@@ -418,7 +438,7 @@
                             </div>
                             <div class="info-box">
                                 <i class="fa-solid fa-shield-halved text-cyan"></i>
-                                <p>Keep <code>{vx_ticket}</code> exactly as written and replace it with the ticket your custom link received. Each ticket is random, lasts 20 minutes, and works once. A normal URL cannot prove an external step was completed.</p>
+                                <p id="keysystem-return-help">Keep <code>{vx_ticket}</code> exactly as written and replace it with the ticket your custom link received. Each ticket is random, lasts 20 minutes, and works once. A normal URL cannot prove an external step was completed.</p>
                             </div>
                         </div>
                         <div id="keysystem-status" class="info-box keysystem-status"></div>

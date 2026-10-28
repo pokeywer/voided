@@ -1,12 +1,24 @@
 import { db } from './_admin.js';
 import { randomBytes } from 'node:crypto';
 import { isSafeExternalUrl } from './_safeExternalUrl.js';
+import {
+    decryptGatewaySecret,
+    gatewayConfig,
+    gatewayFailureMessage,
+    gatewayPublicView,
+    hashClientIp,
+    hashCompletion,
+    clientIp,
+    verifyGatewayCompletion,
+    withProviderTicket
+} from './_gateway.js';
 
 // Public endpoint behind key.html. Claims are stored as separate, random
 // Firestore documents and removed as soon as a key is issued.
 const WAIT_MS = 15000;
 const TICKET_TTL_MS = 20 * 60 * 1000;
 const PUBLIC_KEY_ID = 'k_public';
+const RETURN_VERIFIED_PROVIDERS = new Set(['linkvertise', 'workink']);
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json');
@@ -21,14 +33,18 @@ function randomKey() {
     return out;
 }
 
-function configuredGate(cfg) {
-    return String((cfg && cfg.customLinkUrl) || '').trim();
-}
-
 function makeGateUrl(baseUrl, ticket) {
     const url = new URL(baseUrl);
     url.searchParams.set('vx_ticket', ticket);
     return url.toString();
+}
+
+function ticketGateBase(claim) {
+    return String((claim && (claim.gateUrlBase || claim.gateUrl)) || '');
+}
+
+function startedAtFor(claim, hasGate) {
+    return hasGate ? claim.returnedAt : claim.startedAt;
 }
 
 export default async function handler(req, res) {
@@ -54,18 +70,34 @@ export default async function handler(req, res) {
                 return json(res, 400, { ok: false, message: 'This vault has no public key to get.' });
             }
 
-            const gateUrl = configuredGate(cfg);
-            if (gateUrl && !isSafeExternalUrl(gateUrl)) {
-                return json(res, 400, { ok: false, message: 'The owner’s custom link is blocked or invalid. Please contact the owner.' });
+            const gate = gatewayConfig(cfg);
+            const view = gatewayPublicView(cfg);
+            if (view.blocked) {
+                return json(res, 400, { ok: false, message: 'The owner’s link step is blocked or invalid. Please contact the owner.' });
             }
 
             const now = Date.now();
             const expiredClaims = await vaultRef.collection('keyClaims').where('expiresAt', '<=', now).limit(25).get();
             await Promise.all(expiredClaims.docs.map(doc => doc.ref.delete()));
             const ticket = randomBytes(32).toString('hex');
+            let gateUrl = '';
+            let responseUrl = '';
+            if (gate.hasGate) {
+                gateUrl = gate.url;
+                if (gate.provider === 'custom') {
+                    responseUrl = makeGateUrl(gate.url, ticket);
+                } else if (gate.provider === 'lootlabs') {
+                    responseUrl = withProviderTicket(gate.url, ticket);
+                } else {
+                    responseUrl = gate.url;
+                }
+            }
             await vaultRef.collection('keyClaims').doc(ticket).create({
-                status: gateUrl ? 'started' : 'ready',
+                status: gate.hasGate ? 'started' : 'ready',
+                provider: gate.provider,
                 gateUrl,
+                gateUrlBase: gate.url,
+                ipHash: hashClientIp(clientIp(req)),
                 startedAt: now,
                 expiresAt: now + TICKET_TTL_MS
             });
@@ -75,8 +107,100 @@ export default async function handler(req, res) {
                 token: ticket,
                 waitMs: WAIT_MS,
                 expiresAt: now + TICKET_TTL_MS,
-                requiresReturn: !!gateUrl,
-                gateUrl: gateUrl ? makeGateUrl(gateUrl, ticket) : ''
+                requiresReturn: gate.hasGate,
+                provider: gate.provider,
+                gateUrl: responseUrl,
+                postback: gate.provider === 'lootlabs'
+            });
+        }
+
+        if (action === 'gateway-return') {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return json(res, 405, { ok: false, message: 'Method not allowed.' });
+            }
+            const ticket = String((req.body && req.body.ticket) || '');
+            const hash = String((req.body && (req.body.hash || req.body.token)) || '').trim();
+            if (!/^[a-f0-9]{64}$/i.test(ticket)) {
+                return json(res, 400, { ok: false, message: 'The one-time ticket is missing or invalid. Start again.' });
+            }
+            if (!hash) return json(res, 400, { ok: false, message: 'The link step did not return a completion code.' });
+
+            const claimRef = vaultRef.collection('keyClaims').doc(ticket);
+            const [vaultSnap, claimSnap] = await Promise.all([vaultRef.get(), claimRef.get()]);
+            if (!vaultSnap.exists) return json(res, 404, { ok: false, message: 'Vault not found.' });
+            if (!claimSnap.exists) return json(res, 400, { ok: false, message: 'This link step expired. Start again.' });
+            const claim = claimSnap.data();
+            const vault = vaultSnap.data();
+            if (vault.launchPaused === true) return json(res, 423, { ok: false, message: 'This vault is temporarily paused by its owner.' });
+            if (Date.now() >= Number(claim.expiresAt)) return json(res, 400, { ok: false, message: 'This link step expired. Start again.' });
+            if (claim.status !== 'started') return json(res, 409, { ok: false, message: 'This link step was already used. Start again for a new key.' });
+
+            const gate = gatewayConfig(vault.publicKeyConfig);
+            if (!RETURN_VERIFIED_PROVIDERS.has(gate.provider) || gate.provider !== claim.provider) {
+                return json(res, 403, { ok: false, message: 'This vault does not use a return-verified link step.' });
+            }
+            if (ticketGateBase(claim) !== gate.url) {
+                return json(res, 403, { ok: false, message: 'The owner changed the link step. Start again from the key page.' });
+            }
+
+            const credentialsSnap = await db.collection('gatewayCredentials').doc(id).get();
+            const secret = decryptGatewaySecret(credentialsSnap.exists ? credentialsSnap.data() : null);
+            const verified = await verifyGatewayCompletion(gate.provider, secret, { hash });
+            if (!verified.ok) {
+                const status = verified.reason === 'unreachable' ? 502 : 403;
+                return json(res, status, { ok: false, message: gatewayFailureMessage(verified.reason) });
+            }
+
+            const fingerprint = hashCompletion(gate.provider, hash);
+            try {
+                await db.collection('gatewayCompletions').doc(`${id}_${fingerprint}`).create({
+                    vaultId: id,
+                    provider: gate.provider,
+                    claim: ticket,
+                    usedAt: Date.now(),
+                    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
+                });
+            } catch {
+                return json(res, 409, { ok: false, message: 'That completion was already used. Complete the link step again.' });
+            }
+
+            const now = Date.now();
+            await claimRef.update({
+                status: 'returned',
+                returnedAt: now,
+                completionHash: fingerprint.slice(0, 40)
+            });
+
+            return json(res, 200, {
+                ok: true,
+                token: ticket,
+                waitMs: WAIT_MS,
+                expiresAt: claim.expiresAt,
+                provider: gate.provider
+            });
+        }
+
+        if (action === 'status') {
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET');
+                return json(res, 405, { ok: false, message: 'Method not allowed.' });
+            }
+            if (!token || !/^[a-f0-9]{64}$/i.test(token)) {
+                return json(res, 400, { ok: false, message: 'Missing or invalid one-time ticket.' });
+            }
+            const claimSnap = await vaultRef.collection('keyClaims').doc(token).get();
+            if (!claimSnap.exists) return json(res, 400, { ok: false, message: 'This link step expired or was already used. Start again.' });
+            const claim = claimSnap.data();
+            if (Date.now() >= Number(claim.expiresAt)) {
+                return json(res, 400, { ok: false, message: 'This link step expired. Start again.' });
+            }
+            return json(res, 200, {
+                ok: true,
+                status: claim.status,
+                provider: claim.provider || 'none',
+                waitMs: WAIT_MS,
+                expiresAt: claim.expiresAt
             });
         }
 
@@ -103,13 +227,14 @@ export default async function handler(req, res) {
                 }
                 const cfg = vault.publicKeyConfig;
                 const claim = claimSnap.data();
-                if (!vaultSnap.data().requireKey || !cfg || !cfg.enabled || !configuredGate(cfg) || configuredGate(cfg) !== claim.gateUrl) {
+                const gate = gatewayConfig(cfg);
+                if (!vaultSnap.data().requireKey || !cfg || !cfg.enabled || gate.provider !== 'custom' || !gate.url || gate.url !== ticketGateBase(claim)) {
                     return { ok: false, status: 403, message: 'The custom link changed. Start again from the Get-Key page.' };
                 }
                 if (claim.status !== 'started' || Date.now() >= claim.expiresAt) {
                     return { ok: false, status: 400, message: 'This return ticket was already used or has expired. Start again.' };
                 }
-                if (!isSafeExternalUrl(claim.gateUrl)) {
+                if (!isSafeExternalUrl(gate.url)) {
                     return { ok: false, status: 403, message: 'The owner’s custom link is blocked or invalid.' };
                 }
 
@@ -145,19 +270,26 @@ export default async function handler(req, res) {
                     return { ok: false, status: 400, message: 'This vault has no public key to get.' };
                 }
                 const claim = claimSnap.data();
-                const gateUrl = configuredGate(cfg);
-                if (Date.now() >= claim.expiresAt || (gateUrl && gateUrl !== claim.gateUrl)) {
+                const gate = gatewayConfig(cfg);
+                const gateRequired = gate.hasGate;
+                if (Date.now() >= claim.expiresAt || (gateRequired && ticketGateBase(claim) !== gate.url)) {
                     tx.delete(claimRef);
-                    return { ok: false, status: 400, message: 'That request expired or the owner changed the custom link. Start again.' };
+                    return { ok: false, status: 400, message: 'That request expired or the owner changed the link step. Start again.' };
                 }
-                if (gateUrl && claim.status !== 'returned') {
-                    return { ok: false, status: 403, message: 'Return through the owner’s reward link before claiming this key.' };
+                if (gateRequired && claim.status !== 'returned') {
+                    return {
+                        ok: false,
+                        status: 403,
+                        message: gate.provider === 'lootlabs'
+                            ? 'Finish the locker, then come back — this page updates automatically.'
+                            : 'Return through the link step before claiming this key.'
+                    };
                 }
-                if (!gateUrl && claim.status !== 'ready') {
+                if (!gateRequired && claim.status !== 'ready') {
                     return { ok: false, status: 403, message: 'Start again from the Get-Key page.' };
                 }
 
-                const startedAt = gateUrl ? claim.returnedAt : claim.startedAt;
+                const startedAt = startedAtFor(claim, gateRequired);
                 if (!startedAt || Date.now() - startedAt < WAIT_MS) {
                     return { ok: false, status: 425, message: "Please wait — the timer isn't done yet." };
                 }
@@ -167,7 +299,7 @@ export default async function handler(req, res) {
                     !(k.durationDays && k.keyGeneratedAt && now >= k.keyGeneratedAt + k.durationDays * 86400000);
                 let activeKey;
 
-                if (gateUrl) {
+                if (gateRequired) {
                     activeKey = {
                         id: `k_custom_${randomBytes(12).toString('hex')}`,
                         label: cfg.label || 'Public Key',
@@ -179,7 +311,8 @@ export default async function handler(req, res) {
                         maxUsersUnlimited: !!cfg.maxUsersUnlimited,
                         boundUsers: [],
                         terminated: false,
-                        customLinkUrl: gateUrl,
+                        customLinkUrl: gate.url,
+                        gatewayProvider: gate.provider,
                         visibility: 'public',
                         autoGenerated: true,
                         issuedByCustomGate: true
@@ -215,7 +348,7 @@ export default async function handler(req, res) {
                     ok: true,
                     key: activeKey.key,
                     expiresAt: activeKey.durationDays ? activeKey.keyGeneratedAt + activeKey.durationDays * 86400000 : null,
-                    unique: !!gateUrl
+                    unique: !!gateRequired
                 };
             });
             return json(res, result.status || 200, result);
@@ -233,8 +366,7 @@ export default async function handler(req, res) {
         if (!cfg || !cfg.enabled) {
             return json(res, 200, { ok: true, requireKey: true, title: v.title || '', publicKey: null });
         }
-        const gateUrl = configuredGate(cfg);
-        const gateBlocked = !!gateUrl && !isSafeExternalUrl(gateUrl);
+        const view = gatewayPublicView(cfg);
         return json(res, 200, {
             ok: true,
             requireKey: true,
@@ -242,9 +374,11 @@ export default async function handler(req, res) {
             publicKey: {
                 label: cfg.label || 'Public Key',
                 durationDays: cfg.durationDays || null,
-                customLinkUrl: gateBlocked ? '' : gateUrl,
-                customLinkConfigured: !!gateUrl,
-                customLinkBlocked: gateBlocked
+                customLinkUrl: view.provider === 'custom' && !view.blocked ? view.url : '',
+                customLinkBlocked: view.blocked,
+                gatewayProvider: view.provider,
+                gatewayLabel: view.label,
+                gatewayUrl: view.url
             }
         });
     } catch (err) {

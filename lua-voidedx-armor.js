@@ -6,12 +6,22 @@
 // shuffled segments, and hidden behind a randomized Lua loader with integrity
 // checks. The inner VM settings are unchanged; this module only adds the
 // VoidedX container around them.
+//
+// The container itself is polymorphic: every build picks its own byte mixer
+// (add / subtract / affine), its own 32-bit state chain constants, its own
+// keystream shift, its own content mix weights, its own LZSS token layout, its
+// own buffer sizes, and its own identifier style. Two builds of the same
+// script share no constant and no decode shape, so a deobfuscator or a
+// pattern-recognizing tool has to be rewritten for each file instead of
+// replaying one reusable script.
 
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const WINDOW_SIZE = 65536;
 const MAX_MATCH = 130;
-const MIN_MATCH = 3;
-const FLUSH_BYTES = 192;
+const NAME_SYLLABLES = Object.freeze([
+    'ka', 'zu', 'mo', 're', 'ti', 'vo', 'ne', 'ra', 'sh', 'ul',
+    'ix', 'om', 'ep', 'an', 'yi', 'qu', 'da', 'po', 'fi', 'xe'
+]);
 
 const LEVEL_CONFIG = Object.freeze({
     fast: { segments: 6, passes: 1, depth: 24, dead: 1, robloxCheck: true, layers: 1 },
@@ -42,12 +52,44 @@ function randomInt(rng, maxExclusive) {
     return Math.floor(rng() * maxExclusive);
 }
 
+// Identifier shapes vary per build. Every component is assigned through this
+// factory, so two copies of the same script never share a local name and the
+// `_0x` convention that most dumpers key on is only used by some builds.
 function createNameFactory(rng) {
     const used = new Set();
+    const style = randomInt(rng, 4);
+    const emit = {
+        0: () => `_0x${randomInt(rng, 0xffffff).toString(16).padStart(6, '0')}`,
+        1: () => {
+            let name = '';
+            const count = 2 + randomInt(rng, 2);
+            for (let i = 0; i < count; i++) name += NAME_SYLLABLES[randomInt(rng, NAME_SYLLABLES.length)];
+            return `_${name}${randomInt(rng, 100)}`;
+        },
+        2: () => {
+            const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+            let name = '_';
+            const count = 6 + randomInt(rng, 4);
+            for (let i = 0; i < count; i++) name += charset[randomInt(rng, charset.length)];
+            return name;
+        },
+        3: () => {
+            const consonants = 'bcdfghjklmnpqrstvwxz';
+            const vowels = 'aeiou';
+            let name = '_';
+            const count = 4 + randomInt(rng, 4);
+            for (let i = 0; i < count; i++) {
+                name += i % 2 === 0
+                    ? consonants[randomInt(rng, consonants.length)]
+                    : vowels[randomInt(rng, vowels.length)];
+            }
+            return `${name}${randomInt(rng, 10)}`;
+        }
+    }[style];
     return () => {
         let name;
         do {
-            name = `_0x${randomInt(rng, 0xffffff).toString(16).padStart(6, '0')}`;
+            name = emit();
         } while (used.has(name));
         used.add(name);
         return name;
@@ -103,14 +145,79 @@ function weightedSum(bytes) {
     return total;
 }
 
-function addMask(bytes, key) {
+// ---------------------------------------------------------------------------
+// Polymorphic byte mixer
+//
+// Each build picks a reversible per-byte operation and a set of 32-bit state
+// constants. The state chain advances with the previous ciphertext byte and the
+// absolute offset, so the keystream cannot be regenerated without replaying the
+// whole stream in order — decoding a single segment in isolation yields noise.
+//
+// All arithmetic stays below 2^53 so JavaScript doubles and Lua doubles produce
+// bit-identical results on LuaJIT, Lua 5.4 and Luau.
+// ---------------------------------------------------------------------------
+const MASK_CAP = 4294967296;
+
+function maskSpec(rng) {
+    const kind = 1 + randomInt(rng, 3);
+    const odd = 2 * (1 + randomInt(rng, 127)) + 1;
+    let oddInv = 1;
+    for (let candidate = 1; candidate < 256; candidate += 2) {
+        if ((odd * candidate) % 256 === 1) { oddInv = candidate; break; }
+    }
+    return {
+        kind,
+        odd,
+        oddInv,
+        mul: 104729 + randomInt(rng, 950000),
+        inc: randomInt(rng, MASK_CAP),
+        shift: 16 + randomInt(rng, 9),
+        pMul: 1 + randomInt(rng, 65536),
+        qMul: 1 + randomInt(rng, 65536)
+    };
+}
+
+function maskByte(byte, keyByte, spec) {
+    if (spec.kind === 1) return (byte + keyByte) % 256;
+    if (spec.kind === 2) return (byte - keyByte + 256) % 256;
+    return (spec.odd * byte + keyByte) % 256;
+}
+
+function applyMask(bytes, key, spec) {
     const out = new Uint8Array(bytes.length);
-    let state = key % 4294967296;
+    const divisor = 2 ** spec.shift;
+    let state = key % MASK_CAP;
     for (let i = 0; i < bytes.length; i++) {
-        state = (state * 1664525 + 1013904223) % 4294967296;
-        out[i] = (bytes[i] + Math.floor(state / 16777216) % 256) % 256;
+        const keyByte = Math.floor(state / divisor) % 256;
+        const code = maskByte(bytes[i], keyByte, spec);
+        out[i] = code;
+        state = (state * spec.mul + spec.inc + code * spec.pMul + (i + 1) * spec.qMul) % MASK_CAP;
     }
     return out;
+}
+
+// The segment order is generated at runtime from a seed, so the delivered file
+// never carries a readable permutation table.
+function permutationSpec(rng) {
+    return {
+        seed: randomInt(rng, MASK_CAP),
+        mul: 65537 + randomInt(rng, 900000),
+        inc: randomInt(rng, MASK_CAP)
+    };
+}
+
+function buildPermutation(spec, count) {
+    const order = [];
+    for (let i = 1; i <= count; i++) order.push(i);
+    let state = spec.seed % MASK_CAP;
+    for (let k = count; k >= 2; k--) {
+        state = (state * spec.mul + spec.inc) % MASK_CAP;
+        const j = Math.floor((state / MASK_CAP) * k) + 1;
+        const tmp = order[k - 1];
+        order[k - 1] = order[j - 1];
+        order[j - 1] = tmp;
+    }
+    return order;
 }
 
 function splitSegments(bytes, requested) {
@@ -124,10 +231,13 @@ function splitSegments(bytes, requested) {
     return parts;
 }
 
-// Greedy LZSS with a 64 KiB window. Tokens:
-//   0..127  -> literal run of value+1 bytes
-//   128..255 -> match length (value-125) followed by a 16-bit offset
-function lzssCompress(bytes, depthLimit) {
+// Greedy LZSS with a 64 KiB window. The token split point and the minimum match
+// length are per-build, so the same script compresses into a different token
+// stream on every run:
+//   token < splitPoint  -> literal run of token+1 bytes
+//   token >= splitPoint -> match length (token - splitPoint + minMatch)
+//                          followed by a 16-bit offset
+function lzssCompress(bytes, depthLimit, minMatch, splitPoint, layout) {
     const n = bytes.length;
     if (n === 0) return new Uint8Array(0);
 
@@ -165,7 +275,7 @@ function lzssCompress(bytes, depthLimit) {
     let literalStart = 0;
     const flushLiterals = end => {
         while (literalStart < end) {
-            const len = Math.min(128, end - literalStart);
+            const len = Math.min(splitPoint, end - literalStart);
             emit(len - 1);
             for (let k = 0; k < len; k++) emit(bytes[literalStart + k]);
             literalStart += len;
@@ -198,11 +308,14 @@ function lzssCompress(bytes, depthLimit) {
             }
         }
 
-        if (bestLen >= MIN_MATCH) {
+        if (bestLen >= minMatch) {
             flushLiterals(i);
-            emit(128 + (bestLen - MIN_MATCH));
-            emit(bestOffset & 0xff);
-            emit((bestOffset >> 8) & 0xff);
+            emit(splitPoint + (bestLen - minMatch));
+            const storedOffset = bestOffset - layout.bias;
+            const lowByte = storedOffset & 0xff;
+            const highByte = (storedOffset >> 8) & 0xff;
+            emit(layout.bigEndian ? highByte : lowByte);
+            emit(layout.bigEndian ? lowByte : highByte);
             const end = i + bestLen;
             for (let k = i; k < end; k++) insert(k);
             i = end;
@@ -555,8 +668,34 @@ function messifyLua(code, rng) {
 
 function buildLoader(o) {
     const p = o.names;
+    const rng = o.rng;
+    const nextName = p.nextName;
+    // Every local inside the emitted loader is drawn from a fresh factory, so
+    // no two builds share an identifier even when the generated bodies match.
+    const locals = keys => {
+        const out = {};
+        for (const key of keys) out[key] = nextName();
+        return out;
+    };
     const lines = [];
     const add = line => lines.push(line);
+    const spec = o.mask;
+    const layout = o.lz;
+    const shiftDivisor = 2 ** spec.shift;
+    // Inert arithmetic padding. The result is always non-negative, so the
+    // branch is unreachable; it exists only to make each helper body differ
+    // from build to build.
+    const decoy = () => {
+        const a = 3 + randomInt(rng, 400);
+        const b = 5 + randomInt(rng, 300);
+        const c = 7 + randomInt(rng, 900);
+        const m = 29 + randomInt(rng, 200);
+        const name = nextName();
+        return [
+            `    local ${name}=(${a}*${b}+${c})%${m}`,
+            `    if ${name}<0 then return nil end`
+        ];
+    };
 
     add(`local ${p.sbyte},${p.schar},${p.ssub},${p.slen}=string.byte,string.char,string.sub,string.len`);
     add(`local ${p.sconcat}=table.concat`);
@@ -570,17 +709,19 @@ function buildLoader(o) {
     add(`local ${p.loadchunk}=load`);
     add(`local ${p.load}=${p.loadstr} or ${p.loadchunk}`);
     add(`do local ${p.alt}=${p.loadchunk} if ${p.load}==${p.loadchunk} then ${p.alt}=${p.loadstr} end`);
-    add(`if ${p.type}(${p.alt})=="function" and ${p.alt}~=${p.load} then local ok,f=${p.pcall}(${p.alt},"return 1") if ok and ${p.type}(f)=="function" then ${p.load}=${p.alt} end end end`);
+    add(`if ${p.type}(${p.alt})=="function" and ${p.alt}~=${p.load} then local ${p.okA},${p.fA}=${p.pcall}(${p.alt},"return 1") if ${p.okA} and ${p.type}(${p.fA})=="function" then ${p.load}=${p.alt} end end end`);
     add(`local ${p.debug}=debug`);
     add(`local ${p.gethook}=${p.debug} and ${p.debug}.gethook or nil`);
     add(`local ${p.getgenv}=type(getgenv)=="function" and getgenv or nil`);
-    add(`local ${p.msg}=function(t,k) local o="" for i=1,#t do o=o..${p.schar}((t[i]-k)%256) end return ${p.error}(o,0) end`);
+    const msgL = locals(['t', 'k', 'o', 'i']);
+    add(`local ${p.msg}=function(${msgL.t},${msgL.k}) local ${msgL.o}="" for ${msgL.i}=1,#${msgL.t} do ${msgL.o}=${msgL.o}..${p.schar}((${msgL.t}[${msgL.i}]-${msgL.k})%256) end return ${p.error}(${msgL.o},0) end`);
     add(`if not ${p.load} or not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
 
-    add(buildDeadLua(p.nextName, o.rng, o.dead));
+    add(buildDeadLua(nextName, rng, o.dead));
     add('');
 
+    const ck = locals(['ok', 'hook', 'expected', 'envOk', 'env']);
     add(`local ${p.check}=function()`);
     add(`    if string.byte~=${p.sbyte} or string.char~=${p.schar} or string.sub~=${p.ssub} or string.len~=${p.slen} then return false end`);
     add(`    if table.concat~=${p.sconcat} then return false end`);
@@ -591,180 +732,220 @@ function buildLoader(o) {
     // hook and records it in getgenv()._vxwd, so that one hook is allowed;
     // any other hook, or a marker pointing at a different function, blocks.
     add(`    if ${p.gethook} then`);
-    add(`        local ok,hook=${p.pcall}(${p.gethook})`);
-    add('        if ok and hook~=nil then');
-    add('            local expected=nil');
-    add(`            if ${p.getgenv} then local envOk,env=${p.pcall}(${p.getgenv}) if envOk and ${p.type}(env)=="table" then expected=env._vxwd end end`);
-    add('            if expected~=hook then return false end');
-    add('        end');
-    add('    end');
-    add('    return true');
-    add('end');
+    add(`        local ${ck.ok},${ck.hook}=${p.pcall}(${p.gethook})`);
+    add(`        if ${ck.ok} and ${ck.hook}~=nil then`);
+    add(`            local ${ck.expected}=nil`);
+    add(`            if ${p.getgenv} then local ${ck.envOk},${ck.env}=${p.pcall}(${p.getgenv}) if ${ck.envOk} and ${p.type}(${ck.env})=="table" then ${ck.expected}=${ck.env}._vxwd end end`);
+    add(`            if ${ck.expected}~=${ck.hook} then return false end`);
+    add(`        end`);
+    add(`    end`);
+    add(`    return true`);
+    add(`end`);
     add('');
 
     if (o.robloxCheck) {
+        const rb = locals(['players']);
         add(`local ${p.probe}=${p.pcall}(function()`);
-        add('    local players=game:GetService("Players")');
-        add('    return players~=nil');
-        add('end)');
+        add(`    local ${rb.players}=game:GetService("Players")`);
+        add(`    return ${rb.players}~=nil`);
+        add(`end)`);
         add(`if not ${p.probe} then return ${p.msg}(${o.messages.roblox.table},${o.messages.roblox.key}) end`);
         add('');
     }
 
+    const mapL = locals(['i']);
     add(`local ${p.alpha}=${splitAlphabetLiteral(o.alphabet, o.rng)}`);
     add(`local ${p.map}={}`);
-    add(`do local i=1 while i<=64 do ${p.map}[${p.sbyte}(${p.alpha},i)]=i-1 i=i+1 end end`);
+    add(`do local ${mapL.i}=1 while ${mapL.i}<=64 do ${p.map}[${p.sbyte}(${p.alpha},${mapL.i})]=${mapL.i}-1 ${mapL.i}=${mapL.i}+1 end end`);
     add('');
 
-    add(`local ${p.b64}=function(s)`);
-    add(`    local n=${p.slen}(s)`);
-    add('    local out={}');
-    add('    local on=0');
-    add('    local buf={}');
-    add('    local bn=0');
-    add('    local i=1');
-    add('    while i<=n do');
-    add(`        local c1=${p.map}[${p.sbyte}(s,i)] or 0`);
-    add(`        local c2=${p.map}[${p.sbyte}(s,i+1)] or 0`);
-    add(`        local c3=${p.map}[${p.sbyte}(s,i+2)] or 0`);
-    add(`        local c4=${p.map}[${p.sbyte}(s,i+3)] or 0`);
-    add('        local v=c1*262144+c2*4096+c3*64+c4');
-    add(`        bn=bn+1 buf[bn]=${p.floor}(v/65536)%256`);
-    add(`        if i+2<=n then bn=bn+1 buf[bn]=${p.floor}(v/256)%256 end`);
-    add(`        if i+3<=n then bn=bn+1 buf[bn]=v%256 end`);
-    add(`        if bn>=${FLUSH_BYTES} then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) buf={} bn=0 end`);
-    add('        i=i+4');
-    add('    end');
-    add(`    if bn>0 then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) end`);
-    add(`    return ${p.sconcat}(out)`);
-    add('end');
+    const b = locals(['s', 'n', 'out', 'on', 'buf', 'bn', 'i', 'c1', 'c2', 'c3', 'c4', 'v']);
+    add(`local ${p.b64}=function(${b.s})`);
+    add(`    local ${b.n}=${p.slen}(${b.s})`);
+    add(`    local ${b.out}={}`);
+    add(`    local ${b.on}=0`);
+    add(`    local ${b.buf}={}`);
+    add(`    local ${b.bn}=0`);
+    add(`    local ${b.i}=1`);
+    decoy().forEach(line => add(line));
+    add(`    while ${b.i}<=${b.n} do`);
+    add(`        local ${b.c1}=${p.map}[${p.sbyte}(${b.s},${b.i})] or 0`);
+    add(`        local ${b.c2}=${p.map}[${p.sbyte}(${b.s},${b.i}+1)] or 0`);
+    add(`        local ${b.c3}=${p.map}[${p.sbyte}(${b.s},${b.i}+2)] or 0`);
+    add(`        local ${b.c4}=${p.map}[${p.sbyte}(${b.s},${b.i}+3)] or 0`);
+    add(`        local ${b.v}=${b.c1}*262144+${b.c2}*4096+${b.c3}*64+${b.c4}`);
+    add(`        ${b.bn}=${b.bn}+1 ${b.buf}[${b.bn}]=${p.floor}(${b.v}/65536)%256`);
+    add(`        if ${b.i}+2<=${b.n} then ${b.bn}=${b.bn}+1 ${b.buf}[${b.bn}]=${p.floor}(${b.v}/256)%256 end`);
+    add(`        if ${b.i}+3<=${b.n} then ${b.bn}=${b.bn}+1 ${b.buf}[${b.bn}]=${b.v}%256 end`);
+    add(`        if ${b.bn}>=${o.flush.b64} then ${b.on}=${b.on}+1 ${b.out}[${b.on}]=${p.schar}(${p.sunpack}(${b.buf},1,${b.bn})) ${b.buf}={} ${b.bn}=0 end`);
+    add(`        ${b.i}=${b.i}+4`);
+    add(`    end`);
+    add(`    if ${b.bn}>0 then ${b.on}=${b.on}+1 ${b.out}[${b.on}]=${p.schar}(${p.sunpack}(${b.buf},1,${b.bn})) end`);
+    add(`    return ${p.sconcat}(${b.out})`);
+    add(`end`);
     add('');
 
-    add(`local ${p.unmask}=function(s,key)`);
-    add(`    local n=${p.slen}(s)`);
-    add('    local out={}');
-    add('    local on=0');
-    add('    local buf={}');
-    add('    local bn=0');
-    add('    local st=key%4294967296');
-    add('    local i=1');
-    add('    while i<=n do');
-    add(`        local ch=${p.sbyte}(s,i)`);
-    add('        st=(st*1664525+1013904223)%4294967296');
-    add(`        bn=bn+1 buf[bn]=(ch-${p.floor}(st/16777216)%256)%256`);
-    add(`        if bn>=${FLUSH_BYTES} then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) buf={} bn=0 end`);
-    add('        i=i+1');
-    add('    end');
-    add(`    if bn>0 then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) end`);
-    add(`    return ${p.sconcat}(out)`);
-    add('end');
+    const u = locals(['s', 'key', 'n', 'out', 'on', 'buf', 'bn', 'st', 'i', 'ch', 'k']);
+    const decodeExpr = spec.kind === 1
+        ? `(${u.ch}-${u.k})%256`
+        : spec.kind === 2
+            ? `(${u.ch}+${u.k})%256`
+            : `((${u.ch}-${u.k})*${spec.oddInv})%256`;
+    add(`local ${p.unmask}=function(${u.s},${u.key})`);
+    add(`    local ${u.n}=${p.slen}(${u.s})`);
+    add(`    local ${u.out}={}`);
+    add(`    local ${u.on}=0`);
+    add(`    local ${u.buf}={}`);
+    add(`    local ${u.bn}=0`);
+    add(`    local ${u.st}=${u.key}%4294967296`);
+    add(`    local ${u.i}=1`);
+    decoy().forEach(line => add(line));
+    add(`    while ${u.i}<=${u.n} do`);
+    add(`        local ${u.ch}=${p.sbyte}(${u.s},${u.i})`);
+    add(`        local ${u.k}=${p.floor}(${u.st}/${shiftDivisor})%256`);
+    add(`        ${u.bn}=${u.bn}+1 ${u.buf}[${u.bn}]=${decodeExpr}`);
+    add(`        ${u.st}=(${u.st}*${spec.mul}+${spec.inc}+${u.ch}*${spec.pMul}+${u.i}*${spec.qMul})%4294967296`);
+    add(`        if ${u.bn}>=${o.flush.unmask} then ${u.on}=${u.on}+1 ${u.out}[${u.on}]=${p.schar}(${p.sunpack}(${u.buf},1,${u.bn})) ${u.buf}={} ${u.bn}=0 end`);
+    add(`        ${u.i}=${u.i}+1`);
+    add(`    end`);
+    add(`    if ${u.bn}>0 then ${u.on}=${u.on}+1 ${u.out}[${u.on}]=${p.schar}(${p.sunpack}(${u.buf},1,${u.bn})) end`);
+    add(`    return ${p.sconcat}(${u.out})`);
+    add(`end`);
     add('');
 
-    add(`local ${p.inflate}=function(s)`);
-    add(`    local n=${p.slen}(s)`);
-    add('    local out={}');
-    add('    local on=0');
-    add('    local win={}');
-    add('    local wpos=0');
-    add('    local produced=0');
-    add('    local buf={}');
-    add('    local bn=0');
-    add('    local i=1');
-    add('    while i<=n do');
-    add(`        local c=${p.sbyte}(s,i)`);
-    add('        i=i+1');
-    add('        if c<128 then');
-    add('            local stop=i+c+1');
-    add('            while i<stop do');
-    add(`                local v=${p.sbyte}(s,i)`);
-    add('                i=i+1');
-    add('                bn=bn+1 buf[bn]=v');
-    add('                win[wpos]=v');
-    add('                wpos=wpos+1');
-    add('                if wpos==65536 then wpos=0 end');
-    add('                produced=produced+1');
-    add(`                if bn>=${FLUSH_BYTES} then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) buf={} bn=0 end`);
-    add('            end');
-    add('        else');
-    add('            local len=c-125');
-    add(`            local lo=${p.sbyte}(s,i) or 0`);
-    add(`            local hi=${p.sbyte}(s,i+1) or 0`);
-    add('            i=i+2');
-    add('            local off=lo+hi*256');
-    add('            if off<1 or off>produced then return nil end');
-    add('            local j=0');
-    add('            while j<len do');
-    add('                local v=win[(wpos-off)%65536]');
-    add('                bn=bn+1 buf[bn]=v');
-    add('                win[wpos]=v');
-    add('                wpos=wpos+1');
-    add('                if wpos==65536 then wpos=0 end');
-    add('                produced=produced+1');
-    add(`                if bn>=${FLUSH_BYTES} then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) buf={} bn=0 end`);
-    add('                j=j+1');
-    add('            end');
-    add('        end');
-    add('    end');
-    add(`    if bn>0 then on=on+1 out[on]=${p.schar}(${p.sunpack}(buf,1,bn)) end`);
-    add(`    return ${p.sconcat}(out)`);
-    add('end');
+    const f = locals(['s', 'n', 'out', 'on', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j']);
+    // b1/b2 are the two offset bytes in stream order; the expression turns them
+    // back into a distance using this build's byte order and bias.
+    const offsetExpr = (layout.bigEndian ? `${f.b1}*256+${f.b2}` : `${f.b2}*256+${f.b1}`)
+        + (layout.bias ? `+${layout.bias}` : '');
+    add(`local ${p.inflate}=function(${f.s})`);
+    add(`    local ${f.n}=${p.slen}(${f.s})`);
+    add(`    local ${f.out}={}`);
+    add(`    local ${f.on}=0`);
+    add(`    local ${f.win}={}`);
+    add(`    local ${f.wpos}=0`);
+    add(`    local ${f.produced}=0`);
+    add(`    local ${f.buf}={}`);
+    add(`    local ${f.bn}=0`);
+    add(`    local ${f.i}=1`);
+    decoy().forEach(line => add(line));
+    add(`    while ${f.i}<=${f.n} do`);
+    add(`        local ${f.c}=${p.sbyte}(${f.s},${f.i})`);
+    add(`        ${f.i}=${f.i}+1`);
+    add(`        if ${f.c}<${layout.splitPoint} then`);
+    add(`            local ${f.stop}=${f.i}+${f.c}+1`);
+    add(`            while ${f.i}<${f.stop} do`);
+    add(`                local ${f.v}=${p.sbyte}(${f.s},${f.i})`);
+    add(`                ${f.i}=${f.i}+1`);
+    add(`                ${f.bn}=${f.bn}+1 ${f.buf}[${f.bn}]=${f.v}`);
+    add(`                ${f.win}[${f.wpos}]=${f.v}`);
+    add(`                ${f.wpos}=${f.wpos}+1`);
+    add(`                if ${f.wpos}==65536 then ${f.wpos}=0 end`);
+    add(`                ${f.produced}=${f.produced}+1`);
+    add(`                if ${f.bn}>=${o.flush.inflate} then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) ${f.buf}={} ${f.bn}=0 end`);
+    add(`            end`);
+    add(`        else`);
+    add(`            local ${f.len}=${f.c}-${layout.splitPoint - layout.minMatch}`);
+    add(`            local ${f.b1}=${p.sbyte}(${f.s},${f.i}) or 0`);
+    add(`            local ${f.b2}=${p.sbyte}(${f.s},${f.i}+1) or 0`);
+    add(`            ${f.i}=${f.i}+2`);
+    add(`            local ${f.off}=${offsetExpr}`);
+    add(`            if ${f.off}<1 or ${f.off}>${f.produced} then return nil end`);
+    add(`            local ${f.j}=0`);
+    add(`            while ${f.j}<${f.len} do`);
+    add(`                local ${f.v}=${f.win}[(${f.wpos}-${f.off})%65536]`);
+    add(`                if ${f.v}==nil then return nil end`);
+    add(`                ${f.bn}=${f.bn}+1 ${f.buf}[${f.bn}]=${f.v}`);
+    add(`                ${f.win}[${f.wpos}]=${f.v}`);
+    add(`                ${f.wpos}=${f.wpos}+1`);
+    add(`                if ${f.wpos}==65536 then ${f.wpos}=0 end`);
+    add(`                ${f.produced}=${f.produced}+1`);
+    add(`                if ${f.bn}>=${o.flush.inflate} then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) ${f.buf}={} ${f.bn}=0 end`);
+    add(`                ${f.j}=${f.j}+1`);
+    add(`            end`);
+    add(`        end`);
+    add(`    end`);
+    add(`    if ${f.bn}>0 then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) end`);
+    add(`    return ${p.sconcat}(${f.out})`);
+    add(`end`);
     add('');
 
-    add(`local ${p.adler}=function(s)`);
-    add(`    local n=${p.slen}(s)`);
-    add('    local a=1');
-    add('    local b=0');
-    add('    local i=1');
-    add('    while i<=n do');
-    add(`        a=(a+${p.sbyte}(s,i))%65521`);
-    add('        b=(b+a)%65521');
-    add('        i=i+1');
-    add('    end');
-    add('    return b*65536+a');
-    add('end');
+    const ad = locals(['s', 'n', 'a', 'b', 'i']);
+    add(`local ${p.adler}=function(${ad.s})`);
+    add(`    local ${ad.n}=${p.slen}(${ad.s})`);
+    add(`    local ${ad.a}=1`);
+    add(`    local ${ad.b}=0`);
+    add(`    local ${ad.i}=1`);
+    decoy().forEach(line => add(line));
+    add(`    while ${ad.i}<=${ad.n} do`);
+    add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65521`);
+    add(`        ${ad.b}=(${ad.b}+${ad.a})%65521`);
+    add(`        ${ad.i}=${ad.i}+1`);
+    add(`    end`);
+    add(`    return ${ad.b}*65536+${ad.a}`);
+    add(`end`);
     add('');
 
-    add(`local ${p.sum2}=function(s)`);
-    add(`    local n=${p.slen}(s)`);
-    add('    local t=0');
-    add('    local i=1');
-    add('    while i<=n do');
-    add(`        t=(t+${p.sbyte}(s,i)*i)%4294967296`);
-    add('        i=i+1');
-    add('    end');
-    add('    return t');
-    add('end');
+    const sm = locals(['s', 'n', 't', 'i']);
+    add(`local ${p.sum2}=function(${sm.s})`);
+    add(`    local ${sm.n}=${p.slen}(${sm.s})`);
+    add(`    local ${sm.t}=0`);
+    add(`    local ${sm.i}=1`);
+    decoy().forEach(line => add(line));
+    add(`    while ${sm.i}<=${sm.n} do`);
+    add(`        ${sm.t}=(${sm.t}+${p.sbyte}(${sm.s},${sm.i})*${sm.i})%4294967296`);
+    add(`        ${sm.i}=${sm.i}+1`);
+    add(`    end`);
+    add(`    return ${sm.t}`);
+    add(`end`);
     add('');
 
     add(`local ${p.segs}={`);
     for (const segment of o.segments) add(`    ${luaString(segment.b64)},`);
     add('}');
     add(`local ${p.keys}={${o.segments.map(segment => numericExpr(segment.key, o.rng)).join(',')}}`);
-    add(`local ${p.order}={${o.segments.map(segment => segment.order).join(',')}}`);
     add(`local ${p.passKeys}={${o.passKeys.map(key => numericExpr(key, o.rng)).join(',')}}`);
     add(`local ${p.compLen}=${numericExpr(o.compressedLength, o.rng)}`);
     add(`local ${p.sum1}=${numericExpr(o.checksum1, o.rng)}`);
     add(`local ${p.sum3}=${numericExpr(o.checksum2, o.rng)}`);
     add('');
 
+    // Segment order is rebuilt at runtime from a seed, so the file carries no
+    // readable permutation table and the seed alone is useless without the
+    // matching step constants.
+    const ord = locals(['k', 'st', 'j']);
+    add(`local ${p.order}={}`);
+    add(`do`);
+    add(`    local ${ord.k}=1`);
+    add(`    while ${ord.k}<=${o.segments.length} do ${p.order}[${ord.k}]=${ord.k} ${ord.k}=${ord.k}+1 end`);
+    add(`    local ${ord.st}=${numericExpr(o.order.seed, o.rng)}%4294967296`);
+    add(`    for ${ord.k}=${o.segments.length},2,-1 do`);
+    add(`        ${ord.st}=(${ord.st}*${numericExpr(o.order.mul, o.rng)}+${numericExpr(o.order.inc, o.rng)})%4294967296`);
+    add(`        local ${ord.j}=${p.floor}(${ord.st}/4294967296*${ord.k})+1`);
+    add(`        ${p.order}[${ord.k}],${p.order}[${ord.j}]=${p.order}[${ord.j}],${p.order}[${ord.k}]`);
+    add(`    end`);
+    add(`end`);
+    add('');
+
+    const d = locals(['parts', 'i', 'data', 'k', 'raw']);
     add(`local ${p.decode}=function()`);
-    add('    local parts={}');
-    add(`    local i=1`);
-    add(`    while i<=${o.segments.length} do`);
-    add(`        parts[${p.order}[i]]=${p.unmask}(${p.b64}(${p.segs}[i]),${p.keys}[i])`);
-    add('        i=i+1');
-    add('    end');
-    add(`    local data=${p.sconcat}(parts)`);
-    add('    parts=nil');
-    add(`    local k=${o.passKeys.length}`);
-    add(`    while k>=1 do data=${p.unmask}(data,${p.passKeys}[k]) k=k-1 end`);
-    add(`    if ${p.slen}(data)~=${p.compLen} then return nil end`);
-    add(`    if ${p.adler}(data)~=${p.sum1} then return nil end`);
-    add(`    if ${p.sum2}(data)~=${p.sum3} then return nil end`);
-    add(`    local raw=${p.inflate}(data)`);
-    add('    data=nil');
-    add('    return raw');
-    add('end');
+    add(`    local ${d.parts}={}`);
+    add(`    local ${d.i}=1`);
+    add(`    while ${d.i}<=${o.segments.length} do`);
+    add(`        ${d.parts}[${p.order}[${d.i}]]=${p.unmask}(${p.b64}(${p.segs}[${d.i}]),${p.keys}[${d.i}])`);
+    add(`        ${d.i}=${d.i}+1`);
+    add(`    end`);
+    add(`    local ${d.data}=${p.sconcat}(${d.parts})`);
+    add(`    ${d.parts}=nil`);
+    add(`    local ${d.k}=${o.passKeys.length}`);
+    add(`    while ${d.k}>=1 do ${d.data}=${p.unmask}(${d.data},${p.passKeys}[${d.k}]) ${d.k}=${d.k}-1 end`);
+    add(`    if ${p.slen}(${d.data})~=${p.compLen} then return nil end`);
+    add(`    if ${p.adler}(${d.data})~=${p.sum1} then return nil end`);
+    add(`    if ${p.sum2}(${d.data})~=${p.sum3} then return nil end`);
+    add(`    local ${d.raw}=${p.inflate}(${d.data})`);
+    add(`    ${d.data}=nil`);
+    add(`    return ${d.raw}`);
+    add(`end`);
     add('');
 
     add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
@@ -773,20 +954,20 @@ function buildLoader(o) {
     add(`if not ${p.src} then return ${p.msg}(${o.messages.integrity.table},${o.messages.integrity.key}) end`);
     add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
     add(`local ${p.arg}=${p.src}`);
-    add(`local okProbe,probeFn=${p.pcall}(${p.load},function() return nil end)`);
-    add(`if okProbe and ${p.type}(probeFn)=="function" then`);
+    add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},function() return nil end)`);
+    add(`if ${p.okProbe} and ${p.type}(${p.probeFn})=="function" then`);
     add(`local ${p.pos}=0`);
     add(`${p.arg}=function()`);
     add(`if ${p.pos}>=${p.slen}(${p.src}) then return nil end`);
-    add(`local piece=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+4096)`);
+    add(`local ${p.piece}=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+4096)`);
     add(`${p.pos}=${p.pos}+4096`);
-    add('return piece');
-    add('end');
-    add('end');
+    add(`return ${p.piece}`);
+    add(`end`);
+    add(`end`);
     add(`local ${p.fn},${p.err}=${p.load}(${p.arg},"=${o.chunkName}")`);
-    add('if not ' + p.fn + ' then');
+    add(`if not ${p.fn} then`);
     add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
-    add('end');
+    add(`end`);
     add(`return ${p.fn}()`);
 
     return lines.join('\n');
@@ -830,29 +1011,101 @@ function buildBanner() {
     ].join('\n');
 }
 
-// Decorative statements only: every block is self-contained, uses literals, and
-// leaves no globals behind, so the preamble cannot change runtime behavior.
-function buildJunkCode(rng, count) {
-    const hex = value => '0x' + value.toString(16);
-    const lines = [];
-    for (let i = 0; i < count; i += 1) {
-        const name = '_0x' + randomInt(rng, 0xffffff).toString(16).padStart(6, '0');
-        const alt = '_0x' + randomInt(rng, 0xffffff).toString(16).padStart(6, '0');
-        const a = 1 + randomInt(rng, 0xffff);
-        const b = 1 + randomInt(rng, 0xff);
-        const c = 1 + randomInt(rng, 0xffff);
-        const mod = 2 + randomInt(rng, 250);
-        if (i % 3 === 0) {
-            lines.push(`do local ${name}=(${hex(a)}*${b}+${hex(c)})%${mod};if ${name}==-1 then ${name}=0 end end`);
-        } else if (i % 3 === 1) {
-            const values = [];
-            for (let k = 0; k < 3 + randomInt(rng, 4); k += 1) values.push(hex(1 + randomInt(rng, 0xff)));
-            lines.push(`do local ${name}={${values.join(',')}};local ${alt}=${name}[${1 + randomInt(rng, 2)}] or 0 end`);
-        } else {
-            lines.push(`do local ${name}=0;for ${alt}=1,${2 + randomInt(rng, 5)} do ${name}=${name}+${alt} end end`);
+// Identifiers built only from the characters that collide in most monospace
+// fonts (l/I/1, O/0/o, S/5, Z/2, B/8, G/6, q/9), so the preamble reads as noise
+// in a dump. A letter always starts the name, so every result is a legal Lua
+// identifier, and the factory never repeats one within a single build.
+const CONFUSABLE_HEADS = 'lIBDGgqOQSZ';
+const CONFUSABLE_TAILS = 'lI1O0oQ5S2Z8B6G9qg';
+
+function createConfusableFactory(rng) {
+    const used = new Set();
+    return () => {
+        for (;;) {
+            let name = CONFUSABLE_HEADS[randomInt(rng, CONFUSABLE_HEADS.length)];
+            const length = 5 + randomInt(rng, 8);
+            for (let i = 0; i < length; i += 1) {
+                name += CONFUSABLE_TAILS[randomInt(rng, CONFUSABLE_TAILS.length)];
+            }
+            if (used.has(name)) continue;
+            used.add(name);
+            return name;
         }
+    };
+}
+
+function noiseComment(rng) {
+    const glyphs = CONFUSABLE_TAILS;
+    const parts = [];
+    for (let word = 2 + randomInt(rng, 4); word > 0; word -= 1) {
+        let text = '';
+        for (let i = 3 + randomInt(rng, 8); i > 0; i -= 1) {
+            text += glyphs[randomInt(rng, glyphs.length)];
+        }
+        parts.push(text);
     }
-    return lines.join('\n');
+    return parts.join(' ');
+}
+
+// Decorative statements only: every block is self-contained, touches nothing but
+// its own `do ... end` locals, and leaves no globals behind. Two portability
+// rules hold for every shape: no empty statement (LuaJIT rejects `;;`) and no
+// bare-variable table keys (those would read a global instead of a name).
+function buildJunkCode(rng, count) {
+    const next = createConfusableFactory(rng);
+    const hex = value => '0x' + value.toString(16);
+    const small = () => 1 + randomInt(rng, 9);
+    const blocks = [];
+    for (let i = 0; i < count; i += 1) {
+        const a = next();
+        const b = next();
+        const c = next();
+        const mod = 2 + randomInt(rng, 251);
+        const shape = randomInt(rng, 14);
+        if (shape === 0) {
+            blocks.push(`do local ${a}=${hex(1 + randomInt(rng, 0xffff))};local ${b}=${hex(1 + randomInt(rng, 0xff))};`
+                + `local ${c}=(${a}*${b}+${hex(1 + randomInt(rng, 0xffff))})%${mod};if ${c}<0 then ${c}=0 end end`);
+        } else if (shape === 1) {
+            blocks.push(`do local ${a}=function(${b},${c})return (${b}+${c}*${hex(1 + randomInt(rng, 0xff))})%${mod} end;`
+                + `local ${c}=${a}(${small()},${small()});if ${c}<0 then ${c}=0 end end`);
+        } else if (shape === 2) {
+            blocks.push(`do local ${a}=${hex(1 + randomInt(rng, 0xffff))}+${(1 + randomInt(rng, 900)) / 8}*${small()}%${mod};`
+                + `local ${b}=${small()}e-${small()}*${1 + randomInt(rng, 99)};if ${a}<${b} then ${a}=${b} end end`);
+        } else if (shape === 3) {
+            blocks.push(`do local ${a}="\\108\\108\\49l1I\\48";local ${b}=#${a}+#"\\48\\48lI";if ${b}<0 then ${b}=0 end end`);
+        } else if (shape === 4) {
+            blocks.push(`do local ${a}=[==[ l1l1l 0O0oO lll lI1 ]==];if #${a}<0 then ${a}="" end end`);
+        } else if (shape === 5) {
+            blocks.push(`do local ${a}={["l1l"]=${small()},["0O0"]=true,["lI1"]=${hex(1 + randomInt(rng, 0xff))},`
+                + `["l11"]={["0O0"]=${small()}}};local ${b}=${a}["l1l"] or 0 end`);
+        } else if (shape === 6) {
+            blocks.push(`do local ${a}=0;repeat ${a}=${a}+1 until ${a}>=${small()} or ${a}<0 end`);
+        } else if (shape === 7) {
+            const rising = rng() < 0.5;
+            const from = rising ? small() : 20 + randomInt(rng, 40);
+            const to = rising ? 10 + randomInt(rng, 40) : small();
+            const step = (rising ? 1 : -1) * (1 + randomInt(rng, 3));
+            blocks.push(`do local ${a}=0;for ${b}=${from},${to},${step} do ${a}=${a}+${b} end end`);
+        } else if (shape === 8) {
+            blocks.push(`do local ${a}=${small()};do local ${a}=${a}+${hex(1 + randomInt(rng, 0xff))};`
+                + `do local ${a}=${a}%${mod};if ${a}<0 then ${a}=0 end end end end`);
+        } else if (shape === 9) {
+            blocks.push(`do local ${a}=${rng() < 0.5 ? 'true' : 'false'} and ${small()} or ${small()};`
+                + `local ${b}=tostring(${a})=="" and 0 or ${a};if ${b}<0 then ${b}=0 end end`);
+        } else if (shape === 10) {
+            blocks.push(`do local ${a}={["Mode"]="l11l",["Flag"]=true,["Retry"]=${small()}};`
+                + `local ${b}=${a}["Mode"]..${a}["Retry"];if #${b}<0 then ${b}="" end end`);
+        } else if (shape === 11) {
+            blocks.push(`do local ${a}=${small()};while ${a}>0 do ${a}=${a}-1 end end`);
+        } else if (shape === 12) {
+            blocks.push(`do local ${a}=("l1l1"):rep(${1 + randomInt(rng, 4)}).."0O0";local ${b}=${a}:len();if ${b}<0 then ${b}=0 end end`);
+        } else {
+            blocks.push(`do local ${a}=math.floor(${(1 + randomInt(rng, 4000)) / 16});`
+                + `local ${b}=math.abs(${a}-${small()});if ${b}<0 then ${b}=0 end end`);
+        }
+        if (rng() < 0.45) blocks.push('-- ' + noiseComment(rng));
+    }
+    return blocks.join('\n');
 }
 
 function armorOnce(source, config) {
@@ -864,38 +1117,38 @@ function armorOnce(source, config) {
     // Long inputs trade match depth for a bounded encode time so the browser
     // stays responsive on large Prometheus output.
     const depth = innerBytes.length > 512 * 1024 ? Math.min(config.depth, 24) : config.depth;
-    const compressed = lzssCompress(innerBytes, depth);
+    const layout = {
+        minMatch: 3 + randomInt(rng, 3),
+        // splitPoint + (MAX_MATCH - minMatch) must stay inside one byte.
+        splitPoint: 96 + randomInt(rng, 32),
+        bigEndian: rng() < 0.5,
+        bias: randomInt(rng, 2)
+    };
+    const compressed = lzssCompress(innerBytes, depth, layout.minMatch, layout.splitPoint, layout);
 
+    const spec = maskSpec(rng);
     let payload = compressed;
     const passKeys = [];
     const passes = Math.max(1, config.passes);
     for (let i = 0; i < passes; i++) {
-        const key = randomInt(rng, 4294967296);
+        const key = randomInt(rng, MASK_CAP);
         passKeys.push(key);
-        payload = addMask(payload, key);
+        payload = applyMask(payload, key, spec);
     }
 
     const parts = splitSegments(payload, config.segments);
-    const keys = [];
-    for (let i = 0; i < parts.length; i++) {
-        const key = randomInt(rng, 4294967296);
-        keys.push(key);
-        parts[i] = addMask(parts[i], key);
-    }
+    const keys = parts.map(() => randomInt(rng, MASK_CAP));
+    const masked = parts.map((bytes, index) => applyMask(bytes, keys[index], spec));
 
-    const order = parts.map((_, index) => index + 1);
-    for (let i = order.length - 1; i > 0; i--) {
-        const j = randomInt(rng, i + 1);
-        const tmp = order[i];
-        order[i] = order[j];
-        order[j] = tmp;
-    }
+    // The runtime rebuilds this same permutation from the seed, so only the
+    // seed and the two mixing constants are shipped.
+    const orderSpec = permutationSpec(rng);
+    const perm = buildPermutation(orderSpec, masked.length);
 
     const alphabet = shuffleAlphabet(rng);
-    const segments = order.map((logicalIndex, storedIndex) => ({
-        b64: base64Encode(parts[logicalIndex - 1], alphabet),
-        key: keys[logicalIndex - 1],
-        order: logicalIndex
+    const segments = perm.map(logical => ({
+        b64: base64Encode(masked[logical - 1], alphabet),
+        key: keys[logical - 1]
     }));
 
     const messageTexts = {
@@ -924,6 +1177,7 @@ function armorOnce(source, config) {
             sconcat: nextName(), sunpack: nextName(), floor: nextName(), type: nextName(),
             pcall: nextName(), rawequal: nextName(), error: nextName(), load: nextName(),
             loadstr: nextName(), loadchunk: nextName(), alt: nextName(), arg: nextName(), pos: nextName(),
+            okA: nextName(), fA: nextName(), okProbe: nextName(), probeFn: nextName(), piece: nextName(),
             debug: nextName(), gethook: nextName(), getgenv: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
             inflate: nextName(), adler: nextName(), sum2: nextName(), segs: nextName(),
@@ -937,6 +1191,14 @@ function armorOnce(source, config) {
         messages,
         chunkName,
         passKeys,
+        mask: spec,
+        lz: layout,
+        order: orderSpec,
+        flush: {
+            b64: 96 + randomInt(rng, 224),
+            unmask: 96 + randomInt(rng, 224),
+            inflate: 96 + randomInt(rng, 224)
+        },
         compressedLength: compressed.length,
         checksum1: adler32(compressed),
         checksum2: weightedSum(compressed),
@@ -971,7 +1233,9 @@ export function armorVoidedxSource(source, options = {}) {
     }
 
     const bannerRng = createRng();
-    return buildBanner() + '\n' + buildJunkCode(bannerRng, 16) + '\n' + text;
+    return buildBanner() + '\n'
+        + buildJunkCode(bannerRng, 16 + randomInt(bannerRng, 14)) + '\n'
+        + text;
 }
 
 export const ARMOR_LEVELS = Object.freeze(Object.keys(LEVEL_CONFIG));

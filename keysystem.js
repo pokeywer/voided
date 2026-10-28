@@ -121,6 +121,68 @@ function isSafeUrl(url) {
     }
 }
 
+// Mirrors api/_gateway.js: what each provider needs on the owner side.
+const GATEWAY_UI = {
+    none: {
+        label: 'No link step',
+        placeholder: '',
+        help: 'Leave this off for a simple key page. Choose a provider to require a completed step before a key is issued.',
+        secret: false,
+        postback: false,
+        status: ''
+    },
+    custom: {
+        label: 'Custom link',
+        placeholder: 'https://your-link.example/…',
+        help: 'Use any HTTPS reward page. Visitors come back with a one-time ticket from the Return template below, so the key page can prove the step ran.',
+        secret: false,
+        postback: false,
+        status: 'Copy the Return template from the Share link tab and use it as the reward destination.'
+    },
+    linkvertise: {
+        label: 'Linkvertise',
+        placeholder: 'https://linkvertise.com/…',
+        help: 'Enable Anti-Bypass on this Linkvertise link and set its destination to your Get-Key page. Paste the 64-character Anti-Bypass token below so the server can verify each finished step.',
+        secret: true,
+        postback: false,
+        status: 'Visitors are sent back here with a hash that the server verifies before issuing a key.'
+    },
+    workink: {
+        label: 'Work.ink',
+        placeholder: 'https://work.ink/…',
+        help: 'Set the destination of this Work.ink link to your Get-Key page. Work.ink appends ?hash= when the step finishes and the server checks it before issuing a key.',
+        secret: false,
+        postback: false,
+        status: 'Visitors are sent back here with a hash that the server verifies before issuing a key.'
+    },
+    lootlabs: {
+        label: 'LootLabs',
+        placeholder: 'https://lootlabs.gg/…',
+        help: 'Paste the postback URL below into LootLabs → Advanced. Every visitor gets a unique click_id, LootLabs reports it back, and the key page unlocks on its own. Keep that URL private — it contains a secret.',
+        secret: false,
+        postback: true,
+        status: 'The postback below confirms each finished locker before a key is issued.'
+    }
+};
+
+const GATEWAY_HOSTS = {
+    linkvertise: ['linkvertise.com', 'linkvertise.net', 'link-to.net'],
+    workink: ['work.ink'],
+    lootlabs: ['lootlabs.gg', 'lootlabs.com']
+};
+
+function gatewayHostAllowed(provider, url) {
+    if (!isSafeUrl(url)) return false;
+    const hosts = GATEWAY_HOSTS[provider];
+    if (!hosts) return true;
+    try {
+        const host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+        return hosts.some(domain => host === domain || host.endsWith(`.${domain}`));
+    } catch {
+        return false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const vaultId = urlParams.get('id');
@@ -143,7 +205,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const publicDurationCustom = document.getElementById('public-duration-custom');
     const publicMaxUsersInput = document.getElementById('public-maxusers-input');
     const publicUnlimitedToggle = document.getElementById('public-unlimited-toggle');
-    const publicCustomLinkInput = document.getElementById('public-custom-link-input');
+    const publicGatewayProvider = document.getElementById('public-gateway-provider');
+    const publicGatewayFields = document.getElementById('public-gateway-fields');
+    const publicCustomLinkInput = document.getElementById('public-gateway-url');
+    const publicGatewaySecretWrap = document.getElementById('public-gateway-secret-wrap');
+    const publicGatewaySecret = document.getElementById('public-gateway-secret');
+    const publicGatewaySecretStatus = document.getElementById('public-gateway-secret-status');
+    const publicGatewayPostbackWrap = document.getElementById('public-gateway-postback-wrap');
+    const publicGatewayPostback = document.getElementById('public-gateway-postback');
+    const publicGatewayPostbackCopy = document.getElementById('public-gateway-postback-copy');
+    const publicGatewayHelp = document.getElementById('public-gateway-help');
+    const keysystemReturnCard = document.getElementById('keysystem-return-card');
+    const keysystemReturnIntro = document.getElementById('keysystem-return-intro');
+    const keysystemReturnHelp = document.getElementById('keysystem-return-help');
     const publicRegenerateBtn = document.getElementById('public-regenerate-btn');
     const publicTerminateBtn = document.getElementById('public-terminate-btn');
     const publicKeyActions = document.getElementById('public-key-actions');
@@ -771,12 +845,98 @@ document.addEventListener('DOMContentLoaded', () => {
         publicMaxUsersInput.disabled = e.target.checked;
     });
 
+    let gatewayState = { provider: 'none', url: '', hasSecret: false, postbackUrl: '' };
+
+    function gatewaySelection() {
+        const provider = Object.prototype.hasOwnProperty.call(GATEWAY_UI, publicGatewayProvider.value)
+            ? publicGatewayProvider.value
+            : 'none';
+        return { provider, meta: GATEWAY_UI[provider] };
+    }
+
+    function updateShareTemplate() {
+        const { provider } = gatewaySelection();
+        const isCustom = provider === 'custom';
+        const getKeyUrl = `${window.location.origin}/key.html?id=${encodeURIComponent(vaultId)}`;
+        keysystemReturnCard.classList.toggle('hidden', !isCustom);
+        keysystemRewardOutput.value = isCustom ? `${getKeyUrl}&ticket={vx_ticket}` : '';
+    }
+
+    function renderGatewayUi() {
+        const { provider, meta } = gatewaySelection();
+        publicGatewayFields.classList.toggle('hidden', provider === 'none');
+        publicCustomLinkInput.placeholder = meta.placeholder;
+        publicGatewaySecretWrap.classList.toggle('hidden', !meta.secret);
+        if (!meta.secret) publicGatewaySecret.value = '';
+        publicGatewayPostbackWrap.classList.toggle('hidden', !meta.postback);
+        publicGatewayHelp.textContent = meta.help;
+        publicGatewaySecretStatus.textContent = !meta.secret
+            ? ''
+            : gatewayState.hasSecret
+                ? 'A token is saved. Leave this blank to keep it, or paste a new one to replace it.'
+                : 'Required — paste it once and it is stored encrypted on the server.';
+        publicGatewayPostback.value = meta.postback ? (gatewayState.postbackUrl || '') : '';
+        updateShareTemplate();
+    }
+
+    async function loadGatewaySettings() {
+        try {
+            const user = await waitForUser();
+            const token = await user.getIdToken();
+            const res = await fetch(`/api/gateway-config?id=${encodeURIComponent(vaultId)}`, {
+                headers: { authorization: `Bearer ${token}` }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) return;
+            if (Object.prototype.hasOwnProperty.call(GATEWAY_UI, data.provider)) {
+                publicGatewayProvider.value = data.provider;
+            }
+            publicCustomLinkInput.value = data.url || '';
+            gatewayState = {
+                provider: publicGatewayProvider.value,
+                url: publicCustomLinkInput.value,
+                hasSecret: !!data.hasSecret,
+                postbackUrl: data.postbackUrl || ''
+            };
+            renderGatewayUi();
+            renderPublicKeyStatus(getPublicKeyEntry({ keys: currentKeys }));
+        } catch {
+            // The vault document already hydrated the form; the GET only adds
+            // whether a secret is stored, so a failure here is not fatal.
+        }
+    }
+
+    async function saveGatewaySettings(provider, url, secret) {
+        const user = await waitForUser();
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/gateway-config?id=${encodeURIComponent(vaultId)}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ provider, url, secret })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) throw new Error(data.message || 'Could not save the link step.');
+        gatewayState.hasSecret = !!data.hasSecret;
+        gatewayState.postbackUrl = data.postbackUrl || '';
+        renderGatewayUi();
+        return data;
+    }
+
+    publicGatewayProvider.addEventListener('change', () => {
+        renderGatewayUi();
+        renderPublicKeyStatus(getPublicKeyEntry({ keys: currentKeys }));
+    });
+    publicCustomLinkInput.addEventListener('input', () => {
+        renderPublicKeyStatus(getPublicKeyEntry({ keys: currentKeys }));
+    });
+
     function renderPublicKeyStatus(entry) {
         updatePublicKeyPill();
         if (!chkPublicKey.checked) { publicKeyStatus.textContent = ''; return; }
-        if (publicCustomLinkInput.value.trim()) {
+        const { provider, meta } = gatewaySelection();
+        if (provider !== 'none' && publicCustomLinkInput.value.trim()) {
             publicKeyActions.classList.add('hidden');
-            publicKeyStatus.textContent = 'Link step enabled. Each completed return ticket issues a separate one-time key. Copy the return template from the Share link tab.';
+            publicKeyStatus.textContent = `${meta.label} link step is enabled. ${meta.status}`;
             return;
         }
         publicKeyActions.classList.remove('hidden');
@@ -924,6 +1084,10 @@ document.addEventListener('DOMContentLoaded', () => {
         copyLinkButton(keysystemCopyRewardBtn, keysystemRewardOutput.value, 'One-time return template copied.', 'Copy template');
     });
 
+    publicGatewayPostbackCopy.addEventListener('click', () => {
+        copyLinkButton(publicGatewayPostbackCopy, publicGatewayPostback.value, 'Postback URL copied.', 'Copy');
+    });
+
     if (keysystemCopyVaultLinkBtn) {
         keysystemCopyVaultLinkBtn.addEventListener('click', () => {
             copyLinkButton(keysystemCopyVaultLinkBtn, keysystemVaultLinkOutput.value, 'Vault link copied.', 'Copy link');
@@ -1028,7 +1192,15 @@ document.addEventListener('DOMContentLoaded', () => {
             publicMaxUsersInput.value = cfg.maxUsers || 1;
             publicMaxUsersInput.disabled = !!cfg.maxUsersUnlimited;
             publicUnlimitedToggle.checked = !!cfg.maxUsersUnlimited;
-            publicCustomLinkInput.value = cfg.customLinkUrl || '';
+            const gateway = cfg.gateway && typeof cfg.gateway === 'object' ? cfg.gateway : null;
+            if (gateway && Object.prototype.hasOwnProperty.call(GATEWAY_UI, gateway.provider)) {
+                publicGatewayProvider.value = gateway.provider;
+            } else {
+                publicGatewayProvider.value = cfg.customLinkUrl ? 'custom' : 'none';
+            }
+            publicCustomLinkInput.value = (gateway && gateway.url) || cfg.customLinkUrl || '';
+            gatewayState = { provider: publicGatewayProvider.value, url: publicCustomLinkInput.value, hasSecret: false };
+            renderGatewayUi();
             renderPublicKeyStatus(getPublicKeyEntry(data));
 
             chkGuiMode.checked = !!data.guiMode;
@@ -1084,6 +1256,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateKeysystemBadge();
             ksLoading.classList.add('hidden');
             ksContent.classList.remove('hidden');
+            loadGatewaySettings();
         } catch (err) {
             ksLoading.classList.add('hidden');
             ksErrorText.textContent = 'Something went wrong loading this vault: ' + err.message;
@@ -1100,9 +1273,29 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('One of your keys is empty — fill it in or delete that key.', 'error');
             return;
         }
-        if (chkKeySystem.checked && chkPublicKey.checked && !isSafeUrl(publicCustomLinkInput.value.trim())) {
-            showToast('Use a safe HTTPS custom link. Local, unsafe, adult-content, and blocked domains are not allowed.', 'error', 5000);
-            return;
+        const { provider: gatewayProvider, meta: gatewayMeta } = gatewaySelection();
+        const gatewayUrl = publicCustomLinkInput.value.trim();
+        const gatewaySecret = publicGatewaySecret.value.trim();
+        if (chkKeySystem.checked && chkPublicKey.checked && gatewayProvider !== 'none') {
+            if (!gatewayUrl) {
+                showToast(`Add the ${gatewayMeta.label} link visitors should open.`, 'error', 5000);
+                return;
+            }
+            if (!gatewayHostAllowed(gatewayProvider, gatewayUrl)) {
+                const hosts = GATEWAY_HOSTS[gatewayProvider];
+                showToast(hosts
+                    ? `Use an https:// ${gatewayMeta.label} link (${hosts.join(' or ')}).`
+                    : 'Use a safe HTTPS link. Local, IP, unsafe, adult-content, and blocked domains are not allowed.', 'error', 5000);
+                return;
+            }
+            if (gatewayProvider === 'linkvertise' && !gatewaySecret && !gatewayState.hasSecret) {
+                showToast('Paste the 64-character Anti-Bypass token from Linkvertise before saving.', 'error', 5000);
+                return;
+            }
+            if (gatewaySecret && !/^[a-f0-9]{64}$/i.test(gatewaySecret)) {
+                showToast('The Anti-Bypass token must be 64 hexadecimal characters.', 'error', 5000);
+                return;
+            }
         }
 
         const requireKey = chkKeySystem.checked;
@@ -1137,7 +1330,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 : parseInt(publicDurationVal, 10),
             maxUsers: Math.max(1, parseInt(publicMaxUsersInput.value, 10) || 1),
             maxUsersUnlimited: !!publicUnlimitedToggle.checked,
-            customLinkUrl: publicCustomLinkInput.value.trim()
+            customLinkUrl: gatewayProvider === 'custom' ? gatewayUrl : '',
+            gateway: {
+                provider: gatewayProvider,
+                url: gatewayProvider === 'none' ? '' : gatewayUrl
+            }
         };
 
         const originalHtml = keysystemApplyBtn.innerHTML;
@@ -1145,6 +1342,16 @@ document.addEventListener('DOMContentLoaded', () => {
         keysystemApplyBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Applying...';
 
         try {
+            // The route owns the provider credentials and re-validates the link;
+            // while the public key is off there is nothing live to verify.
+            if (requireKey && chkPublicKey.checked) {
+                await saveGatewaySettings(
+                    gatewayProvider,
+                    gatewayProvider === 'none' ? '' : gatewayUrl,
+                    gatewayProvider === 'linkvertise' ? gatewaySecret : ''
+                );
+            }
+
             const existingSnap = await getDoc(doc(db, "vaults", vaultId));
             const existing = existingSnap.exists() ? existingSnap.data() : {};
             const boundIp = ipLock ? (existing.boundIp || null) : null;
@@ -1169,6 +1376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(currentOwnerLegacy && auth.currentUser ? { uid: auth.currentUser.uid } : {})
             });
 
+            publicGatewaySecret.value = '';
             showToast('Key settings updated!', 'success');
             await loadVault();
         } catch (err) {

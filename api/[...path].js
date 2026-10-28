@@ -8,6 +8,8 @@ import adminVaults from './_route-admin-vaults.js';
 import announcements from './_route-announcements.js';
 import discordAdmin from './_route-discord-admin.js';
 import discordInteractions from './_route-discord-interactions.js';
+import gatewayConfig from './_route-gateway-config.js';
+import gatewayPostback from './_route-gateway-postback.js';
 import integrity from './_route-integrity.js';
 import keypage from './_route-keypage.js';
 import leaderboard from './_route-leaderboard.js';
@@ -31,6 +33,8 @@ const handlers = {
     announcements,
     'discord-admin': discordAdmin,
     'discord-interactions': discordInteractions,
+    'gateway-config': gatewayConfig,
+    'gateway-postback': gatewayPostback,
     integrity,
     keypage,
     leaderboard,
