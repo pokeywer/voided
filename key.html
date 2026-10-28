@@ -2,151 +2,216 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>VoidedX // Get Key</title>
     <link rel="icon" type="image/png" sizes="240x240" href="/voidedx-favicon.png?v=2">
     <link rel="shortcut icon" type="image/png" href="/voidedx-favicon.png?v=2">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1505057249528749" crossorigin="anonymous"></script>
+    <script defer src="/app-shell.js"></script>
     <script defer src="/i18n.js"></script>
 </head>
-<body>
+<body class="vx-app" data-vx-rail="public">
     <div class="shell">
-        <div class="promo-banner">
-            <i class="fa-solid fa-rocket promo-icon"></i>
-            <span><strong>VoidedX Script Vault</strong> — Fast, Free & Secure Roblox Script Hosting & Key System! Share your scripts safely.</span>
-            <a href="/" class="btn-promo"><i class="fa-solid fa-plus"></i> Create a Vault</a>
-        </div>
         <header class="top-nav">
             <a href="/" class="brand-unit brand-unit-link">
                 <img src="logo.png" alt="VoidedX" class="brand-icon-img">
                 <div class="brand-titles">
                     <span class="brand-name">VOIDEDX</span>
-                    <span class="brand-tag">FREE</span>
+                    <span class="brand-tag">KEY ACCESS</span>
                 </div>
             </a>
         </header>
 
-        <div class="flex-center">
-        <div class="vault-visitor-stack keys-page-stack">
+        <main class="key-main">
+            <div class="key-app">
+                <section class="key-hero">
+                    <div class="key-hero-badge"><i class="fa-solid fa-key"></i></div>
+                    <h1>Get your key <span id="hero-vault-name"></span></h1>
+                    <p id="key-subtitle">Loading this vault's key settings…</p>
+                    <div id="key-steps" class="key-steps hidden" aria-label="Key progress">
+                        <div class="key-step" data-step="1"><span class="key-step-dot">1</span><span class="key-step-label">Open link</span></div>
+                        <span class="key-step-line" aria-hidden="true"></span>
+                        <div class="key-step" data-step="2"><span class="key-step-dot">2</span><span class="key-step-label">Verify</span></div>
+                        <span class="key-step-line" aria-hidden="true"></span>
+                        <div class="key-step" data-step="3"><span class="key-step-dot">3</span><span class="key-step-label">Copy key</span></div>
+                    </div>
+                </section>
 
-            <!-- Loading -->
-            <div id="loading-state" class="secured-card">
-                <div class="shield-badge"><i class="fa-solid fa-spinner fa-spin text-cyan"></i></div>
-                <h2>Loading…</h2>
-                <p>Looking up this vault's key page.</p>
-            </div>
+                <section id="loading-state" class="key-state-card" aria-live="polite">
+                    <div class="key-state-icon"><i class="fa-solid fa-spinner fa-spin text-cyan"></i></div>
+                    <h2>Checking this key link</h2>
+                    <p>Looking up the vault and its key settings.</p>
+                </section>
 
-            <!-- Not found / no key system -->
-            <div id="error-state" class="secured-card hidden">
-                <div class="shield-badge"><i class="fa-solid fa-triangle-exclamation text-red"></i></div>
-                <h2>Key Page Unavailable</h2>
-                <p id="error-message">This vault doesn't exist or doesn't use a key system.</p>
-            </div>
+                <section id="error-state" class="key-state-card hidden" aria-live="polite">
+                    <div class="key-state-icon red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <h2 id="error-title">Key page unavailable</h2>
+                    <p id="error-message">This key link could not be opened.</p>
+                    <div id="error-detail-wrap" class="key-error-detail hidden"><span id="error-detail"></span></div>
+                    <div class="key-state-actions">
+                        <button id="retry-btn" type="button" class="btn-primary"><i class="fa-solid fa-rotate"></i> Try again</button>
+                        <a href="/" class="btn-ghost"><i class="fa-solid fa-house"></i> Go to VoidedX</a>
+                    </div>
+                </section>
 
-            <!-- Get Key cards -->
-            <div id="getkey-state" class="hidden keys-page-wrap">
-                <div class="secured-card keys-page-header">
-                    <div class="shield-badge"><i class="fa-solid fa-key text-cyan"></i></div>
-                    <h2 id="getkey-title">Get Your Key</h2>
-                    <p>Pick a key below, then paste the loadstring into your executor.</p>
-                </div>
-                <div id="keys-cards-list" class="keys-cards-list"></div>
+                <section id="key-card" class="key-card hidden">
+                    <div class="key-card-head">
+                        <div>
+                            <h2 id="vault-title">Vault</h2>
+                            <p id="card-subtitle">Get your access key below.</p>
+                        </div>
+                        <span id="key-pill" class="key-pill"><i class="fa-solid fa-key"></i> <span>Public key</span></span>
+                    </div>
+
+                    <div id="state-idle" class="key-workflow hidden">
+                        <ul class="key-instructions">
+                            <li><span class="num">1</span><span>Tap <strong>Get my key</strong>. VoidedX starts a short safety wait.</span></li>
+                            <li><span class="num">2</span><span>Keep this page open for <strong>15 seconds</strong> while it verifies.</span></li>
+                            <li><span class="num">3</span><span>Copy the key and the loadstring into your executor.</span></li>
+                        </ul>
+                        <div class="key-cta">
+                            <button id="get-key-btn" type="button" class="btn-primary"><i class="fa-solid fa-key"></i> Get my key</button>
+                        </div>
+                        <p class="key-inline-note"><i class="fa-solid fa-circle-info"></i><span>Keys are free. You never need to enter a Roblox password or account details on this page.</span></p>
+                    </div>
+
+                    <div id="state-link" class="key-workflow hidden">
+                        <ul class="key-instructions">
+                            <li><span class="num">1</span><span>Tap <strong>Open the link step</strong>. The owner's verification page opens in a new tab.</span></li>
+                            <li><span class="num">2</span><span>Finish the step there, then return through its <strong>reward / return link</strong>.</span></li>
+                            <li><span class="num">3</span><span>VoidedX verifies the one-time ticket and shows your key here.</span></li>
+                        </ul>
+                        <div class="key-tags">
+                            <span class="key-tag cyan"><i class="fa-solid fa-clock"></i> Link valid 20 min</span>
+                            <span class="key-tag"><i class="fa-solid fa-rotate-left"></i> One-time return</span>
+                        </div>
+                        <div class="key-cta">
+                            <button id="open-link-btn" type="button" class="btn-primary"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open the link step</button>
+                            <button id="finished-link-btn" type="button" class="btn-ghost hidden"><i class="fa-solid fa-circle-check"></i> I finished the step — continue</button>
+                        </div>
+                        <p class="key-inline-note"><i class="fa-solid fa-shield-halved"></i><span>If the new tab did not open, allow pop-ups for this site and tap the button again.</span></p>
+                        <div id="link-help" class="key-error-detail hidden"></div>
+                    </div>
+
+                    <div id="state-waiting" class="key-workflow hidden" aria-live="polite">
+                        <div class="key-wait">
+                            <div class="key-wait-timer"><span id="wait-seconds">15</span>s<small>Safety wait</small></div>
+                            <div class="key-progress-track"><div id="wait-fill" class="key-progress-fill"></div></div>
+                            <p id="wait-label">Verifying your request…</p>
+                        </div>
+                    </div>
+
+                    <div id="state-result" class="key-result hidden" aria-live="polite">
+                        <div class="key-tags">
+                            <span class="key-tag green"><i class="fa-solid fa-circle-check"></i> Key ready</span>
+                            <span id="expiry-tag" class="key-tag cyan hidden"><i class="fa-solid fa-clock"></i> <span id="expiry-text">--</span></span>
+                            <span id="permanent-tag" class="key-tag hidden"><i class="fa-solid fa-infinity"></i> Permanent</span>
+                        </div>
+                        <div class="key-value-box">
+                            <span class="key-value-label">Your key</span>
+                            <div id="key-value" class="key-value">VX-…</div>
+                            <div class="key-copy-row">
+                                <button id="copy-key-btn" type="button" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy key</button>
+                            </div>
+                        </div>
+                        <div class="key-value-box">
+                            <span class="key-value-label">Loadstring — paste into your executor</span>
+                            <div id="loadstring-value" class="key-loadstring">Building loadstring…</div>
+                            <div class="key-copy-row">
+                                <button id="copy-loadstring-btn" type="button" class="btn-accent" disabled><i class="fa-solid fa-copy"></i> Copy loadstring</button>
+                            </div>
+                        </div>
+                        <p id="one-time-note" class="key-inline-note hidden"><i class="fa-solid fa-triangle-exclamation"></i><span>This key was issued for a one-time custom-link return. Save it now — the same link cannot be reused.</span></p>
+                        <div class="key-cta">
+                            <a id="open-vault-btn" href="/" class="btn-primary"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open vault page</a>
+                            <button id="restart-btn" type="button" class="btn-ghost"><i class="fa-solid fa-rotate"></i> Start over</button>
+                        </div>
+                    </div>
+                </section>
+
+                <p class="key-footer">Powered by <a href="/">VoidedX</a> — free Roblox script hosting &amp; key system. <a href="/">Create your own vault</a>.</p>
             </div>
-        </div>
-        </div>
+        </main>
     </div>
 
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-    <!-- Template for one key card -->
-    <template id="key-page-card-template">
-        <div class="secured-card key-page-card">
-            <h3 class="key-page-card-title"><i class="fa-solid fa-key text-cyan"></i> <span class="key-page-label">Key</span></h3>
-
-            <div class="custom-link-step">
-                <p class="custom-link-text">Open the owner’s custom link, finish their step, then return using the reward link. Your one-time ticket expires after 20 minutes.</p>
-                <a class="btn-accent custom-link-button" href="#"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open custom link</a>
-            </div>
-
-            <div class="key-generate-block idle-block">
-                <button type="button" class="btn-primary get-key-btn"><i class="fa-solid fa-key"></i> Get Key</button>
-            </div>
-
-            <div class="key-generate-block loading-block hidden">
-                <div class="key-progress-track"><div class="key-progress-fill"></div></div>
-                <p class="key-progress-label">Verifying…</p>
-            </div>
-
-            <div class="key-ready-block hidden">
-                <div class="protection-tags">
-                    <span class="rotation-tag hidden"><i class="fa-solid fa-rotate"></i></span>
-                    <span class="expiry-tag hidden"><i class="fa-solid fa-clock"></i> <span class="expiry-text">--</span></span>
-                </div>
-                <p class="key-onetime-note hidden">This key was issued for one custom-link return ticket. The ticket cannot be reused. Copy and save your key now.</p>
-                <div class="loadstring-box">
-                    <label>Your Key:</label>
-                    <div class="copy-input">
-                        <input type="text" class="key-output" readonly>
-                        <button type="button" class="btn-accent copy-key-btn"><i class="fa-solid fa-copy"></i> Copy</button>
-                    </div>
-                </div>
-                <div class="loadstring-box">
-                    <label>Loadstring (paste into your executor):</label>
-                    <div class="copy-input">
-                        <input type="text" class="loadstring-output" readonly>
-                        <button type="button" class="btn-accent copy-ls-btn" disabled><i class="fa-solid fa-copy"></i> Copy</button>
-                    </div>
-                </div>
-                <a href="#" class="btn-ghost key-open-link open-vault-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open Vault Page</a>
-            </div>
-        </div>
-    </template>
-
     <script type="module">
         import { setEmbeddedTokenLoader } from './loader-ui.js';
 
-        const HOUR_MS = 60 * 60 * 1000;
+        const params = new URLSearchParams(window.location.search);
+        const vaultId = (params.get('id') || '').trim();
+        const incomingTicket = (params.get('ticket') || '').trim();
 
-        const loadingState = document.getElementById('loading-state');
-        const errorState = document.getElementById('error-state');
-        const errorMessage = document.getElementById('error-message');
-        const getkeyState = document.getElementById('getkey-state');
-        const getkeyTitle = document.getElementById('getkey-title');
-        const keysCardsList = document.getElementById('keys-cards-list');
-        const cardTemplate = document.getElementById('key-page-card-template');
+        const $ = id => document.getElementById(id);
+        const els = {
+            loading: $('loading-state'),
+            error: $('error-state'),
+            errorTitle: $('error-title'),
+            errorMessage: $('error-message'),
+            errorDetailWrap: $('error-detail-wrap'),
+            errorDetail: $('error-detail'),
+            retryBtn: $('retry-btn'),
+            card: $('key-card'),
+            heroName: $('hero-vault-name'),
+            subtitle: $('key-subtitle'),
+            stepsWrap: $('key-steps'),
+            vaultTitle: $('vault-title'),
+            cardSubtitle: $('card-subtitle'),
+            idle: $('state-idle'),
+            link: $('state-link'),
+            waiting: $('state-waiting'),
+            result: $('state-result'),
+            getKeyBtn: $('get-key-btn'),
+            openLinkBtn: $('open-link-btn'),
+            finishedLinkBtn: $('finished-link-btn'),
+            linkHelp: $('link-help'),
+            waitSeconds: $('wait-seconds'),
+            waitFill: $('wait-fill'),
+            waitLabel: $('wait-label'),
+            keyValue: $('key-value'),
+            loadstringValue: $('loadstring-value'),
+            copyKeyBtn: $('copy-key-btn'),
+            copyLoadstringBtn: $('copy-loadstring-btn'),
+            expiryTag: $('expiry-tag'),
+            expiryText: $('expiry-text'),
+            permanentTag: $('permanent-tag'),
+            oneTimeNote: $('one-time-note'),
+            openVaultBtn: $('open-vault-btn'),
+            restartBtn: $('restart-btn'),
+            steps: Array.from(document.querySelectorAll('.key-step'))
+        };
 
-        function showOnly(el) {
-            [loadingState, errorState, getkeyState].forEach(s => s.classList.add('hidden'));
-            el.classList.remove('hidden');
-        }
+        let publicKey = null;
+        let waitTimer = null;
+        let busy = false;
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str || '';
-            return div.innerHTML;
-        }
+        const ticketStoreKey = () => `vx.keyTicket.${vaultId}`;
 
         function showToast(message, type = 'info', duration = 4000) {
-            const container = document.getElementById('toast-container');
+            const container = $('toast-container');
             const icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' };
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fa-solid ${icons[type]} toast-icon"></i><span>${message}</span><button class="toast-close" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>`;
-            const remove = () => { toast.classList.add('leaving'); setTimeout(() => toast.remove(), 200); };
+            toast.innerHTML = `<i class="fa-solid ${icons[type]} toast-icon"></i><span></span><button class="toast-close" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>`;
+            toast.querySelector('span').textContent = message;
+            const remove = () => { toast.classList.add('leaving'); window.setTimeout(() => toast.remove(), 200); };
             toast.querySelector('.toast-close').addEventListener('click', remove);
             container.appendChild(toast);
-            if (duration > 0) setTimeout(remove, duration);
+            if (duration > 0) window.setTimeout(remove, duration);
         }
 
-        function generateRandomKey() {
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            let out = 'VX-';
-            const bytes = new Uint8Array(16);
-            crypto.getRandomValues(bytes);
-            for (const byte of bytes) out += chars[byte & 31];
-            return out;
+        function formatCountdown(msLeft) {
+            if (msLeft <= 0) return 'expired';
+            const d = Math.floor(msLeft / 86400000);
+            const h = Math.floor((msLeft % 86400000) / 3600000);
+            const m = Math.floor((msLeft % 3600000) / 60000);
+            if (d > 0) return `Expires in ${d}d ${h}h`;
+            if (h > 0) return `Expires in ${h}h ${m}m`;
+            return `Expires in ${m}m`;
         }
 
         // Mirror the server-side HTTPS and destination checks before exposing a link.
@@ -168,283 +233,403 @@
             }
         }
 
-        function getVaultKeys(data) {
-            if (Array.isArray(data.keys) && data.keys.length > 0) return data.keys;
-            if (data.requireKey && data.key) {
-                return [{
-                    id: 'k_legacy', label: 'Main Key', key: data.key, priority: 1,
-                    durationDays: null, keyGeneratedAt: data.keyGeneratedAt || null,
-                    maxUsersUnlimited: true, terminated: false, visibility: 'public'
-                }];
+        async function getJson(url, options) {
+            const response = await fetch(url, options);
+            let data;
+            try { data = await response.json(); } catch { data = { ok: false, message: `Server returned ${response.status}.` }; }
+            return data;
+        }
+
+        async function copyText(text) {
+            if (!text) return false;
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                const area = document.createElement('textarea');
+                area.value = text;
+                area.setAttribute('readonly', '');
+                area.style.position = 'fixed';
+                area.style.top = '-1000px';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
+                area.setSelectionRange(0, text.length);
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch { ok = false; }
+                area.remove();
+                return ok;
             }
-            return [];
         }
 
-        function formatCountdown(msLeft) {
-            if (msLeft <= 0) return 'expired';
-            const d = Math.floor(msLeft / 86400000);
-            const h = Math.floor((msLeft % 86400000) / 3600000);
-            return d > 0 ? `Expires in ${d}d ${h}h` : `Expires in ${h}h`;
+        function flashButton(button, iconClass, label) {
+            if (!button) return;
+            const original = button.innerHTML;
+            button.innerHTML = `<i class="fa-solid ${iconClass}"></i> ${label}`;
+            window.setTimeout(() => { button.innerHTML = original; }, 1800);
         }
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const vaultId = urlParams.get('id');
+        function setSteps(activeIndex, allDone = false) {
+            els.steps.forEach((step, index) => {
+                const done = allDone || index < activeIndex;
+                step.classList.toggle('done', done);
+                step.classList.toggle('active', !allDone && index === activeIndex);
+                step.querySelector('.key-step-dot').innerHTML = done ? '<i class="fa-solid fa-check"></i>' : String(index + 1);
+            });
+        }
+
+        function setPhase(phase) {
+            [els.idle, els.link, els.waiting, els.result].forEach(node => node.classList.add('hidden'));
+            if (phase === 'idle') {
+                els.idle.classList.remove('hidden');
+                setSteps(0);
+            } else if (phase === 'link') {
+                els.link.classList.remove('hidden');
+                setSteps(0);
+            } else if (phase === 'waiting') {
+                els.waiting.classList.remove('hidden');
+                setSteps(1);
+            } else if (phase === 'result') {
+                els.result.classList.remove('hidden');
+                setSteps(2, true);
+            }
+        }
+
+        function showOnly(node) {
+            [els.loading, els.error, els.card].forEach(section => section.classList.add('hidden'));
+            node.classList.remove('hidden');
+            els.stepsWrap.classList.toggle('hidden', node !== els.card);
+        }
+
+        function showError({ title, message, detail = '', retry = true, subtitle = 'Key access is unavailable for this link.' }) {
+            stopWait();
+            els.subtitle.textContent = subtitle;
+            els.errorTitle.textContent = title;
+            els.errorMessage.textContent = message;
+            els.errorDetailWrap.classList.toggle('hidden', !detail);
+            els.errorDetail.textContent = detail;
+            els.retryBtn.classList.toggle('hidden', !retry);
+            showOnly(els.error);
+        }
+
+        function stopWait() {
+            if (waitTimer) {
+                clearInterval(waitTimer);
+                waitTimer = null;
+            }
+        }
+
+        function rememberTicket(token, expiresAt) {
+            try { sessionStorage.setItem(ticketStoreKey(), JSON.stringify({ token, expiresAt })); } catch { /* private mode */ }
+        }
+
+        function recallTicket() {
+            try {
+                const raw = sessionStorage.getItem(ticketStoreKey());
+                if (!raw) return null;
+                const stored = JSON.parse(raw);
+                if (!stored || !stored.token || !stored.expiresAt || Date.now() >= stored.expiresAt) {
+                    sessionStorage.removeItem(ticketStoreKey());
+                    return null;
+                }
+                return stored;
+            } catch {
+                return null;
+            }
+        }
+
+        function forgetTicket() {
+            try { sessionStorage.removeItem(ticketStoreKey()); } catch { /* ignore */ }
+        }
+
+        function configureMode() {
+            const label = els.steps[0].querySelector('.key-step-label');
+            if (publicKey.customLinkBlocked) {
+                label.textContent = 'Link unavailable';
+                els.openLinkBtn.disabled = true;
+                els.openLinkBtn.innerHTML = '<i class="fa-solid fa-link-slash"></i> Owner link is blocked';
+                els.linkHelp.classList.remove('hidden');
+                els.linkHelp.textContent = "The owner's custom link is blocked or invalid. Contact the vault owner for a working key link.";
+                setPhase('link');
+                return;
+            }
+            if (publicKey.customLinkUrl && isSafeUrl(publicKey.customLinkUrl)) {
+                label.textContent = 'Open link';
+                els.cardSubtitle.textContent = 'This vault uses a custom link step. Complete it once to receive your key.';
+                setPhase('link');
+                const pending = recallTicket();
+                if (pending) {
+                    els.finishedLinkBtn.classList.remove('hidden');
+                    els.linkHelp.classList.remove('hidden');
+                    els.linkHelp.textContent = 'You already started this step in this browser. Finish it, then tap "I finished the step — continue".';
+                }
+                return;
+            }
+            label.textContent = 'Start';
+            els.cardSubtitle.textContent = 'This vault issues a public key without a custom link.';
+            setPhase('idle');
+        }
+
+        function startWait(token, waitMs, label) {
+            stopWait();
+            const total = Math.max(1000, waitMs || 15000);
+            const deadline = Date.now() + total;
+            els.waitLabel.textContent = label || 'Verifying your request…';
+            els.waitFill.style.width = '0%';
+            els.waitSeconds.textContent = String(Math.ceil(total / 1000));
+            setPhase('waiting');
+            const tick = () => {
+                const left = Math.max(0, deadline - Date.now());
+                const pct = Math.min(100, ((total - left) / total) * 100);
+                els.waitFill.style.width = `${pct}%`;
+                els.waitSeconds.textContent = String(Math.ceil(left / 1000));
+                if (left <= 0) {
+                    stopWait();
+                    claimKey(token);
+                }
+            };
+            tick();
+            waitTimer = window.setInterval(tick, 100);
+        }
+
+        async function startSimple() {
+            if (busy) return;
+            busy = true;
+            els.getKeyBtn.disabled = true;
+            els.waitLabel.textContent = 'Starting the safety wait…';
+            els.waitFill.style.width = '0%';
+            setPhase('waiting');
+            try {
+                const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
+                if (!data.ok) throw new Error(data.message || 'The key request could not be started.');
+                if (data.requiresReturn) {
+                    // The owner added a custom link after this page was loaded.
+                    publicKey.customLinkUrl = data.gateUrl || publicKey.customLinkUrl;
+                    publicKey.customLinkBlocked = false;
+                    configureMode();
+                    showToast('The owner added a link step. Use the link button to continue.', 'info', 5000);
+                    return;
+                }
+                rememberTicket(data.token, data.expiresAt);
+                startWait(data.token, data.waitMs, 'Issuing your key…');
+            } catch (err) {
+                showFlowFailure(err.message);
+            } finally {
+                busy = false;
+                els.getKeyBtn.disabled = false;
+            }
+        }
+
+        async function openCustomLink() {
+            if (busy) return;
+            const tab = window.open('about:blank', '_blank');
+            if (!tab) {
+                showToast('Allow pop-ups for this page, then tap the button again.', 'error', 6000);
+                return;
+            }
+            busy = true;
+            els.openLinkBtn.disabled = true;
+            try { tab.opener = null; } catch { /* ignore */ }
+            try {
+                const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
+                if (!data.ok || !data.requiresReturn || !isSafeUrl(data.gateUrl)) {
+                    tab.close();
+                    throw new Error(data.message || 'The custom link could not be opened safely.');
+                }
+                rememberTicket(data.token, data.expiresAt);
+                tab.location.replace(data.gateUrl);
+                els.finishedLinkBtn.classList.remove('hidden');
+                els.linkHelp.classList.remove('hidden');
+                els.linkHelp.textContent = 'Link opened in a new tab. Finish the step there, then come back here and tap "I finished the step — continue".';
+                showToast('Finish the link step, then return to this page.', 'info', 6000);
+            } catch (err) {
+                showToast(err.message || 'The custom link could not be opened.', 'error', 6000);
+            } finally {
+                busy = false;
+                els.openLinkBtn.disabled = false;
+            }
+        }
+
+        async function verifyTicket(ticket) {
+            if (busy) return;
+            busy = true;
+            stopWait();
+            els.waitLabel.textContent = 'Checking your one-time ticket…';
+            els.waitSeconds.textContent = '…';
+            els.waitFill.style.width = '0%';
+            setPhase('waiting');
+            try {
+                const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticket })
+                });
+                if (!data.ok) throw new Error(data.message || 'The one-time ticket could not be verified. Start again.');
+                rememberTicket(data.token || ticket, data.expiresAt || Date.now() + 20 * 60 * 1000);
+                startWait(data.token || ticket, data.waitMs, 'Issuing your key…');
+            } catch (err) {
+                busy = false;
+                showFlowFailure(err.message);
+            } finally {
+                busy = false;
+            }
+        }
+
+        function showFlowFailure(message, label) {
+            stopWait();
+            showToast(message || 'Something went wrong. Please try again.', 'error', 6000);
+            if (publicKey && publicKey.customLinkUrl && !publicKey.customLinkBlocked) {
+                setPhase('link');
+                els.finishedLinkBtn.classList.remove('hidden');
+                if (label) {
+                    els.linkHelp.classList.remove('hidden');
+                    els.linkHelp.textContent = label;
+                }
+            } else if (publicKey && publicKey.customLinkBlocked) {
+                setPhase('link');
+            } else {
+                setPhase('idle');
+            }
+        }
+
+        async function claimKey(token) {
+            els.waitLabel.textContent = 'Issuing your key…';
+            let data;
+            try {
+                data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=claim&token=${encodeURIComponent(token)}`);
+            } catch {
+                data = { ok: false, message: 'Network error while issuing the key.' };
+            }
+            if (!data.ok) {
+                if (/wait|timer/i.test(data.message || '')) {
+                    startWait(token, 2500, 'Finishing the safety wait…');
+                    return;
+                }
+                showFlowFailure(data.message, 'The ticket was used or expired. Open the link step again to get a fresh one.');
+                return;
+            }
+            showResult(data);
+        }
+
+        function showResult(data) {
+            stopWait();
+            forgetTicket();
+            els.keyValue.textContent = data.key;
+            const probe = document.createElement('input');
+            setEmbeddedTokenLoader({ id: vaultId, key: data.key, input: probe, copyButton: els.copyLoadstringBtn });
+            els.loadstringValue.textContent = probe.value;
+            els.loadstringValue.dataset.value = probe.value;
+            els.copyLoadstringBtn.disabled = !probe.value;
+            if (data.expiresAt) {
+                els.expiryTag.classList.remove('hidden');
+                els.expiryText.textContent = formatCountdown(data.expiresAt - Date.now());
+            } else {
+                els.permanentTag.classList.remove('hidden');
+            }
+            els.oneTimeNote.classList.toggle('hidden', !data.unique);
+            els.openVaultBtn.href = `/vault.html?id=${encodeURIComponent(vaultId)}&key=${encodeURIComponent(data.key)}`;
+            setPhase('result');
+            els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            showToast('Key ready — copy it below before leaving.', 'success', 3500);
+        }
+
+        function resetFlow() {
+            stopWait();
+            forgetTicket();
+            els.finishedLinkBtn.classList.add('hidden');
+            els.linkHelp.classList.add('hidden');
+            els.linkHelp.textContent = '';
+            els.expiryTag.classList.add('hidden');
+            els.permanentTag.classList.add('hidden');
+            els.oneTimeNote.classList.add('hidden');
+            els.keyValue.textContent = 'VX-…';
+            els.loadstringValue.textContent = 'Building loadstring…';
+            els.copyLoadstringBtn.disabled = true;
+            configureMode();
+        }
 
         async function loadVault() {
             if (!vaultId) {
-                errorMessage.textContent = 'No vault ID was provided in the link.';
-                showOnly(errorState);
+                document.title = 'VoidedX // Invalid Key Link';
+                showError({
+                    title: 'This key link is incomplete',
+                    message: 'The link is missing its vault ID, so there is no key to look up.',
+                    detail: 'Ask the vault owner for a fresh Get-Key link. It looks like /key?id=YOUR_VAULT_ID.',
+                    retry: false,
+                    subtitle: 'This link is incomplete.'
+                });
                 return;
             }
             try {
-                const r = await fetch(`/api/keypage?id=${encodeURIComponent(vaultId)}`);
-                const data = await r.json();
+                const data = await getJson(`/api/keypage?id=${encodeURIComponent(vaultId)}`);
                 if (!data.ok) {
-                    errorMessage.textContent = data.message || 'Something went wrong loading this vault.';
-                    showOnly(errorState);
+                    showError({ title: 'Key link not found', message: data.message || 'This vault does not exist or its link changed.', detail: data.message || '', subtitle: 'This key link is not valid.' });
                     return;
                 }
                 if (data.paused) {
-                    errorMessage.textContent = 'This vault is temporarily paused by its owner. Try again later.';
-                    showOnly(errorState);
+                    showError({ title: 'Key page paused', message: 'The owner temporarily paused this vault. Keys cannot be issued right now.', detail: 'Try again later or contact the vault owner.', subtitle: 'This key page is paused right now.' });
                     return;
                 }
                 if (!data.requireKey) {
-                    errorMessage.textContent = "This vault doesn't use a key system — no key is needed to run it.";
-                    showOnly(errorState);
+                    showError({ title: 'No key needed', message: "This vault doesn't use a key system, so there is nothing to unlock here.", detail: 'Open the vault page directly, or ask the owner for the correct link.', retry: false, subtitle: 'This vault does not use the key system.' });
                     return;
                 }
                 if (!data.publicKey) {
-                    errorMessage.textContent = "This vault's keys are private/whitelist-only. Contact the owner directly.";
-                    showOnly(errorState);
+                    showError({ title: 'Keys are private', message: 'This vault uses whitelist-only keys. There is no public key page to share.', detail: 'Contact the vault owner and ask them to issue you a private key.', subtitle: 'This vault uses private keys only.' });
                     return;
                 }
-                getkeyTitle.innerHTML = `Get Your Key — <span class="text-cyan">${escapeHtml(data.title || 'Untitled Vault')}</span>`;
-                keysCardsList.innerHTML = '';
-                buildKeyCard(data.publicKey);
-                showOnly(getkeyState);
-            } catch (err) {
-                errorMessage.textContent = 'Something went wrong loading this vault.';
-                showOnly(errorState);
+                publicKey = data.publicKey;
+                const title = data.title || 'Untitled vault';
+                document.title = `Get Key — ${title}`;
+                els.vaultTitle.textContent = title;
+                els.heroName.textContent = title ? `— ${title}` : '';
+                els.subtitle.textContent = 'Pick up your key in three short steps. It is free.';
+                els.keyValue.textContent = 'VX-…';
+                showOnly(els.card);
+                configureMode();
+
+                if (incomingTicket) {
+                    window.history.replaceState(null, document.title, `${window.location.pathname}?id=${encodeURIComponent(vaultId)}`);
+                    await verifyTicket(incomingTicket);
+                }
+            } catch {
+                showError({ title: 'Could not load the key page', message: 'The VoidedX server could not be reached. Check your connection and try again.', detail: '', subtitle: 'The server could not be reached.' });
             }
         }
 
-        function buildKeyCard(keyDef) {
-            const node = cardTemplate.content.firstElementChild.cloneNode(true);
-
-            const labelEl = node.querySelector('.key-page-label');
-            const customLinkStep = node.querySelector('.custom-link-step');
-            const customLinkText = node.querySelector('.custom-link-text');
-            const customLinkButton = node.querySelector('.custom-link-button');
-            const idleBlock = node.querySelector('.idle-block');
-            const loadingBlock = node.querySelector('.loading-block');
-            const progressFill = node.querySelector('.key-progress-fill');
-            const progressLabel = node.querySelector('.key-progress-label');
-            const readyBlock = node.querySelector('.key-ready-block');
-            const oneTimeNote = node.querySelector('.key-onetime-note');
-            const getKeyBtn = node.querySelector('.get-key-btn');
-            const rotationTag = node.querySelector('.rotation-tag');
-            const expiryTag = node.querySelector('.expiry-tag');
-            const expiryText = node.querySelector('.expiry-text');
-            const keyOutput = node.querySelector('.key-output');
-            const copyKeyBtn = node.querySelector('.copy-key-btn');
-            const loadstringOutput = node.querySelector('.loadstring-output');
-            const copyLsBtn = node.querySelector('.copy-ls-btn');
-            const openVaultLink = node.querySelector('.open-vault-link');
-
-            labelEl.textContent = keyDef.label || 'Public Key';
-            if (!keyDef.durationDays) {
-                rotationTag.innerHTML = `<i class="fa-solid fa-infinity"></i> Permanent`;
-                rotationTag.classList.remove('hidden');
+        els.getKeyBtn.addEventListener('click', startSimple);
+        els.openLinkBtn.addEventListener('click', openCustomLink);
+        els.finishedLinkBtn.addEventListener('click', () => {
+            const pending = recallTicket();
+            if (!pending) {
+                showToast('Open the link step first, then finish it and return here.', 'error', 5000);
+                return;
             }
+            verifyTicket(pending.token);
+        });
+        els.restartBtn.addEventListener('click', () => {
+            resetFlow();
+        });
+        els.retryBtn.addEventListener('click', () => {
+            if (!vaultId) return;
+            showOnly(els.loading);
+            loadVault();
+        });
 
-            let revealStarted = false;
-            function runCountdown(startResp) {
-                const waitMs = startResp.waitMs || 15000;
-                const startedAt = Date.now();
+        els.copyKeyBtn.addEventListener('click', async () => {
+            const ok = await copyText(els.keyValue.textContent.trim());
+            flashButton(els.copyKeyBtn, ok ? 'fa-check' : 'fa-triangle-exclamation', ok ? 'Copied!' : 'Copy failed');
+            showToast(ok ? 'Key copied to clipboard.' : 'Copy failed — select the key and copy it manually.', ok ? 'success' : 'error', 2500);
+        });
+        els.copyLoadstringBtn.addEventListener('click', async () => {
+            const value = els.loadstringValue.dataset.value || '';
+            if (!value) return;
+            const ok = await copyText(value);
+            flashButton(els.copyLoadstringBtn, ok ? 'fa-check' : 'fa-triangle-exclamation', ok ? 'Copied!' : 'Copy failed');
+            showToast(ok ? 'Loadstring copied to clipboard.' : 'Copy failed — select the loadstring and copy it manually.', ok ? 'success' : 'error', 2500);
+        });
 
-                const tick = setInterval(() => {
-                    const elapsed = Date.now() - startedAt;
-                    const pct = Math.min(100, (elapsed / waitMs) * 100);
-                    progressFill.style.width = pct + '%';
-                    const secsLeft = Math.max(0, Math.ceil((waitMs - elapsed) / 1000));
-                    progressLabel.textContent = secsLeft > 0 ? `Please wait ${secsLeft}s…` : 'Almost there…';
-                    if (elapsed >= waitMs) {
-                        clearInterval(tick);
-                        claimKey(startResp.token);
-                    }
-                }, 100);
-            }
-
-            async function requestTicket() {
-                if (revealStarted) return;
-                revealStarted = true;
-                idleBlock.classList.add('hidden');
-                customLinkStep.classList.add('hidden');
-                loadingBlock.classList.remove('hidden');
-                progressFill.style.width = '0%';
-
-                let startResp;
-                try {
-                    const r = await fetch(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
-                    startResp = await r.json();
-                } catch (e) { startResp = { ok: false }; }
-
-                if (!startResp.ok) {
-                    revealStarted = false;
-                    loadingBlock.classList.add('hidden');
-                    if (keyDef.customLinkUrl) customLinkStep.classList.remove('hidden');
-                    else idleBlock.classList.remove('hidden');
-                    showToast(startResp.message || 'Could not start — try again.', 'error');
-                    return;
-                }
-
-                if (startResp.requiresReturn) {
-                    runCountdown({ ...startResp, waitMs: 0 });
-                    return;
-                }
-                runCountdown(startResp);
-            }
-
-            async function openCustomLink() {
-                if (revealStarted) return;
-                const gateWindow = window.open('about:blank', '_blank');
-                if (!gateWindow) {
-                    showToast('Allow pop-ups for this page, then try again.', 'error');
-                    return;
-                }
-                revealStarted = true;
-                try { gateWindow.opener = null; } catch (e) {}
-                customLinkButton.setAttribute('aria-disabled', 'true');
-                customLinkButton.classList.add('disabled');
-                let startResp;
-                try {
-                    const r = await fetch(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=start`);
-                    startResp = await r.json();
-                } catch (e) { startResp = { ok: false }; }
-                if (!startResp.ok || !startResp.requiresReturn || !isSafeUrl(startResp.gateUrl)) {
-                    gateWindow.close();
-                    revealStarted = false;
-                    customLinkButton.removeAttribute('aria-disabled');
-                    customLinkButton.classList.remove('disabled');
-                    showToast(startResp.message || 'The custom link could not be opened safely.', 'error', 5000);
-                    return;
-                }
-                gateWindow.location.replace(startResp.gateUrl);
-                revealStarted = false;
-                loadingBlock.classList.add('hidden');
-                customLinkStep.classList.remove('hidden');
-                customLinkButton.removeAttribute('aria-disabled');
-                customLinkButton.classList.remove('disabled');
-                customLinkText.textContent = 'Complete the custom link, then return through its one-time reward URL. The ticket expires after 20 minutes.';
-                showToast('Custom link opened. Finish it and return here using its reward URL.', 'info', 5000);
-            }
-
-            async function verifyCustomReturn(ticket) {
-                if (revealStarted) return;
-                revealStarted = true;
-                idleBlock.classList.add('hidden');
-                customLinkStep.classList.add('hidden');
-                loadingBlock.classList.remove('hidden');
-                progressFill.style.width = '0%';
-                progressLabel.textContent = 'Checking one-time ticket…';
-
-                let verifyResp;
-                try {
-                    const r = await fetch(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=verify`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ticket })
-                    });
-                    verifyResp = await r.json();
-                } catch (e) { verifyResp = { ok: false }; }
-
-                if (!verifyResp.ok) {
-                    revealStarted = false;
-                    loadingBlock.classList.add('hidden');
-                    if (keyDef.customLinkUrl) customLinkStep.classList.remove('hidden');
-                    else idleBlock.classList.remove('hidden');
-                    showToast(verifyResp.message || 'The one-time ticket could not be verified. Please start again.', 'error', 6000);
-                    return;
-                }
-
-                runCountdown(verifyResp);
-            }
-
-            async function claimKey(token) {
-                progressLabel.textContent = 'Getting your key…';
-                let d;
-                try {
-                    const r = await fetch(`/api/keypage?id=${encodeURIComponent(vaultId)}&action=claim&token=${encodeURIComponent(token)}`);
-                    d = await r.json();
-                } catch (e) { d = { ok: false }; }
-
-                if (!d.ok) {
-                    revealStarted = false;
-                    loadingBlock.classList.add('hidden');
-                    if (keyDef.customLinkUrl) customLinkStep.classList.remove('hidden');
-                    else idleBlock.classList.remove('hidden');
-                    showToast(d.message || 'Could not get a key. Try again.', 'error', 5000);
-                    return;
-                }
-
-                keyOutput.value = d.key;
-                setEmbeddedTokenLoader({ id: vaultId, key: d.key, input: loadstringOutput, copyButton: copyLsBtn });
-                openVaultLink.href = `/vault.html?id=${encodeURIComponent(vaultId)}&key=${encodeURIComponent(d.key)}`;
-                oneTimeNote.classList.toggle('hidden', !d.unique);
-                oneTimeNote.textContent = 'This key was issued for one custom-link return ticket. The ticket cannot be reused. Copy and save your key now.';
-
-                if (d.expiresAt) {
-                    expiryTag.classList.remove('hidden');
-                    expiryText.textContent = formatCountdown(d.expiresAt - Date.now());
-                }
-
-                loadingBlock.classList.add('hidden');
-                readyBlock.classList.remove('hidden');
-                showToast('Key ready — copy it below.', 'success', 2500);
-            }
-
-            if (keyDef.customLinkBlocked) {
-                customLinkStep.classList.remove('hidden');
-                idleBlock.classList.add('hidden');
-                customLinkText.textContent = 'The owner’s custom link is blocked or invalid. Please contact the owner.';
-                customLinkButton.classList.add('hidden');
-            } else if (keyDef.customLinkUrl && isSafeUrl(keyDef.customLinkUrl)) {
-                customLinkStep.classList.remove('hidden');
-                idleBlock.classList.add('hidden');
-                customLinkButton.addEventListener('click', event => {
-                    event.preventDefault();
-                    openCustomLink();
-                });
-            } else {
-                customLinkStep.classList.add('hidden');
-                getKeyBtn.addEventListener('click', requestTicket);
-            }
-
-            copyKeyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(keyOutput.value);
-                copyKeyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
-                showToast('Key copied to clipboard.', 'success', 2000);
-                setTimeout(() => copyKeyBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy', 2000);
-            });
-            copyLsBtn.addEventListener('click', () => {
-                if (!loadstringOutput.value) return;
-                navigator.clipboard.writeText(loadstringOutput.value);
-                copyLsBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
-                showToast('Loadstring copied to clipboard.', 'success', 2000);
-                setTimeout(() => copyLsBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy', 2000);
-            });
-
-            keysCardsList.appendChild(node);
-
-            const returnedTicket = urlParams.get('ticket');
-            if (returnedTicket) {
-                window.history.replaceState(null, document.title, `${window.location.pathname}?id=${encodeURIComponent(vaultId)}`);
-                verifyCustomReturn(returnedTicket);
-            }
-        }
-
-                loadVault();
+        loadVault();
     </script>
 </body>
 </html>

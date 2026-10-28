@@ -527,7 +527,7 @@
             updateLanguage();
         });
 
-        const header = document.querySelector('.top-nav, .admin-topbar, .creator-panel-nav');
+        const header = document.querySelector('.top-nav, .admin-topbar, .creator-panel-nav, .dc-topbar');
         if (!header) { document.body.prepend(control); return; }
         const actionGroup = header.querySelector('.nav-user, .leaderboard-nav, .scripts-account-actions, .creator-panel-nav-actions') || header.querySelector('.scripts-nav-links');
         if (actionGroup) { actionGroup.append(control); return; }

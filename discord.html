@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
     <title>VoidedX // Discord Control</title>
     <link rel="icon" type="image/png" href="/voidedx-favicon.png?v=2">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .dc-shell{width:min(1120px,calc(100% - 28px));margin:0 auto;padding:22px 0 48px;display:grid;gap:18px;}
@@ -62,10 +63,12 @@
         .dc-obf-info i{color:#a855f7;margin-right:5px;}
         .dc-obf-steps{margin:8px 0 0 0;padding:0 0 0 1.1em;}
         .dc-obf-steps li{margin-bottom:4px;}
-        @media(max-width:700px){.dc-grid,.dc-grid-3{grid-template-columns:1fr}.dc-heading{align-items:flex-start;flex-direction:column}.dc-meta-row{grid-template-columns:1fr}.dc-command-list{grid-template-columns:1fr}.dc-topbar{align-items:flex-start;flex-direction:column}.dc-footer{flex-direction:column}}
+        @media(max-width:700px){.dc-grid,.dc-grid-3{grid-template-columns:1fr}.dc-heading{align-items:flex-start;flex-direction:column}.dc-meta-row{grid-template-columns:1fr}.dc-command-list{grid-template-columns:1fr}.dc-topbar{align-items:flex-start;flex-direction:column;gap:12px}.dc-footer{flex-direction:column}}
+        @media(max-width:520px){.dc-shell{width:calc(100% - 20px);padding:14px 0 36px;gap:14px}.dc-topbar-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;width:100%}.dc-topbar-links .btn-ghost{width:100%;min-height:42px;padding:9px 8px;font-size:11px}.dc-topbar .brand-icon-img{width:32px;height:32px}.dc-card{padding:14px}.dc-stat-grid{grid-template-columns:1fr 1fr}.dc-auth{margin:3vh auto}.dc-auth h1{font-size:22px;line-height:1.25}.dc-auth p{font-size:12px}}
     </style>
+<script defer src="/app-shell.js"></script>
 </head>
-<body class="admin-page">
+<body class="admin-page vx-app" data-vx-rail="admin">
 <main class="dc-shell">
 
     <header class="dc-topbar">

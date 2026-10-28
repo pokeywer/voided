@@ -2,16 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>VoidedX // Script Vault</title>
     <link rel="icon" type="image/png" sizes="240x240" href="/voidedx-favicon.png?v=2">
     <link rel="shortcut icon" type="image/png" href="/voidedx-favicon.png?v=2">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1505057249528749" crossorigin="anonymous"></script>
+    <script defer src="/app-shell.js"></script>
     <script defer src="/i18n.js"></script>
 </head>
-<body>
+<body class="vx-app">
     <div class="shell">
         <div id="site-announcements" class="site-announcement-list" aria-live="polite"></div>
         <div id="site-announcement-modal" class="site-announcement-modal hidden" aria-hidden="true">
@@ -26,11 +28,6 @@
                 <p id="site-announcement-modal-message"></p>
                 <a id="site-announcement-modal-link" class="site-announcement-modal-link hidden" target="_blank" rel="noopener noreferrer"></a>
             </section>
-        </div>
-        <div class="promo-banner">
-            <i class="fa-solid fa-rocket promo-icon"></i>
-            <span class="promo-copy"><strong>VoidedX Script Vault</strong> — Fast, Free Roblox Script Hosting & Key System! Share your scripts safely.</span>
-            <button class="btn-promo" id="promo-share-btn"><i class="fa-solid fa-share-nodes"></i> Share VoidedX</button>
         </div>
         <header class="top-nav">
             <div class="brand-unit">
@@ -51,6 +48,91 @@
         </header>
 
         <main class="workspace">
+            <section id="vx-dashboard" class="vx-dash" aria-label="Dashboard">
+                <div class="vx-head">
+                    <div class="vx-head-copy">
+                        <span class="vx-eyebrow"><i class="fa-solid fa-circle-nodes"></i> <span id="dash-greeting">WELCOME BACK</span></span>
+                        <h1>Dashboard<span class="vx-dot">.</span></h1>
+                        <p id="dash-subtitle">Your vaults, deliveries, and protection in one place. Create a vault to get a ready-to-share loadstring in seconds.</p>
+                    </div>
+                    <div class="vx-head-actions">
+                        <a class="vx-btn vx-btn-ghost" href="/scripts"><i class="fa-solid fa-compass"></i> Community scripts</a>
+                        <button type="button" class="vx-btn vx-btn-primary" id="dash-new-vault"><i class="fa-solid fa-plus"></i> New vault</button>
+                    </div>
+                </div>
+
+                <div class="vx-stat-grid">
+                    <div class="vx-stat">
+                        <span class="vx-stat-label">VAULTS</span>
+                        <strong id="dash-stat-vaults">0</strong>
+                        <small>Saved in your account</small>
+                    </div>
+                    <div class="vx-stat">
+                        <span class="vx-stat-label">EXECUTIONS</span>
+                        <strong id="dash-stat-executions">0</strong>
+                        <small>Delivered by the loader</small>
+                    </div>
+                    <div class="vx-stat">
+                        <span class="vx-stat-label">KEY GATED</span>
+                        <strong id="dash-stat-protected">0</strong>
+                        <small>Using the key system</small>
+                    </div>
+                    <div class="vx-stat">
+                        <span class="vx-stat-label">LAST UPDATED</span>
+                        <strong id="dash-stat-updated">—</strong>
+                        <small id="dash-stat-updated-note">No vaults yet</small>
+                    </div>
+                </div>
+
+                <div class="vx-dash-grid">
+                    <section class="vx-card">
+                        <div class="vx-card-head">
+                            <div><h2>Top vaults</h2><p>Delivered executions by vault</p></div>
+                            <span class="vx-chip">ALL TIME</span>
+                        </div>
+                        <div id="dash-top-vaults" class="vx-bars">
+                            <div class="vx-empty"><i class="fa-solid fa-chart-simple"></i><span>No runs yet. Share a loadstring and executions will show up here.</span></div>
+                        </div>
+                    </section>
+                    <section class="vx-card">
+                        <div class="vx-card-head">
+                            <div><h2>Delivery status</h2><p>What players receive</p></div>
+                        </div>
+                        <ul class="vx-facts">
+                            <li>
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <div><strong>VoidedX armor</strong><small>VM bytecode repacked in the VoidedX container</small></div>
+                                <span class="vx-pill on">ON</span>
+                            </li>
+                            <li>
+                                <i class="fa-solid fa-key"></i>
+                                <div><strong>Key system</strong><small id="dash-keys-note">No vaults yet</small></div>
+                                <span class="vx-pill" id="dash-keys-pill">OFF</span>
+                            </li>
+                            <li>
+                                <i class="fa-solid fa-bolt"></i>
+                                <div><strong>Token loader</strong><small>Short-lived loader tokens with origin checks</small></div>
+                                <span class="vx-pill on">READY</span>
+                            </li>
+                        </ul>
+                        <div class="vx-card-actions">
+                            <button type="button" class="vx-btn vx-btn-ghost" id="dash-open-editor"><i class="fa-solid fa-code"></i> Open editor</button>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="vx-card">
+                    <div class="vx-card-head">
+                        <div><h2>Your vaults</h2><p>Newest first</p></div>
+                        <button type="button" class="vx-btn vx-btn-ghost vx-btn-sm" id="dash-open-library"><i class="fa-solid fa-sliders"></i> Manage</button>
+                    </div>
+                    <div id="dash-vault-list" class="vx-vault-list">
+                        <div class="vx-empty"><i class="fa-solid fa-box-open"></i><span>No vaults yet. Create your first one to get a shareable loadstring.</span></div>
+                    </div>
+                </section>
+            </section>
+
+            <div id="vx-editor" class="vx-editor-view hidden">
             <aside class="sidebar">
                 <button type="button" id="new-vault-btn" class="btn-ghost btn-new-vault"><i class="fa-solid fa-plus"></i> New Vault</button>
 
@@ -236,6 +318,7 @@
                     </div>
                 </div>
             </section>
+            </div>
         </main>
     </div>
 

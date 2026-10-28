@@ -442,6 +442,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const vaultStatTotal = document.getElementById('vault-stat-total');
     const vaultStatExecutions = document.getElementById('vault-stat-executions');
     const vaultStatProtected = document.getElementById('vault-stat-protected');
+    const dashEls = {
+        greeting: document.getElementById('dash-greeting'),
+        vaults: document.getElementById('dash-stat-vaults'),
+        executions: document.getElementById('dash-stat-executions'),
+        protected: document.getElementById('dash-stat-protected'),
+        updated: document.getElementById('dash-stat-updated'),
+        updatedNote: document.getElementById('dash-stat-updated-note'),
+        keysNote: document.getElementById('dash-keys-note'),
+        keysPill: document.getElementById('dash-keys-pill'),
+        topVaults: document.getElementById('dash-top-vaults'),
+        vaultList: document.getElementById('dash-vault-list')
+    };
     const execCountBadge = document.getElementById('exec-count-badge');
     const execCountNum = document.getElementById('exec-count-num');
     const promoShareBtn = document.getElementById('promo-share-btn');
@@ -825,9 +837,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function updateDashGreeting(user) {
+        if (!dashEls.greeting) return;
+        if (user && !user.isAnonymous && user.email) {
+            dashEls.greeting.textContent = `Welcome back, ${user.email.split('@')[0]}`;
+        } else if (user && user.isAnonymous) {
+            dashEls.greeting.textContent = 'Guest session';
+        } else {
+            dashEls.greeting.textContent = 'Welcome back';
+        }
+    }
+
     let lastUid = null;
     onAuthStateChanged(auth, user => {
         currentUser = user;
+        updateDashGreeting(user);
         const newUid = user ? user.uid : null;
         if (newUid !== lastUid) {
             for (const timer of vaultExpiryTimers.values()) clearTimeout(timer);
@@ -871,6 +895,113 @@ document.addEventListener('DOMContentLoaded', () => {
         if (vaultStatTotal) vaultStatTotal.textContent = cachedVaults.length.toLocaleString();
         if (vaultStatExecutions) vaultStatExecutions.textContent = totalExecutions.toLocaleString();
         if (vaultStatProtected) vaultStatProtected.textContent = protectedCount.toLocaleString();
+        renderDashboardStats();
+        renderDashboardVaults();
+    }
+
+    function dashRelative(ms) {
+        if (!ms) return '';
+        const diff = Math.max(0, Date.now() - ms);
+        if (diff < 60000) return 'just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+        return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    function renderDashboardStats() {
+        if (!dashEls.vaults) return;
+        const totalExecutions = cachedVaults.reduce((sum, vault) => sum + (Number(vault.data.executions) || 0), 0);
+        const protectedCount = cachedVaults.filter(vault => !!vault.data.requireKey).length;
+        const latest = cachedVaults.reduce((max, vault) => Math.max(max, vaultUpdatedAt(vault.data.updatedAt)), 0);
+
+        dashEls.vaults.textContent = cachedVaults.length.toLocaleString();
+        dashEls.executions.textContent = totalExecutions.toLocaleString();
+        dashEls.protected.textContent = protectedCount.toLocaleString();
+        dashEls.updated.textContent = latest ? dashRelative(latest) : '—';
+        if (dashEls.updatedNote) {
+            dashEls.updatedNote.textContent = latest ? new Date(latest).toLocaleString() : 'No vaults yet';
+        }
+        if (dashEls.keysNote) {
+            dashEls.keysNote.textContent = cachedVaults.length
+                ? `${protectedCount} of ${cachedVaults.length} vault${cachedVaults.length === 1 ? '' : 's'} require a key`
+                : 'No vaults yet';
+        }
+        if (dashEls.keysPill) {
+            dashEls.keysPill.textContent = protectedCount ? 'ON' : 'OFF';
+            dashEls.keysPill.classList.toggle('on', protectedCount > 0);
+            dashEls.keysPill.classList.toggle('off', protectedCount === 0);
+        }
+
+        if (!dashEls.topVaults) return;
+        const ranked = cachedVaults
+            .map(vault => ({ title: String(vault.data.title || 'Untitled Vault'), execs: Number(vault.data.executions) || 0 }))
+            .filter(vault => vault.execs > 0)
+            .sort((a, b) => b.execs - a.execs)
+            .slice(0, 5);
+        if (!ranked.length) {
+            dashEls.topVaults.innerHTML = '<div class="vx-empty"><i class="fa-solid fa-chart-simple"></i><span>No runs yet. Share a loadstring and executions will show up here.</span></div>';
+            return;
+        }
+        const max = Math.max(...ranked.map(vault => vault.execs));
+        dashEls.topVaults.innerHTML = ranked.map(vault => `
+            <div class="vx-bar-row">
+                <div class="vx-bar-track"><span class="vx-bar-fill" style="width:${Math.max(6, Math.round((vault.execs / max) * 100))}%"></span><span class="vx-bar-name">${escapeHtml(vault.title)}</span></div>
+                <span class="vx-bar-value">${vault.execs.toLocaleString()}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderDashboardVaults() {
+        if (!dashEls.vaultList) return;
+        const recent = [...cachedVaults]
+            .sort((a, b) => vaultUpdatedAt(b.data.updatedAt) - vaultUpdatedAt(a.data.updatedAt))
+            .slice(0, 6);
+        if (!recent.length) {
+            dashEls.vaultList.innerHTML = '<div class="vx-empty"><i class="fa-solid fa-box-open"></i><span>No vaults yet. Create your first one to get a shareable loadstring.</span></div>';
+            return;
+        }
+        dashEls.vaultList.innerHTML = recent.map(vault => {
+            const item = vault.data;
+            const title = String(item.title || 'Untitled Vault');
+            const execs = Number(item.executions) || 0;
+            const initial = title.trim().charAt(0).toUpperCase() || '?';
+            const keyed = !!item.requireKey;
+            return `
+                <div class="vx-vault-row">
+                    <div class="vx-vrow-main">
+                        <span class="vx-vrow-icon">${escapeHtml(initial)}</span>
+                        <div class="vx-vrow-copy">
+                            <strong>${escapeHtml(title)}</strong>
+                            <span class="vx-vrow-meta">
+                                <i class="fa-solid fa-play"></i> ${execs.toLocaleString()} runs
+                                <span class="sep">·</span>
+                                <i class="fa-solid fa-key"></i> ${keyed ? 'Key on' : 'Open'}
+                                <span class="sep">·</span>
+                                ${dashRelative(vaultUpdatedAt(item.updatedAt)) || 'not saved yet'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="vx-vrow-actions">
+                        <button type="button" class="vx-btn vx-btn-ghost" data-dash-edit="${escapeHtml(vault.id)}"><i class="fa-solid fa-pen"></i> Edit</button>
+                        <a class="vx-btn vx-btn-ghost" href="/keysystem.html?id=${encodeURIComponent(vault.id)}"><i class="fa-solid fa-key"></i> Keys</a>
+                        <a class="vx-btn vx-btn-ghost" href="/vault.html?id=${encodeURIComponent(vault.id)}" target="_blank" rel="noopener" aria-label="Open vault page"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    if (dashEls.vaultList) {
+        dashEls.vaultList.addEventListener('click', event => {
+            const button = event.target.closest('[data-dash-edit]');
+            if (!button) return;
+            const vault = cachedVaults.find(item => item.id === button.dataset.dashEdit);
+            if (!vault) return;
+            if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Discard them and open this vault?')) return;
+            loadVaultIntoEditor(vault.id, vault.data);
+            if (window.vxShell) window.vxShell.showView('editor');
+        });
     }
 
     function vaultUpdatedAt(value) {

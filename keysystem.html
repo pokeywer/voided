@@ -2,22 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>VoidedX // Key System</title>
     <link rel="icon" type="image/png" sizes="240x240" href="/voidedx-favicon.png?v=2">
     <link rel="shortcut icon" type="image/png" href="/voidedx-favicon.png?v=2">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1505057249528749" crossorigin="anonymous"></script>
+    <script defer src="/app-shell.js"></script>
     <script defer src="/i18n.js"></script>
 </head>
-<body>
+<body class="vx-app">
     <div class="shell">
-        <div class="promo-banner">
-            <i class="fa-solid fa-rocket promo-icon"></i>
-            <span><strong>VoidedX Script Vault</strong> — Fast, Free & Secure Roblox Script Hosting & Key System! Share your scripts safely.</span>
-            <a href="/" class="btn-promo"><i class="fa-solid fa-plus"></i> Create a Vault</a>
-        </div>
         <header class="top-nav">
             <a href="/" class="brand-unit brand-unit-link">
                 <img src="logo.png" alt="VoidedX" class="brand-icon-img">
@@ -31,11 +28,20 @@
 
         <div class="ks-page-wrap">
             <div id="ks-loading" class="info-box"><p><i class="fa-solid fa-spinner fa-spin"></i> Loading vault…</p></div>
-            <div id="ks-error" class="info-box text-red hidden"><p id="ks-error-text">Vault not found.</p></div>
+            <div id="ks-error" class="ks-empty-card hidden">
+                <div class="key-state-icon red"><i class="fa-solid fa-key"></i></div>
+                <h2>Key System unavailable</h2>
+                <p id="ks-error-text">This key system link could not be opened.</p>
+                <div class="ks-empty-actions">
+                    <a href="/panel.html" class="btn-primary"><i class="fa-solid fa-arrow-left"></i> Back to Creator Panel</a>
+                    <a href="/" class="btn-ghost"><i class="fa-solid fa-house"></i> Go to VoidedX</a>
+                </div>
+            </div>
 
             <div id="ks-content" class="hidden">
                 <div class="ks-page-header">
-                    <h1><i class="fa-solid fa-key text-cyan"></i> Key System Manager</h1>
+                    <span id="ks-status-pill" class="ks-state-pill off"><i class="fa-solid fa-power-off"></i> <span>Key system off</span></span>
+                    <h1><i class="fa-solid fa-key text-cyan"></i> Key System</h1>
                     <p id="ks-vault-title" class="ks-vault-title">Untitled Vault</p>
                     <label class="toggle-row keysystem-enable-row">
                         <span>Enable Key System</span>
@@ -45,16 +51,13 @@
                 </div>
 
                 <details class="ks-tutorial">
-                    <summary><i class="fa-solid fa-graduation-cap text-cyan"></i> Beginner guide — set up your key system</summary>
+                    <summary><i class="fa-solid fa-graduation-cap text-cyan"></i> How the key system works (quick guide)</summary>
                     <ol>
-                        <li><strong>Turn it on.</strong> Switch on <em>Enable Key System</em> to show the key settings.</li>
-                        <li><strong>Choose who gets keys.</strong> Add a Private Key for people you choose, or enable Public Key so visitors can request one from your Get-Key page.</li>
-                        <li><strong>Set the timer.</strong> Choose how long a key lasts and how many players may use it. Expired keys are rejected; the remaining time is shown in the in-game status badge.</li>
-                        <li><strong>Set up the in-game popup.</strong> Turn on <em>In-Game Key GUI</em> to ask players for a key in Roblox. Customize the title, colors, button, and background animation, then use the live-preview controls to replay the entrance, unlock, Get-Key, and close/open animations. After a key verifies, VoidedX saves it locally when the executor supports file saving, and checks it automatically next run.</li>
-                        <li><strong>Optional custom link.</strong> Add your HTTPS unlock link below. Copy both links from the Get-Key Link tab: share the visitor link, then set the reward or return destination to the template that includes <code>{vx_ticket}</code>. Your link service must preserve that ticket and substitute it into the reward URL.</li>
-                        <li><strong>Save your settings.</strong> Click <em>Apply Changes</em> after editing. Share the Get-Key URL with players who need a public key.</li>
+                        <li><strong>Turn it on.</strong> Enable the key system, then choose who gets keys: a Public Key for visitors, Private Keys for people you pick, or both.</li>
+                        <li><strong>Share one link.</strong> Open <em>Share link</em> and send the Get-Key link to players. Public keys are issued from that page — never share private keys there.</li>
+                        <li><strong>Optional link step.</strong> If you set a custom HTTPS link, visitors must finish it and return through your reward URL. Copy the ticket template from <em>Share link</em> and keep the <code>{vx_ticket}</code> placeholder.</li>
+                        <li><strong>Save.</strong> Click <em>Apply Changes</em>. Settings and keys update immediately; players already running are not interrupted.</li>
                     </ol>
-                    <p class="ks-tutorial-note">Saved keys stay in the player's executor files on that device. The server still checks each key and expiration. Expiration blocks future runs; it cannot stop a script that is already running.</p>
                 </details>
 
                 <div class="panel-group vault-emergency-control">
@@ -99,22 +102,36 @@
                     <div class="ks-tabs">
                         <button type="button" class="ks-tab active" data-tab="keys"><i class="fa-solid fa-key"></i> Keys <span id="keys-count-badge" class="keysystem-badge on hidden">0</span></button>
                         <button type="button" class="ks-tab" data-tab="security"><i class="fa-solid fa-shield-halved"></i> Security</button>
-                        <button type="button" class="ks-tab" data-tab="share"><i class="fa-solid fa-share-nodes"></i> Get-Key Link</button>
+                        <button type="button" class="ks-tab" data-tab="share"><i class="fa-solid fa-share-nodes"></i> Share link</button>
                     </div>
 
                     <div class="ks-tab-panel" data-panel="keys">
-                        <div class="panel-group">
-                            <label class="panel-label"><i class="fa-solid fa-globe text-cyan"></i> PUBLIC KEY</label>
+                        <div class="ks-section-card">
+                            <div class="ks-section-head">
+                                <div>
+                                    <h2><i class="fa-solid fa-globe"></i> Public key</h2>
+                                    <p>Visitors get a free key from your Get-Key link. No custom link needed — the page enforces a short safety wait.</p>
+                                </div>
+                                <span id="public-key-pill" class="ks-state-pill off"><i class="fa-solid fa-power-off"></i> <span>Off</span></span>
+                            </div>
                             <label class="toggle-row">
                                 <span>Enable Public Key</span>
                                 <input type="checkbox" id="chk-public-key">
                                 <span class="switch"></span>
                             </label>
                             <div id="public-key-fields" class="hidden">
-                                <div class="info-box">
-                                    <i class="fa-solid fa-circle-info text-cyan"></i>
-                                    <p>Auto-generated — visitors request it from the Get-Key page. The optional custom link uses a server-issued, single-use return ticket; the short wait is enforced by the server.</p>
+                                <div class="ks-link-row">
+                                    <span class="ks-link-row-label"><i class="fa-solid fa-link"></i> Your Get-Key link</span>
+                                    <div class="copy-input">
+                                        <input type="text" id="public-link-output" readonly placeholder="Save this vault to generate a link">
+                                    </div>
+                                    <div class="ks-link-actions">
+                                        <button type="button" id="public-link-copy-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy link</button>
+                                        <a id="public-link-open-btn" class="btn-ghost" href="/" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open page</a>
+                                    </div>
+                                    <p class="key-inline-note"><i class="fa-solid fa-circle-info"></i><span>Share this link with players. It only ever shows the public key — private keys stay hidden.</span></p>
                                 </div>
+
                                 <label class="panel-label" style="display:block;">DURATION</label>
                                 <select id="public-duration-select" class="input-field">
                                     <option value="permanent">Permanent — never expires</option>
@@ -137,17 +154,17 @@
                                     </label>
                                 </div>
 
-                                <label class="panel-label" style="margin-top:8px; display:block;">CUSTOM UNLOCK LINK (OPTIONAL)</label>
-                                <input type="url" id="public-custom-link-input" class="input-field" placeholder="https://your-custom-link.example/…" autocomplete="off">
+                                <label class="panel-label" style="margin-top:8px; display:block;">CUSTOM LINK STEP (OPTIONAL)</label>
+                                <input type="url" id="public-custom-link-input" class="input-field" placeholder="https://your-link.example/…" autocomplete="off">
                                 <div class="info-box custom-link-help">
                                     <i class="fa-solid fa-circle-info text-cyan"></i>
-                                    <p>Visitors click <strong>Get Key</strong> to open this link. Configure its reward/return destination with the template in the next tab, passing the incoming <code>vx_ticket</code> value as the <code>ticket</code> query parameter. Each ticket is random, expires after 20 minutes, and can be redeemed once. Only HTTPS links are allowed; adult-content domains such as phub and known unsafe destinations are blocked.</p>
+                                    <p>Leave empty for a simple key page. Add an HTTPS link if visitors must complete a step first. The server adds a one-time <code>vx_ticket</code> to your link; send visitors back with the return template from the <em>Share link</em> tab.</p>
                                 </div>
 
                                 <div class="key-toolbar" id="public-key-actions">
-                                    <span class="key-toolbar-label">ACTIONS</span>
+                                    <span class="key-toolbar-label">KEY ACTIONS</span>
                                     <div class="key-toolbar-buttons">
-                                        <button type="button" id="public-regenerate-btn" class="key-tool-btn" title="Force Regenerate"><i class="fa-solid fa-rotate"></i></button>
+                                        <button type="button" id="public-regenerate-btn" class="key-tool-btn" title="Force regenerate"><i class="fa-solid fa-rotate"></i></button>
                                         <button type="button" id="public-terminate-btn" class="key-tool-btn" title="Terminate"><i class="fa-solid fa-ban"></i></button>
                                     </div>
                                 </div>
@@ -155,22 +172,32 @@
                             </div>
                         </div>
 
-                        <div class="panel-group">
-                            <label class="panel-label"><i class="fa-solid fa-user-lock text-cyan"></i> PRIVATE / WHITELIST KEYS</label>
+                        <div class="ks-section-card">
+                            <div class="ks-section-head">
+                                <div>
+                                    <h2><i class="fa-solid fa-user-lock"></i> Private keys</h2>
+                                    <p>Only for people you choose. They never appear on the Get-Key page — send them directly.</p>
+                                </div>
+                            </div>
                             <div id="keys-list" class="keys-list"></div>
                             <button type="button" id="add-key-btn" class="btn-ghost btn-new-vault"><i class="fa-solid fa-plus"></i> Add Private Key</button>
                         </div>
 
-                        <div class="panel-group">
-                            <label class="panel-label">DELIVERY METHOD</label>
+                        <div class="ks-section-card">
+                            <div class="ks-section-head">
+                                <div>
+                                    <h2><i class="fa-solid fa-gamepad"></i> In-game popup</h2>
+                                    <p>Ask players to type their key inside Roblox instead of baking it into the loadstring.</p>
+                                </div>
+                            </div>
                             <label class="toggle-row">
-                                <span><i class="fa-solid fa-gamepad text-cyan"></i> In-Game Key GUI (popup asks for the key)</span>
+                                <span><i class="fa-solid fa-gamepad text-cyan"></i> Show the key popup in-game</span>
                                 <input type="checkbox" id="chk-gui-mode">
                                 <span class="switch"></span>
                             </label>
                             <div class="info-box">
                                 <i class="fa-solid fa-circle-info text-cyan"></i>
-                                <p><strong>On:</strong> the loadstring has no key in it — a popup appears in-game (PC and mobile) asking the player to type their key. <strong>Off:</strong> the key is baked into the loadstring URL itself.</p>
+                                <p><strong>On:</strong> the loadstring has no key in it — players type their key in a popup. <strong>Off:</strong> the key is baked into the loadstring.</p>
                             </div>
                             <div id="gui-customizer" class="gui-customizer hidden">
                                 <div class="gui-template-picker">
@@ -318,24 +345,48 @@
                     </div>
 
                     <div class="ks-tab-panel hidden" data-panel="share">
-                        <div class="panel-group">
-                            <label class="panel-label">GET-KEY LINK</label>
-                            <div class="copy-input">
-                                <input type="text" id="keysystem-get-key-output" readonly placeholder="Save this vault to generate a link">
-                                <button type="button" id="keysystem-copy-key-link-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy</button>
+                        <div class="ks-section-card">
+                            <div class="ks-section-head">
+                                <div>
+                                    <h2><i class="fa-solid fa-link"></i> Share this link</h2>
+                                    <p>Send this to players who need a public key. They will see the three-step key page and nothing else.</p>
+                                </div>
+                            </div>
+                            <div class="ks-link-row">
+                                <span class="ks-link-row-label"><i class="fa-solid fa-globe"></i> Get-Key page</span>
+                                <div class="copy-input">
+                                    <input type="text" id="keysystem-get-key-output" readonly placeholder="Save this vault to generate a link">
+                                </div>
+                                <div class="ks-link-actions">
+                                    <button type="button" id="keysystem-copy-key-link-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy link</button>
+                                    <a id="keysystem-open-key-link" class="btn-ghost" href="/" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open page</a>
+                                </div>
                             </div>
                             <div class="info-box">
                                 <i class="fa-solid fa-circle-info text-cyan"></i>
-                                <p>Share this visitor URL. When a custom link is set, visitors click its button and your link service should send them back through the one-time reward URL below. Private keys are never listed on these pages.</p>
+                                <p>This page only issues the public key. Never send your private keys through it.</p>
                             </div>
-                            <label class="panel-label" style="margin-top:12px; display:block;">ONE-TIME REWARD / RETURN URL</label>
-                            <div class="copy-input">
-                                <input type="text" id="keysystem-reward-output" readonly placeholder="Save this vault to generate a link">
-                                <button type="button" id="keysystem-copy-reward-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy</button>
+                        </div>
+
+                        <div class="ks-section-card">
+                            <div class="ks-section-head">
+                                <div>
+                                    <h2><i class="fa-solid fa-arrow-turn-down"></i> Return template</h2>
+                                    <p>Only needed if you set a custom link step. Use it as the reward destination in your link service.</p>
+                                </div>
+                            </div>
+                            <div class="ks-link-row">
+                                <span class="ks-link-row-label"><i class="fa-solid fa-ticket"></i> One-time reward URL</span>
+                                <div class="copy-input">
+                                    <input type="text" id="keysystem-reward-output" readonly placeholder="Save this vault to generate a link">
+                                </div>
+                                <div class="ks-link-actions">
+                                    <button type="button" id="keysystem-copy-reward-btn" class="btn-accent"><i class="fa-solid fa-copy"></i> Copy template</button>
+                                </div>
                             </div>
                             <div class="info-box">
                                 <i class="fa-solid fa-shield-halved text-cyan"></i>
-                                <p>Set this as the reward destination and replace <code>{vx_ticket}</code> with the ticket passed to your custom link. A generic URL cannot confirm that an external task was completed; your link service must support passing through a per-visit value and redirecting back here.</p>
+                                <p>Keep <code>{vx_ticket}</code> exactly as written and replace it with the ticket your custom link received. Each ticket is random, lasts 20 minutes, and works once. A normal URL cannot prove an external step was completed.</p>
                             </div>
                         </div>
                         <div id="keysystem-status" class="info-box keysystem-status"></div>

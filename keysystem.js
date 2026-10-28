@@ -54,6 +54,28 @@ function customConfirm({ title, message, confirmLabel = 'Confirm' }) {
     });
 }
 
+async function copyToClipboard(text) {
+    if (!text) return false;
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, text.length);
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        area.remove();
+        return ok;
+    }
+}
+
 function formatDuration(ms) {
     const totalMins = Math.floor(ms / 60000);
     const h = Math.floor(totalMins / 60);
@@ -128,6 +150,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const publicTerminateBtn = document.getElementById('public-terminate-btn');
     const publicKeyActions = document.getElementById('public-key-actions');
     const publicKeyStatus = document.getElementById('public-key-status');
+    const publicKeyPill = document.getElementById('public-key-pill');
+    const publicLinkOutput = document.getElementById('public-link-output');
+    const publicLinkCopyBtn = document.getElementById('public-link-copy-btn');
+    const publicLinkOpenBtn = document.getElementById('public-link-open-btn');
+    const ksStatusPill = document.getElementById('ks-status-pill');
     const chkGuiMode = document.getElementById('chk-gui-mode');
     const guiCustomizer = document.getElementById('gui-customizer');
     const guiTitleInput = document.getElementById('gui-title-input');
@@ -176,11 +203,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const keysystemCopyKeyLinkBtn = document.getElementById('keysystem-copy-key-link-btn');
     const keysystemRewardOutput = document.getElementById('keysystem-reward-output');
     const keysystemCopyRewardBtn = document.getElementById('keysystem-copy-reward-btn');
+    const keysystemOpenKeyLink = document.getElementById('keysystem-open-key-link');
     const keysystemApplyBtn = document.getElementById('keysystem-apply-btn');
 
     if (!vaultId) {
         ksLoading.classList.add('hidden');
-        ksErrorText.textContent = 'No vault ID was given in the link.';
+        ksErrorText.textContent = 'This link is missing its vault ID. Open the key system from your Creator Panel instead.';
         ksError.classList.remove('hidden');
         return;
     }
@@ -201,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await updateDoc(doc(db, 'vaults', vaultId), { launchPaused: nextValue });
             vaultPauseStatus.classList.toggle('hidden', !nextValue);
+            updateKsStatusPill();
             showToast(nextValue ? 'Vault paused. New launches are blocked.' : 'Vault resumed.', 'success');
         } catch (err) {
             chkVaultPaused.checked = !nextValue;
@@ -500,6 +529,8 @@ document.addEventListener('DOMContentLoaded', () => {
     chkKeySystem.addEventListener('change', () => {
         keySystemFields.classList.toggle('hidden', !chkKeySystem.checked);
         updateKeysystemBadge();
+        updateKsStatusPill();
+        updatePublicKeyPill();
     });
 
     function updateKeysystemBadge() {
@@ -708,8 +739,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ---------------- Public Key section ----------------
+    function updatePublicKeyPill() {
+        if (!publicKeyPill) return;
+        const on = chkKeySystem.checked && chkPublicKey.checked;
+        publicKeyPill.className = `ks-state-pill ${on ? 'on' : 'off'}`;
+        publicKeyPill.innerHTML = `<i class="fa-solid ${on ? 'fa-circle-check' : 'fa-power-off'}"></i> <span>${on ? 'On' : 'Off'}</span>`;
+    }
+
+    function updateKsStatusPill() {
+        if (!ksStatusPill) return;
+        const on = chkKeySystem.checked;
+        const paused = chkVaultPaused.checked;
+        const cls = paused ? 'paused' : on ? 'on' : 'off';
+        const label = paused ? 'Vault paused' : on ? 'Key system on' : 'Key system off';
+        const icon = paused ? 'fa-circle-pause' : on ? 'fa-circle-check' : 'fa-power-off';
+        ksStatusPill.className = `ks-state-pill ${cls}`;
+        ksStatusPill.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${label}</span>`;
+    }
+
     chkPublicKey.addEventListener('change', () => {
         publicKeyFields.classList.toggle('hidden', !chkPublicKey.checked);
+        updatePublicKeyPill();
+        if (chkPublicKey.checked) renderPublicKeyStatus(getPublicKeyEntry({ keys: currentKeys }));
     });
     publicDurationSelect.addEventListener('change', (e) => {
         publicDurationCustom.classList.toggle('hidden', e.target.value !== 'custom');
@@ -719,10 +770,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function renderPublicKeyStatus(entry) {
+        updatePublicKeyPill();
         if (!chkPublicKey.checked) { publicKeyStatus.textContent = ''; return; }
         if (publicCustomLinkInput.value.trim()) {
             publicKeyActions.classList.add('hidden');
-            publicKeyStatus.textContent = 'Custom link enabled: each valid one-time return ticket issues a separate key. Your link service must preserve the ticket and redirect it to the reward URL template; the ticket prevents replay but cannot independently prove an external task was completed.';
+            publicKeyStatus.textContent = 'Link step enabled. Each completed return ticket issues a separate one-time key. Copy the return template from the Share link tab.';
             return;
         }
         publicKeyActions.classList.remove('hidden');
@@ -855,19 +907,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    async function copyLinkButton(button, value, successMessage, idleLabel) {
+        const ok = await copyToClipboard(value);
+        button.innerHTML = ok ? '<i class="fa-solid fa-check"></i> Copied!' : '<i class="fa-solid fa-triangle-exclamation"></i> Copy failed';
+        showToast(ok ? successMessage : 'Copy failed — select the text and copy it manually.', ok ? 'success' : 'error', 2500);
+        setTimeout(() => button.innerHTML = `<i class="fa-solid fa-copy"></i> ${idleLabel}`, 2000);
+    }
+
     keysystemCopyKeyLinkBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(keysystemGetKeyOutput.value);
-        keysystemCopyKeyLinkBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
-        showToast('Get-Key link copied.', 'success', 2000);
-        setTimeout(() => keysystemCopyKeyLinkBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy', 2000);
+        copyLinkButton(keysystemCopyKeyLinkBtn, keysystemGetKeyOutput.value, 'Get-Key link copied.', 'Copy link');
     });
 
     keysystemCopyRewardBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(keysystemRewardOutput.value);
-        keysystemCopyRewardBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
-        showToast('One-time reward URL template copied.', 'success', 2000);
-        setTimeout(() => keysystemCopyRewardBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy', 2000);
+        copyLinkButton(keysystemCopyRewardBtn, keysystemRewardOutput.value, 'One-time return template copied.', 'Copy template');
     });
+
+    if (publicLinkCopyBtn) {
+        publicLinkCopyBtn.addEventListener('click', () => {
+            const url = publicLinkOutput.value || keysystemGetKeyOutput.value;
+            copyLinkButton(publicLinkCopyBtn, url, 'Get-Key link copied.', 'Copy link');
+        });
+    }
 
     // ---------------- Load / migrate vault data ----------------
     function keysFromVaultData(data) {
@@ -996,11 +1056,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetIpBtn.classList.add('hidden');
             }
 
-            keysystemGetKeyOutput.value = `${window.location.origin}/key.html?id=${encodeURIComponent(vaultId)}`;
-            keysystemRewardOutput.value = `${window.location.origin}/key.html?id=${encodeURIComponent(vaultId)}&ticket={vx_ticket}`;
-            keysystemStatus.innerHTML = (!data.requireKey || currentKeys.length === 0)
-                ? '<i class="fa-solid fa-circle-info text-cyan"></i><p>Key system is currently off, or has no keys yet.</p>'
-                : `<i class="fa-solid fa-circle-check text-success"></i><p>${currentKeys.length} key${currentKeys.length > 1 ? 's are' : ' is'} active. Visitors pick any working public key from the Get-Key link.</p>`;
+            const getKeyUrl = `${window.location.origin}/key.html?id=${encodeURIComponent(vaultId)}`;
+            keysystemGetKeyOutput.value = getKeyUrl;
+            keysystemRewardOutput.value = `${getKeyUrl}&ticket={vx_ticket}`;
+            if (publicLinkOutput) publicLinkOutput.value = getKeyUrl;
+            if (publicLinkOpenBtn) publicLinkOpenBtn.href = getKeyUrl;
+            if (keysystemOpenKeyLink) keysystemOpenKeyLink.href = getKeyUrl;
+            updateKsStatusPill();
+            updatePublicKeyPill();
+            keysystemStatus.innerHTML = (!data.requireKey || (!chkPublicKey.checked && currentKeys.length === 0))
+                ? '<i class="fa-solid fa-circle-info text-cyan"></i><p>Key system is off, or no public key is enabled yet. Turn it on and enable the Public Key to share a Get-Key link.</p>'
+                : chkPublicKey.checked
+                    ? '<i class="fa-solid fa-circle-check text-success"></i><p>Public key is live. Copy the Get-Key link from the Share link tab and send it to players.</p>'
+                    : `<i class="fa-solid fa-circle-check text-success"></i><p>${currentKeys.length} private key${currentKeys.length > 1 ? 's are' : ' is'} active. Send them directly — they never appear on the Get-Key page.</p>`;
 
             updateKeysystemBadge();
             ksLoading.classList.add('hidden');
