@@ -48,10 +48,8 @@ function showToast(message, type = 'info', duration = 4000) {
 }
 
 function customConfirm({ title, message, confirmLabel = 'Confirm' }) {
-    return new Promise(resolve => {
-        const ok = window.confirm(`${title}\n\n${message}`);
-        resolve(ok);
-    });
+    if (window.vxDialog) return window.vxDialog.confirm(message, { title, confirmLabel, tone: 'danger' });
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
 }
 
 async function copyToClipboard(text) {

@@ -373,7 +373,12 @@ async function submitReport() {
 }
 
 async function removeUpload(id) {
-    if (!confirm('Remove this script upload from the community?')) return;
+    if (!(await window.vxDialog.confirm('Remove this script upload from the community?', {
+        title: 'Remove your upload?',
+        detail: 'The script disappears from the public library.',
+        confirmLabel: 'Remove upload',
+        tone: 'danger'
+    }))) return;
     try {
         await requestApi(`/api/scripts?id=${encodeURIComponent(id)}`, { method: 'DELETE', authRequired: true });
         myScripts = myScripts.filter(script => script.id !== id);

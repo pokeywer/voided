@@ -15,10 +15,8 @@ body.vx-app {
     background-image:
         linear-gradient(rgba(148, 163, 184, .028) 1px, transparent 1px),
         linear-gradient(90deg, rgba(148, 163, 184, .028) 1px, transparent 1px),
-        radial-gradient(920px 540px at 92% -12%, rgba(99, 102, 241, .2), transparent 62%),
-        radial-gradient(760px 520px at 0% 6%, rgba(6, 182, 212, .11), transparent 58%),
         linear-gradient(180deg, #080b13 0%, #060810 100%);
-    background-size: 58px 58px, 58px 58px, auto, auto, auto;
+    background-size: 58px 58px, 58px 58px, auto;
     background-attachment: fixed;
     color: var(--vx-ink);
     padding-left: var(--vx-rail-w);
@@ -426,3 +424,266 @@ body.vx-app .btn-ghost, body.vx-app .btn-accent, body.vx-app .btn-danger { borde
     body.vx-app .creator-panel-hero { padding: 26px 20px 40px; }
     body.vx-app .creator-panel-hero-mark { width: 200px; height: 190px; }
 }
+
+/* ---------------- Mobile script editor ---------------- */
+/* The builder page's workspace is a fixed, non-scrolling frame on desktop.
+   On phones the editor must scroll with the page, and the code area has to
+   come before the long settings panel so it is reachable while typing. */
+@media (max-width: 768px) {
+    body.vx-app .workspace {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    body.vx-app .vx-editor-view {
+        flex: 0 0 auto;
+        min-height: 0;
+        gap: 12px;
+        padding: 12px 12px calc(28px + env(safe-area-inset-bottom));
+    }
+    /* Flatten the sidebar so its pieces can be reordered around the editor. */
+    body.vx-app .vx-editor-view > .sidebar { display: contents; }
+    body.vx-app .vx-editor-view > .sidebar > .btn-new-vault {
+        order: 0;
+        align-self: flex-start;
+        width: auto;
+        min-width: 148px;
+    }
+    body.vx-app .vx-editor-view > .sidebar > .panel-group { order: 0; }
+    body.vx-app .vx-editor-view > .editor-stage {
+        order: 1;
+        flex: 0 0 auto;
+        height: min(60vh, 560px);
+        height: clamp(340px, 60dvh, 560px);
+        min-height: 340px;
+        overflow: hidden;
+        border: 1px solid var(--vx-line);
+        border-radius: 14px;
+        background: #0a0e16;
+        scroll-margin-top: 72px;
+    }
+    body.vx-app .vx-editor-view > .sidebar > .sidebar-save-dock {
+        order: 2;
+        position: static;
+        margin: 0;
+        padding: 0;
+        background: none;
+    }
+    body.vx-app .vx-editor-view > .sidebar > .mobile-vault-settings { order: 3; }
+    /* Trim chrome so the textarea gets the room above the keyboard. */
+    body.vx-app .vx-editor-view .editor-tools,
+    body.vx-app .vx-editor-view #editor-source-context { display: none; }
+    body.vx-app .vx-editor-view .code-editor-wrap #source-code {
+        padding: 14px 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        scroll-margin-bottom: 40px;
+    }
+}
+
+/* ---------------- Themed dialogs ---------------- */
+body.vx-dialog-open { overflow: hidden; }
+
+.vx-dialog-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(3, 6, 12, .74);
+    -webkit-backdrop-filter: blur(7px);
+    backdrop-filter: blur(7px);
+    opacity: 0;
+    transition: opacity .16s ease;
+}
+.vx-dialog-layer.is-open { opacity: 1; }
+.vx-dialog-layer.is-closing { opacity: 0; }
+
+.vx-dialog {
+    --vx-dialog-accent: #22d3ee;
+    --vx-dialog-accent-2: #6366f1;
+    --vx-dialog-accent-soft: rgba(34, 211, 238, .14);
+    --vx-dialog-accent-line: rgba(34, 211, 238, .36);
+    --vx-dialog-accent-glow: rgba(34, 211, 238, .18);
+    --vx-dialog-ink: #06111c;
+    position: relative;
+    width: min(452px, 100%);
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px 22px 20px;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 18px;
+    background:
+        radial-gradient(420px 200px at 100% 0%, rgba(6, 182, 212, .1), transparent 70%),
+        linear-gradient(180deg, #131a29, #0a0e17);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 255, 255, .03);
+    color: #e8eefb;
+    transform: translateY(12px) scale(.98);
+    transition: transform .18s cubic-bezier(.2, .8, .2, 1);
+}
+.vx-dialog-layer.is-open .vx-dialog { transform: none; }
+.vx-dialog-layer.is-closing .vx-dialog { transform: translateY(8px) scale(.985); }
+.vx-dialog-layer[data-tone="question"] .vx-dialog { --vx-dialog-accent: #818cf8; --vx-dialog-accent-2: #6366f1; --vx-dialog-accent-soft: rgba(129, 140, 248, .14); --vx-dialog-accent-line: rgba(129, 140, 248, .38); --vx-dialog-accent-glow: rgba(129, 140, 248, .18); }
+.vx-dialog-layer[data-tone="warning"] .vx-dialog { --vx-dialog-accent: #fbbf24; --vx-dialog-accent-2: #f59e0b; --vx-dialog-accent-soft: rgba(251, 191, 36, .13); --vx-dialog-accent-line: rgba(251, 191, 36, .4); --vx-dialog-accent-glow: rgba(251, 191, 36, .18); }
+.vx-dialog-layer[data-tone="danger"] .vx-dialog { --vx-dialog-accent: #f87171; --vx-dialog-accent-2: #dc2626; --vx-dialog-accent-soft: rgba(248, 113, 113, .14); --vx-dialog-accent-line: rgba(248, 113, 113, .4); --vx-dialog-accent-glow: rgba(248, 113, 113, .18); --vx-dialog-ink: #fff; }
+.vx-dialog-layer[data-tone="success"] .vx-dialog { --vx-dialog-accent: #34d399; --vx-dialog-accent-2: #10b981; --vx-dialog-accent-soft: rgba(52, 211, 153, .14); --vx-dialog-accent-line: rgba(52, 211, 153, .4); --vx-dialog-accent-glow: rgba(52, 211, 153, .18); }
+
+.vx-dialog [hidden] { display: none !important; }
+.vx-dialog-head { display: flex; align-items: flex-start; gap: 12px; }
+.vx-dialog-icon {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid var(--vx-dialog-accent-line);
+    background: var(--vx-dialog-accent-soft);
+    color: var(--vx-dialog-accent);
+    font-size: 16px;
+    box-shadow: 0 0 24px var(--vx-dialog-accent-glow);
+}
+.vx-dialog-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.vx-dialog-kicker {
+    margin: 0;
+    color: var(--vx-dialog-accent);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+}
+.vx-dialog-title { margin: 0; font-size: 17px; font-weight: 850; letter-spacing: -.3px; line-height: 1.25; color: #f2f7ff; }
+.vx-dialog-detail { margin: 0; color: #8ea0b8; font-size: 10.5px; line-height: 1.5; }
+.vx-dialog-x {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 9px;
+    background: rgba(148, 163, 184, .05);
+    color: #8ea0b8;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.vx-dialog-x:hover { color: #eafcff; border-color: rgba(6, 182, 212, .35); background: rgba(6, 182, 212, .08); }
+
+.vx-dialog-message { margin: 0; color: #b9c6d9; font-size: 12.5px; line-height: 1.62; white-space: pre-line; }
+
+.vx-dialog-field { display: flex; flex-direction: column; gap: 6px; }
+.vx-dialog-label { color: #8ea0b8; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.vx-dialog-input {
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 12px;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 10px;
+    background: rgba(6, 10, 18, .85);
+    color: #eaf2ff;
+    font: 500 13px/1.5 inherit;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+textarea.vx-dialog-input { min-height: 88px; resize: vertical; }
+.vx-dialog-input::placeholder { color: #5f7188; }
+.vx-dialog-input:focus {
+    border-color: var(--vx-dialog-accent-line);
+    box-shadow: 0 0 0 3px var(--vx-dialog-accent-soft);
+}
+.vx-dialog-field.is-invalid .vx-dialog-input { border-color: rgba(248, 113, 113, .65); }
+.vx-dialog-hint { margin: 0; color: #66758c; font-size: 10px; line-height: 1.45; }
+.vx-dialog-error { margin: 0; color: #fca5a5; font-size: 10.5px; font-weight: 650; }
+
+.vx-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
+.vx-dialog-actions .vx-btn { min-width: 100px; min-height: 42px; border-radius: 10px; }
+.vx-dialog-confirm {
+    border: 0;
+    background: linear-gradient(120deg, var(--vx-dialog-accent), var(--vx-dialog-accent-2));
+    color: var(--vx-dialog-ink);
+    font-weight: 850;
+    box-shadow: 0 12px 30px var(--vx-dialog-accent-glow);
+}
+.vx-dialog-confirm:hover { filter: brightness(1.06); }
+.vx-dialog-cancel { border: 1px solid rgba(148, 163, 184, .16); background: rgba(148, 163, 184, .06); color: #cdd9ea; font-weight: 750; }
+.vx-dialog-cancel:hover { border-color: rgba(148, 163, 184, .3); color: #f2f7ff; }
+
+@media (max-width: 520px) {
+    .vx-dialog-layer { align-items: flex-end; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+    .vx-dialog { width: 100%; max-height: calc(100dvh - 96px); padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); border-radius: 20px; }
+    .vx-dialog-actions { flex-direction: column-reverse; }
+    .vx-dialog-actions .vx-btn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .vx-dialog-layer, .vx-dialog { transition: none; }
+}
+
+/* ---------------- Ambient palette ---------------- */
+/* Five soft glows fade into each other behind the app surfaces. */
+.vx-aura {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+}
+.vx-aura span {
+    position: absolute;
+    inset: -12%;
+    opacity: 0;
+    animation: vxAuraFade 45s ease-in-out infinite;
+    will-change: opacity;
+}
+.vx-aura span:nth-child(1) {
+    background:
+        radial-gradient(900px 560px at 86% -10%, rgba(99, 102, 241, .22), transparent 62%),
+        radial-gradient(720px 520px at 4% 12%, rgba(34, 211, 238, .10), transparent 58%);
+    animation-delay: -3s;
+}
+.vx-aura span:nth-child(2) {
+    background:
+        radial-gradient(860px 540px at 12% -8%, rgba(20, 184, 166, .17), transparent 60%),
+        radial-gradient(680px 500px at 92% 18%, rgba(56, 189, 248, .11), transparent 58%);
+    animation-delay: 6s;
+}
+.vx-aura span:nth-child(3) {
+    background:
+        radial-gradient(880px 560px at 78% -4%, rgba(244, 114, 182, .13), transparent 60%),
+        radial-gradient(700px 520px at 6% 26%, rgba(139, 92, 246, .12), transparent 58%);
+    animation-delay: 15s;
+}
+.vx-aura span:nth-child(4) {
+    background:
+        radial-gradient(900px 540px at 18% -10%, rgba(245, 158, 11, .10), transparent 60%),
+        radial-gradient(680px 500px at 88% 16%, rgba(244, 63, 94, .10), transparent 58%);
+    animation-delay: 24s;
+}
+.vx-aura span:nth-child(5) {
+    background:
+        radial-gradient(900px 560px at 90% 2%, rgba(56, 189, 248, .16), transparent 60%),
+        radial-gradient(720px 520px at 0% 20%, rgba(129, 140, 248, .11), transparent 58%);
+    animation-delay: 33s;
+}
+.vx-aura.is-paused span { animation-play-state: paused; }
+
+@keyframes vxAuraFade {
+    0% { opacity: 0; }
+    6% { opacity: 1; }
+    22% { opacity: 1; }
+    30% { opacity: 0; }
+    100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vx-aura span { animation: none; opacity: 0; }
+    .vx-aura span:first-child { opacity: 1; }
+}
+
+.required-mark { color: #f87171; font-weight: 900; letter-spacing: 0; }

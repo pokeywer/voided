@@ -287,7 +287,15 @@ function renderMySourceRequests(requests) {
 
 // Show a prompt to request source access for a vault, then submit it.
 async function requestVaultSourceAccess(vaultId, vaultTitle, button) {
-    const reason = window.prompt(`You need admin approval to view the source of "${vaultTitle}".\n\nEnter your reason for needing access:`);
+    const reason = await window.vxDialog.prompt(`You need admin approval to view the source of "${vaultTitle}". Enter your reason for needing access.`, {
+        title: 'Request source access',
+        confirmLabel: 'Send request',
+        label: 'Reason',
+        hint: 'Admins see this reason when reviewing the request.',
+        multiline: true,
+        required: true,
+        validate: value => (value.trim().length >= 8 ? '' : 'Write at least 8 characters for your reason.')
+    });
     if (reason === null) return; // cancelled
     if (!reason.trim() || reason.trim().length < 8) {
         message(feedback, 'Write at least 8 characters for your reason.', 'error');
@@ -401,7 +409,17 @@ async function handleStaffActionClick(event) {
             const promptText = mode === 'restore-escalate'
                 ? 'Add a note for the administrator (at least 8 characters):'
                 : 'Add an optional private note for the restore request:';
-            const note = window.prompt(promptText);
+            const note = await window.vxDialog.prompt(promptText, {
+                title: mode === 'restore-escalate' ? 'Escalate restore request' : 'Update restore request',
+                confirmLabel: mode === 'restore-escalate' ? 'Escalate' : 'Save note',
+                tone: 'warning',
+                label: 'Note',
+                multiline: true,
+                required: mode === 'restore-escalate',
+                validate: value => (mode === 'restore-escalate' && value.trim().length < 8
+                    ? 'Write at least 8 characters before escalating this request.'
+                    : '')
+            });
             if (note === null) break;
             if (mode === 'restore-escalate' && note.trim().length < 8) {
                 message(feedback, 'Write at least 8 characters before escalating this request.', 'error');
@@ -415,12 +433,25 @@ async function handleStaffActionClick(event) {
             await showCommunityScript(id);
             break;
         case 'community-approve':
-            if (window.confirm('Approve this script for the public library? A backup will be created first.')) {
+            if (await window.vxDialog.confirm('Approve this script for the public library? A backup will be created first.', {
+                title: 'Approve this script?',
+                confirmLabel: 'Approve',
+                tone: 'success'
+            })) {
                 await performStaffAction(button, { action: 'moderate_community_script', id, status: 'approved' }, 'Community script approved.');
             }
             break;
         case 'community-reject': {
-            const note = window.prompt('Reason for rejecting this submission (at least 8 characters):');
+            const note = await window.vxDialog.prompt('Reason for rejecting this submission.', {
+                title: 'Reject this submission',
+                confirmLabel: 'Reject script',
+                tone: 'danger',
+                label: 'Reason',
+                hint: 'Shown to the submitter.',
+                multiline: true,
+                required: true,
+                validate: value => (value.trim().length >= 8 ? '' : 'Write at least 8 characters before rejecting this submission.')
+            });
             if (note === null) break;
             if (note.trim().length < 8) {
                 message(feedback, 'Write at least 8 characters before rejecting this submission.', 'error');

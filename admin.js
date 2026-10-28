@@ -385,7 +385,11 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
         setVaultStatus('Wait for the current vault save to finish before opening another vault.', 'info');
         return;
     }
-    if (adminVaultDirty && !discardConfirmed && !window.confirm('Discard your unsaved vault edits and open another vault?')) return;
+    if (adminVaultDirty && !discardConfirmed && !(await window.vxDialog.confirm('Discard your unsaved vault edits and open another vault?', {
+        title: 'Discard unsaved edits?',
+        confirmLabel: 'Discard & open',
+        tone: 'warning'
+    }))) return;
     const sequence = ++adminVaultLoadSequence;
     adminVaultRevision += 1;
     setVaultStatus('Loading readable source…', 'info');
@@ -418,7 +422,11 @@ async function selectAdminVault(id, { discardConfirmed = false } = {}) {
 
 async function loadAdminVaults() {
     if (adminVaultSaving) return;
-    if (adminVaultDirty && !window.confirm('Discard your unsaved vault edits and reload the vault list?')) return;
+    if (adminVaultDirty && !(await window.vxDialog.confirm('Discard your unsaved vault edits and reload the vault list?', {
+        title: 'Discard unsaved edits?',
+        confirmLabel: 'Discard & reload',
+        tone: 'warning'
+    }))) return;
     const selectedId = activeAdminVault?.id || '';
     adminVaultDirty = false;
     activeAdminVault = null;
@@ -525,7 +533,12 @@ async function saveAdminVault() {
     if (!source.trim()) return setVaultStatus('The vault source cannot be empty.', 'error');
     if (getUtf8ByteLength(source) > MAX_VAULT_SOURCE_BYTES) return setVaultStatus('Source exceeds the 2 MiB save limit.', 'error');
     const title = adminVaultTitle.value.trim() || 'Untitled Vault';
-    if (!window.confirm(`Save changes to “${title}” (${activeAdminVault.id})? This replaces the live source used by that vault's loader.`)) return;
+    if (!(await window.vxDialog.confirm(`Save changes to “${title}” (${activeAdminVault.id})? This replaces the live source used by that vault's loader.`, {
+        title: 'Save vault changes?',
+        detail: 'The live loader source is replaced immediately.',
+        confirmLabel: 'Save vault',
+        tone: 'warning'
+    }))) return;
 
     const settings = getAdminVaultObfuscationSettings();
     adminVaultSaving = true;
@@ -1043,10 +1056,22 @@ document.querySelector('.admin-operations-grid').addEventListener('click', async
         const confirmation = button.dataset.backupType === 'communityScript'
             ? 'Restore this community script backup? It will restore the saved script and its previous library visibility.'
             : 'Restore this vault backup? This replaces the saved script and obfuscation settings. Existing vaults keep their current keys and execution count. A deleted vault is recreated with its old keys cleared.';
-        if (!window.confirm(confirmation)) return;
+        if (!(await window.vxDialog.confirm(confirmation, {
+            title: 'Restore this backup?',
+            confirmLabel: 'Restore backup',
+            tone: 'warning'
+        }))) return;
     }
-    if (action === 'dismiss-request' && !window.confirm('Decline this restore request?')) return;
-    if (action === 'revoke-staff' && !window.confirm('Revoke this staff member’s access now?')) return;
+    if (action === 'dismiss-request' && !(await window.vxDialog.confirm('Decline this restore request? The requester will see it as declined.', {
+        title: 'Decline restore request?',
+        confirmLabel: 'Decline request',
+        tone: 'danger'
+    }))) return;
+    if (action === 'revoke-staff' && !(await window.vxDialog.confirm('Revoke this staff member’s access now?', {
+        title: 'Revoke staff access?',
+        confirmLabel: 'Revoke access',
+        tone: 'danger'
+    }))) return;
     setLoading(button, true, 'SAVING…');
     try {
         if (action === 'restore-backup' || action === 'restore-request') {
@@ -1066,14 +1091,44 @@ document.querySelector('.admin-operations-grid').addEventListener('click', async
             await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'revoke_staff', uid: button.dataset.uid }) });
             setOperationsStatus('Staff access revoked.', 'success');
         } else if (action === 'approve-source-request') {
-            const adminNote = (prompt('Optional note to staff member (shown with approval):') || '').trim();
-            const hoursInput = prompt('How many hours should this access last? (default: 24, max: 168)', '24');
-            const accessHours = Math.min(Math.max(1, parseInt(hoursInput) || 24), 168);
+            const noteInput = await window.vxDialog.prompt('Add an optional note for the staff member. It is shown with the approval.', {
+                title: 'Approve source access',
+                confirmLabel: 'Continue',
+                label: 'Admin note',
+                placeholder: 'Optional',
+                multiline: true
+            });
+            if (noteInput === null) return;
+            const hoursInput = await window.vxDialog.prompt('How many hours should this access last?', {
+                title: 'Access duration',
+                confirmLabel: 'Approve access',
+                tone: 'success',
+                label: 'Hours',
+                value: '24',
+                required: true,
+                validate: value => {
+                    const hours = Number(value);
+                    return Number.isFinite(hours) && hours >= 1 && hours <= 168 ? '' : 'Enter a number between 1 and 168.';
+                }
+            });
+            if (hoursInput === null) return;
+            const adminNote = noteInput.trim();
+            const accessHours = Math.min(Math.max(1, Math.round(Number(hoursInput))), 168);
             await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'approve_source_request', requestId: button.dataset.requestId, adminNote, accessHours }) });
             setOperationsStatus(`Source access approved for ${accessHours} hour(s).`, 'success');
             await refreshDashboard();
         } else if (action === 'deny-source-request') {
-            const adminNote = (prompt('Reason for denying (shown to staff member):') || '').trim();
+            const noteInput = await window.vxDialog.prompt('Give a reason for denying this request. It is shown to the staff member.', {
+                title: 'Deny source access',
+                confirmLabel: 'Deny request',
+                tone: 'danger',
+                label: 'Reason',
+                placeholder: 'At least a short explanation',
+                multiline: true,
+                required: true
+            });
+            if (noteInput === null) return;
+            const adminNote = noteInput.trim();
             await requestJson('/api/admin-operations', { method: 'POST', body: JSON.stringify({ action: 'deny_source_request', requestId: button.dataset.requestId, adminNote }) });
             setOperationsStatus('Source access request denied.', 'success');
             await refreshDashboard();
@@ -1152,7 +1207,12 @@ document.getElementById('announcement-list').addEventListener('click', async eve
         return;
     }
     if (action === 'delete') {
-        if (!window.confirm(`Delete “${item.title}”?`)) return;
+        if (!(await window.vxDialog.confirm(`Delete “${item.title}”?`, {
+            title: 'Delete announcement?',
+            detail: 'This cannot be undone.',
+            confirmLabel: 'Delete',
+            tone: 'danger'
+        }))) return;
         setLoading(button, true, 'DELETING…');
         try {
             await requestJson('/api/announcements', { method: 'DELETE', body: JSON.stringify({ id: item.id }) });
@@ -1221,7 +1281,12 @@ document.getElementById('announcement-clear-btn').addEventListener('click', asyn
     const button = event.currentTarget;
     if (!selectedAnnouncementId) return;
     const item = announcements.find(announcement => announcement.id === selectedAnnouncementId);
-    if (!window.confirm(`Delete “${item?.title || 'this announcement'}”?`)) return;
+    if (!(await window.vxDialog.confirm(`Delete “${item?.title || 'this announcement'}”?`, {
+        title: 'Delete announcement?',
+        detail: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        tone: 'danger'
+    }))) return;
     setLoading(button, true, 'REMOVING…');
     try {
         await requestJson('/api/announcements', { method: 'DELETE', body: JSON.stringify({ id: selectedAnnouncementId }) });
@@ -1256,7 +1321,12 @@ document.querySelector('.admin-script-review-card').addEventListener('click', as
     if (!button) return;
     const status = button.dataset.nextStatus;
     const actionLabel = status === 'approved' ? 'publish' : status === 'rejected' ? 'reject' : 'hide';
-    if (!window.confirm(`Are you sure you want to ${actionLabel} “${button.closest('.admin-script-review-item').querySelector('strong').textContent}”?`)) return;
+    const scriptTitle = button.closest('.admin-script-review-item').querySelector('strong').textContent;
+    if (!(await window.vxDialog.confirm(`Are you sure you want to ${actionLabel} “${scriptTitle}”?`, {
+        title: `${actionLabel.charAt(0).toUpperCase()}${actionLabel.slice(1)} this script?`,
+        confirmLabel: actionLabel === 'publish' ? 'Publish' : actionLabel === 'reject' ? 'Reject' : 'Hide',
+        tone: status === 'approved' ? 'success' : 'danger'
+    }))) return;
     setLoading(button, true, 'SAVING…');
     try {
         await requestJson('/api/admin-scripts', { method: 'PATCH', body: JSON.stringify({ id: button.dataset.scriptId, status }) });

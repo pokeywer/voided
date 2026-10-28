@@ -321,35 +321,10 @@ async function createRemoteVaultBackup(vaultId, reason = 'before_save') {
     return result.backup;
 }
 
-// Simple promise-based replacement for window.confirm, styled to match the app.
+// Promise-based confirm that uses the shared themed dialog.
 function customConfirm({ title, message, confirmLabel = 'Delete' }) {
-    return new Promise(resolve => {
-        const modal = document.getElementById('confirm-modal');
-        const titleEl = document.getElementById('confirm-title');
-        const messageEl = document.getElementById('confirm-message');
-        const okBtn = document.getElementById('confirm-ok-btn');
-        const cancelBtn = document.getElementById('confirm-cancel-btn');
-
-        titleEl.textContent = title;
-        messageEl.textContent = message;
-        okBtn.textContent = confirmLabel;
-        modal.classList.remove('hidden');
-
-        const cleanup = (result) => {
-            modal.classList.add('hidden');
-            okBtn.removeEventListener('click', onOk);
-            cancelBtn.removeEventListener('click', onCancel);
-            modal.removeEventListener('click', onOverlayClick);
-            resolve(result);
-        };
-        const onOk = () => cleanup(true);
-        const onCancel = () => cleanup(false);
-        const onOverlayClick = (e) => { if (e.target === modal) cleanup(false); };
-
-        okBtn.addEventListener('click', onOk);
-        cancelBtn.addEventListener('click', onCancel);
-        modal.addEventListener('click', onOverlayClick);
-    });
+    if (window.vxDialog) return window.vxDialog.confirm(message, { title, confirmLabel, tone: 'danger' });
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
 }
 
 // ============================================================
@@ -396,7 +371,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const sourceCode = document.getElementById('source-code');
     const codeError = document.getElementById('code-error');
     const mobileVaultSettings = document.getElementById('mobile-vault-settings');
-    if (mobileVaultSettings && window.matchMedia('(max-width: 768px)').matches) mobileVaultSettings.open = false;
+    const mobileEditorQuery = window.matchMedia('(max-width: 768px)');
+    // On phones: collapse the long settings panel and soft-wrap the source so
+    // the textarea stays reachable above the keyboard.
+    const syncEditorLayout = () => {
+        const mobile = mobileEditorQuery.matches;
+        sourceCode.wrap = mobile ? 'soft' : 'off';
+        if (mobileVaultSettings) mobileVaultSettings.open = !mobile;
+    };
+    syncEditorLayout();
+    if (mobileEditorQuery.addEventListener) mobileEditorQuery.addEventListener('change', syncEditorLayout);
     const scriptTitle = document.getElementById('script-title');
     const titleError = document.getElementById('title-error');
     const resultOverlay = document.getElementById('result-overlay');
@@ -993,12 +977,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (dashEls.vaultList) {
-        dashEls.vaultList.addEventListener('click', event => {
+        dashEls.vaultList.addEventListener('click', async event => {
             const button = event.target.closest('[data-dash-edit]');
             if (!button) return;
             const vault = cachedVaults.find(item => item.id === button.dataset.dashEdit);
             if (!vault) return;
-            if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Discard them and open this vault?')) return;
+            if (hasUnsavedChanges && !(await window.vxDialog.confirm('You have unsaved changes. Discard them and open this vault?', {
+                title: 'Discard unsaved changes?',
+                confirmLabel: 'Discard & open',
+                tone: 'warning'
+            }))) return;
             loadVaultIntoEditor(vault.id, vault.data);
             if (window.vxShell) window.vxShell.showView('editor');
         });
@@ -1060,8 +1048,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </span>
                 <span class="vault-item-badge"><i class="fa-solid fa-play"></i> ${execs.toLocaleString()}</span>
             `;
-            div.addEventListener('click', () => {
-                if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Discard them and open this vault?')) return;
+            div.addEventListener('click', async () => {
+                if (hasUnsavedChanges && !(await window.vxDialog.confirm('You have unsaved changes. Discard them and open this vault?', {
+                    title: 'Discard unsaved changes?',
+                    confirmLabel: 'Discard & open',
+                    tone: 'warning'
+                }))) return;
                 loadVaultIntoEditor(vault.id, item);
             });
             vaultListContainer.appendChild(div);
@@ -1516,13 +1508,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const title = scriptTitle.value.trim().slice(0, 80);
         if (!title) {
-            setFieldError(scriptTitle, titleError, 'Enter a name for this vault before saving.');
+            setFieldError(scriptTitle, titleError, 'Name this vault before saving.');
             shakeElement(scriptTitle);
-            scriptTitle.focus();
+            scriptTitle.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            scriptTitle.focus({ preventScroll: true });
+            showToast('Give this vault a name before saving.', 'warning', 4000);
             return;
         }
         if (!obfuscationSettings.enabled && !looksAlreadyObfuscatedLua(code) &&
-            !window.confirm('Lua obfuscation is off. Save this vault without obfuscating it? The saved source will be readable to anyone who can access it.')) {
+            !(await window.vxDialog.confirm('Lua obfuscation is off. The saved source will be readable to anyone who can access it. Save this vault without obfuscating it?', {
+                title: 'Save without obfuscation?',
+                confirmLabel: 'Save anyway',
+                tone: 'warning'
+            }))) {
             return;
         }
         const vaultId = activeVaultId.value || ('vx_' + Math.random().toString(36).substring(2, 10));
@@ -1756,7 +1754,15 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('You can keep up to 5 scripts. Delete one before recovering another vault.', 'warning', 8000);
             return;
         }
-        const vid = (window.prompt('Enter the ID of your old vault (looks like vx_abc12345):') || '').trim();
+        const vidInput = await window.vxDialog.prompt('Enter the ID of your old vault.', {
+            title: 'Recover a vault',
+            confirmLabel: 'Find vault',
+            label: 'Vault ID',
+            placeholder: 'vx_abc12345',
+            hint: 'The ID looks like vx_abc12345 and was shown when the vault was created.'
+        });
+        if (vidInput === null) return;
+        const vid = vidInput.trim();
         if (!vid) return;
         try {
             const ref = doc(db, "vaults", vid);
@@ -1777,8 +1783,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    newVaultBtn.addEventListener('click', () => {
-        if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Discard them and start a new vault?')) return;
+    newVaultBtn.addEventListener('click', async () => {
+        if (hasUnsavedChanges && !(await window.vxDialog.confirm('You have unsaved changes. Discard them and start a new vault?', {
+            title: 'Start a new vault?',
+            confirmLabel: 'Discard & start',
+            tone: 'warning'
+        }))) return;
         resetEditor();
         scriptTitle.focus();
         showToast('Ready for a new vault.', 'info', 2000);

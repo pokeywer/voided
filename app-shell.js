@@ -5,6 +5,30 @@
     if (!body || body.dataset.vxShell === 'off') return;
     body.classList.add('vx-app');
 
+    /* Ambient palette: five soft glows that crossfade behind the app. */
+    const aura = document.createElement('div');
+    aura.className = 'vx-aura';
+    aura.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 5; i++) aura.appendChild(document.createElement('span'));
+    body.prepend(aura);
+    document.addEventListener('visibilitychange', () => {
+        aura.classList.toggle('is-paused', document.hidden);
+    });
+
+    /* Chrome autofills saved credentials into plain fields on pages that also
+       host a password input. Guarded fields stay read-only until the user
+       actually interacts with them, then anything autofilled is cleared. */
+    document.querySelectorAll('input[data-autofill-guard]').forEach(field => {
+        const unlock = () => {
+            if (!field.readOnly) return;
+            field.readOnly = false;
+            if (field.value) field.value = '';
+        };
+        ['pointerdown', 'touchstart', 'focus', 'keydown'].forEach(type => {
+            field.addEventListener(type, unlock, { passive: true });
+        });
+    });
+
     const PAGE_TITLES = {
         '/': 'Dashboard',
         '/index.html': 'Dashboard',
@@ -242,6 +266,226 @@
             } catch (_) { /* Share cancelled or unavailable. */ }
         });
     }
+
+    /* ---------------- Themed dialogs ---------------- */
+    const DIALOG_ICONS = {
+        default: 'fa-circle-info',
+        question: 'fa-circle-question',
+        warning: 'fa-triangle-exclamation',
+        danger: 'fa-triangle-exclamation',
+        success: 'fa-circle-check'
+    };
+    const dialogQueue = [];
+    let dialogVisible = false;
+    let dialogId = 0;
+
+    const normalizeDialogOptions = options => (options && typeof options === 'object' ? options : {});
+
+    function requestDialog(options) {
+        return new Promise(resolve => {
+            dialogQueue.push({ options: options || {}, resolve });
+            pumpDialogs();
+        });
+    }
+
+    function pumpDialogs() {
+        if (dialogVisible || !dialogQueue.length) return;
+        dialogVisible = true;
+        body.classList.add('vx-dialog-open');
+        const job = dialogQueue.shift();
+        openDialog(job.options, result => {
+            dialogVisible = false;
+            job.resolve(result);
+            if (!dialogQueue.length) body.classList.remove('vx-dialog-open');
+            pumpDialogs();
+        });
+    }
+
+    function openDialog(options, finish) {
+        const opts = Object.assign({
+            mode: 'alert',
+            title: 'VoidedX',
+            message: '',
+            detail: '',
+            tone: 'default',
+            confirmLabel: 'OK',
+            cancelLabel: 'Cancel',
+            label: '',
+            hint: '',
+            placeholder: '',
+            value: '',
+            multiline: false,
+            maxlength: 0,
+            required: false,
+            validate: null
+        }, normalizeDialogOptions(options));
+
+        const mode = opts.mode === 'confirm' || opts.mode === 'prompt' ? opts.mode : 'alert';
+        const tone = DIALOG_ICONS[opts.tone] ? opts.tone : 'default';
+        if (mode === 'confirm' && opts.confirmLabel === 'OK') opts.confirmLabel = 'Confirm';
+
+        const previousFocus = document.activeElement;
+        const titleId = `vx-dialog-title-${++dialogId}`;
+        const layer = document.createElement('div');
+        layer.className = 'vx-dialog-layer';
+        layer.dataset.tone = tone;
+        layer.innerHTML = `
+            <form class="vx-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}" novalidate>
+                <div class="vx-dialog-head">
+                    <span class="vx-dialog-icon" aria-hidden="true"><i class="fa-solid ${DIALOG_ICONS[tone]}"></i></span>
+                    <div class="vx-dialog-heading">
+                        <p class="vx-dialog-kicker">VoidedX</p>
+                        <h2 class="vx-dialog-title" id="${titleId}"></h2>
+                        <p class="vx-dialog-detail"></p>
+                    </div>
+                    <button type="button" class="vx-dialog-x" aria-label="Close dialog"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p class="vx-dialog-message"></p>
+                <div class="vx-dialog-field">
+                    <label class="vx-dialog-label"></label>
+                    <input class="vx-dialog-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                    <textarea class="vx-dialog-input" rows="3" spellcheck="false"></textarea>
+                    <p class="vx-dialog-hint"></p>
+                    <p class="vx-dialog-error" role="alert"></p>
+                </div>
+                <div class="vx-dialog-actions">
+                    <button type="button" class="vx-btn vx-btn-ghost vx-dialog-cancel"></button>
+                    <button type="submit" class="vx-btn vx-dialog-confirm"></button>
+                </div>
+            </form>
+        `;
+
+        const form = layer.querySelector('.vx-dialog');
+        const titleEl = layer.querySelector('.vx-dialog-title');
+        const detailEl = layer.querySelector('.vx-dialog-detail');
+        const messageEl = layer.querySelector('.vx-dialog-message');
+        const fieldWrap = layer.querySelector('.vx-dialog-field');
+        const labelEl = layer.querySelector('.vx-dialog-label');
+        const inputEl = layer.querySelector('input.vx-dialog-input');
+        const areaEl = layer.querySelector('textarea.vx-dialog-input');
+        const hintEl = layer.querySelector('.vx-dialog-hint');
+        const errorEl = layer.querySelector('.vx-dialog-error');
+        const cancelBtn = layer.querySelector('.vx-dialog-cancel');
+        const confirmBtn = layer.querySelector('.vx-dialog-confirm');
+        const closeBtn = layer.querySelector('.vx-dialog-x');
+
+        titleEl.textContent = opts.title;
+        messageEl.textContent = opts.message;
+        detailEl.textContent = opts.detail;
+        detailEl.hidden = !opts.detail;
+        messageEl.hidden = !opts.message;
+        confirmBtn.textContent = opts.confirmLabel;
+        cancelBtn.textContent = opts.cancelLabel;
+        cancelBtn.hidden = mode === 'alert';
+
+        let field = null;
+        if (mode === 'prompt') {
+            field = opts.multiline ? areaEl : inputEl;
+            (opts.multiline ? inputEl : areaEl).remove();
+            field.placeholder = opts.placeholder;
+            field.value = opts.value == null ? '' : String(opts.value);
+            if (opts.maxlength) field.maxLength = opts.maxlength;
+            labelEl.textContent = opts.label;
+            labelEl.hidden = !opts.label;
+            hintEl.textContent = opts.hint;
+            hintEl.hidden = !opts.hint;
+        } else {
+            fieldWrap.remove();
+        }
+        errorEl.hidden = true;
+
+        document.body.appendChild(layer);
+        if (field) {
+            if (opts.label) field.setAttribute('aria-label', opts.label);
+        }
+
+        let closed = false;
+        function close(result) {
+            if (closed) return;
+            closed = true;
+            document.removeEventListener('keydown', onKeydown, true);
+            layer.classList.remove('is-open');
+            layer.classList.add('is-closing');
+            setTimeout(() => {
+                layer.remove();
+                if (previousFocus && typeof previousFocus.focus === 'function') {
+                    try { previousFocus.focus({ preventScroll: true }); } catch (_) { previousFocus.focus(); }
+                }
+                finish(result);
+            }, 160);
+        }
+        const cancel = () => close(mode === 'prompt' ? null : mode === 'confirm' ? false : undefined);
+
+        function showError(text) {
+            errorEl.textContent = text;
+            errorEl.hidden = false;
+            fieldWrap.classList.add('is-invalid');
+            const target = field || confirmBtn;
+            target.focus({ preventScroll: true });
+        }
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            if (mode !== 'prompt') {
+                close(mode === 'confirm' ? true : undefined);
+                return;
+            }
+            const raw = field.value;
+            if (opts.required && !raw.trim()) {
+                showError('Enter a value to continue.');
+                return;
+            }
+            const problem = typeof opts.validate === 'function' ? opts.validate(raw, field) : '';
+            if (problem) {
+                showError(problem);
+                return;
+            }
+            close(raw);
+        });
+        cancelBtn.addEventListener('click', cancel);
+        closeBtn.addEventListener('click', cancel);
+        layer.addEventListener('mousedown', event => { if (event.target === layer) cancel(); });
+
+        function onKeydown(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                cancel();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            const focusables = Array.from(form.querySelectorAll('button, input, textarea, [href], select, [tabindex]:not([tabindex="-1"])'))
+                .filter(element => !element.disabled && element.offsetParent !== null);
+            if (!focusables.length) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        }
+        document.addEventListener('keydown', onKeydown, true);
+
+        requestAnimationFrame(() => layer.classList.add('is-open'));
+        setTimeout(() => {
+            const target = field || confirmBtn;
+            try { target.focus({ preventScroll: true }); } catch (_) { target.focus(); }
+        }, 60);
+    }
+
+    const dialogWith = (mode, message, options) => {
+        const base = Object.assign({ mode }, normalizeDialogOptions(options));
+        if (message !== undefined) base.message = message;
+        return requestDialog(base);
+    };
+    window.vxDialog = {
+        open: options => requestDialog(Object.assign({ mode: 'alert' }, normalizeDialogOptions(options))),
+        alert: (message, options) => dialogWith('alert', message, options),
+        confirm: (message, options) => dialogWith('confirm', message, options),
+        prompt: (message, options) => dialogWith('prompt', message, options)
+    };
 
     window.vxShell = { showView, currentView, setActiveState, navKey };
     setActiveState();
