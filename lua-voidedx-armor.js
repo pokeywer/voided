@@ -401,15 +401,144 @@ function splitAlphabetLiteral(alphabet, rng) {
     return parts.join('..');
 }
 
+// Token-level reflow: drops comments, then scatters line breaks and padding so
+// the delivered file reads like raw VM output instead of a formatted script.
+// Strings and long brackets are copied verbatim, and a gap is forced only where
+// removing it would merge two tokens (e.g. `end local`, `a-b` / `--`).
+function needsTokenGap(prev, next) {
+    const a = prev[prev.length - 1];
+    const b = next[0];
+    if (/[A-Za-z0-9_]/.test(a) && /[A-Za-z0-9_]/.test(b)) return true;
+    if (a === '-' && b === '-') return true;
+    if (/[0-9]/.test(a) && b === '.') return true;
+    if (a === '[' && (b === '[' || b === '=')) return true;
+    return false;
+}
+
+function messifyLua(code, rng) {
+    const tokens = [];
+    const n = code.length;
+    let i = 0;
+
+    while (i < n) {
+        const c = code[i];
+        if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { i += 1; continue; }
+
+        if (c === '-' && code[i + 1] === '-') {
+            let j = i + 2;
+            if (code[j] === '[') {
+                let eqs = 0;
+                let k = j + 1;
+                while (k < n && code[k] === '=') { eqs += 1; k += 1; }
+                if (k < n && code[k] === '[') {
+                    const close = ']' + '='.repeat(eqs) + ']';
+                    const end = code.indexOf(close, k + 1);
+                    i = end === -1 ? n : end + close.length;
+                    continue;
+                }
+            }
+            const newline = code.indexOf('\n', j);
+            i = newline === -1 ? n : newline + 1;
+            continue;
+        }
+
+        if (c === '[') {
+            let eqs = 0;
+            let k = i + 1;
+            while (k < n && code[k] === '=') { eqs += 1; k += 1; }
+            if (k < n && code[k] === '[') {
+                const close = ']' + '='.repeat(eqs) + ']';
+                const end = code.indexOf(close, k + 1);
+                if (end !== -1) {
+                    tokens.push(code.slice(i, end + close.length));
+                    i = end + close.length;
+                    continue;
+                }
+            }
+            tokens.push(c);
+            i += 1;
+            continue;
+        }
+
+        if (c === '"' || c === "'") {
+            let j = i + 1;
+            while (j < n) {
+                if (code[j] === '\\') { j += 2; continue; }
+                if (code[j] === c) { j += 1; break; }
+                j += 1;
+            }
+            tokens.push(code.slice(i, j));
+            i = j;
+            continue;
+        }
+
+        if (/[A-Za-z_]/.test(c)) {
+            let j = i + 1;
+            while (j < n && /[A-Za-z0-9_]/.test(code[j])) j += 1;
+            tokens.push(code.slice(i, j));
+            i = j;
+            continue;
+        }
+
+        if (/[0-9]/.test(c)) {
+            let j = i + 1;
+            while (j < n && /[0-9]/.test(code[j])) j += 1;
+            if (code[j] === '.' && /[0-9]/.test(code[j + 1] || '')) {
+                j += 1;
+                while (j < n && /[0-9]/.test(code[j])) j += 1;
+            }
+            tokens.push(code.slice(i, j));
+            i = j;
+            continue;
+        }
+
+        // Multi-character operators must stay whole: splitting `~=` or `<=`
+        // across a line break produces a parse error, not just ugly code.
+        if (code.startsWith('...', i)) {
+            tokens.push('...');
+            i += 3;
+            continue;
+        }
+        const pair = code.slice(i, i + 2);
+        if (pair === '..' || pair === '==' || pair === '~=' || pair === '<=' || pair === '>=' || pair === '//' || pair === '::') {
+            tokens.push(pair);
+            i += 2;
+            continue;
+        }
+
+        tokens.push(c);
+        i += 1;
+    }
+
+    let out = '-- VoidedX\n';
+    let sinceBreak = 0;
+    for (let t = 0; t < tokens.length; t += 1) {
+        const token = tokens[t];
+        const prev = tokens[t - 1];
+        if (t > 0) {
+            const gap = needsTokenGap(prev, token) ? ' ' : (rng() < 0.18 ? ' ' : '');
+            out += gap;
+        }
+        out += token;
+        sinceBreak += 1;
+        // A break before `(`/`{`/`[` turns the following statement into a
+        // continuation call or index, which Luau rejects as ambiguous syntax.
+        const breakSafe = token !== '(' && token !== '{' && token !== '['
+            && tokens[t + 1] !== '(' && tokens[t + 1] !== '{' && tokens[t + 1] !== '['
+            && prev !== 'return';
+        if (breakSafe && sinceBreak > 30 && (rng() < 0.14 || sinceBreak > 240)) {
+            out += rng() < 0.02 ? '\n\n' : '\n';
+            sinceBreak = 0;
+        }
+    }
+    return out + '\n';
+}
+
 function buildLoader(o) {
     const p = o.names;
     const lines = [];
     const add = line => lines.push(line);
 
-    add('--[[');
-    add('    VoidedX - protected copy');
-    add('    Generated by the VoidedX engine. Unauthorized redistribution is prohibited.');
-    add(']]');
     add(`local ${p.sbyte},${p.schar},${p.ssub},${p.slen}=string.byte,string.char,string.sub,string.len`);
     add(`local ${p.sconcat}=table.concat`);
     add(`local ${p.sunpack}=table.unpack or unpack`);
@@ -431,6 +560,7 @@ function buildLoader(o) {
     add(`    if string.byte~=${p.sbyte} or string.char~=${p.schar} or string.sub~=${p.ssub} or string.len~=${p.slen} then return false end`);
     add(`    if table.concat~=${p.sconcat} then return false end`);
     add(`    if rawequal~=${p.rawequal} then return false end`);
+    add(`    if ${p.pcall}(function() ${p.error}("vx_probe",0) end) then return false end`);
     if (o.hookGuard) {
         add(`    if ${p.gethook} then`);
         add(`        local ok,hook=${p.pcall}(${p.gethook})`);
@@ -673,7 +803,7 @@ export function armorVoidedxSource(source, options = {}) {
     const opaqueC = 11 + randomInt(rng, 700);
     const opaqueM = 37 + randomInt(rng, 80);
 
-    return buildLoader({
+    const loader = buildLoader({
         names: {
             nextName,
             sbyte: nextName(), schar: nextName(), ssub: nextName(), slen: nextName(),
@@ -702,6 +832,7 @@ export function armorVoidedxSource(source, options = {}) {
         opaqueM,
         opaqueExpected: (opaqueA * opaqueB + opaqueC) % opaqueM
     });
+    return messifyLua(loader, rng);
 }
 
 export const ARMOR_LEVELS = Object.freeze(Object.keys(LEVEL_CONFIG));
