@@ -202,6 +202,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const keysystemRewardOutput = document.getElementById('keysystem-reward-output');
     const keysystemCopyRewardBtn = document.getElementById('keysystem-copy-reward-btn');
     const keysystemOpenKeyLink = document.getElementById('keysystem-open-key-link');
+    const keysystemVaultLinkOutput = document.getElementById('keysystem-vault-link-output');
+    const keysystemCopyVaultLinkBtn = document.getElementById('keysystem-copy-vault-link-btn');
+    const keysystemOpenVaultLink = document.getElementById('keysystem-open-vault-link');
     const keysystemApplyBtn = document.getElementById('keysystem-apply-btn');
 
     if (!vaultId) {
@@ -921,6 +924,12 @@ document.addEventListener('DOMContentLoaded', () => {
         copyLinkButton(keysystemCopyRewardBtn, keysystemRewardOutput.value, 'One-time return template copied.', 'Copy template');
     });
 
+    if (keysystemCopyVaultLinkBtn) {
+        keysystemCopyVaultLinkBtn.addEventListener('click', () => {
+            copyLinkButton(keysystemCopyVaultLinkBtn, keysystemVaultLinkOutput.value, 'Vault link copied.', 'Copy link');
+        });
+    }
+
     if (publicLinkCopyBtn) {
         publicLinkCopyBtn.addEventListener('click', () => {
             const url = publicLinkOutput.value || keysystemGetKeyOutput.value;
@@ -1056,8 +1065,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const getKeyUrl = `${window.location.origin}/key.html?id=${encodeURIComponent(vaultId)}`;
+            const vaultUrl = `${window.location.origin}/vault.html?id=${encodeURIComponent(vaultId)}`;
             keysystemGetKeyOutput.value = getKeyUrl;
             keysystemRewardOutput.value = `${getKeyUrl}&ticket={vx_ticket}`;
+            if (keysystemVaultLinkOutput) keysystemVaultLinkOutput.value = vaultUrl;
+            if (keysystemOpenVaultLink) keysystemOpenVaultLink.href = vaultUrl;
             if (publicLinkOutput) publicLinkOutput.value = getKeyUrl;
             if (publicLinkOpenBtn) publicLinkOpenBtn.href = getKeyUrl;
             if (keysystemOpenKeyLink) keysystemOpenKeyLink.href = getKeyUrl;

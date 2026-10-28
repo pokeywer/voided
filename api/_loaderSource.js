@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { deriveBootstrapSeed } from './_loaderToken.js';
 import { xorKeystream } from './_loaderShield.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
@@ -82,11 +83,56 @@ export function compactGeneratedLoader(source) {
     return output.trim();
 }
 
-// The returned bootstrap carries only ciphertext. The gate response releases the
-// token-derived seed, so a captured body alone cannot be decrypted offline.
+// Shared with the obfuscation banner so every VoidedX surface uses the same
+// block lettering.
+const LOADER_BANNER_FONT = {
+    V: ['##   ##', '##   ##', '##   ##', ' ## ## ', '  ###  '],
+    O: [' ##### ', '##   ##', '##   ##', '##   ##', ' ##### '],
+    I: ['######', '  ##  ', '  ##  ', '  ##  ', '######'],
+    D: ['##### ', '##  ##', '##  ##', '##  ##', '##### '],
+    E: ['######', '##    ', '####  ', '##    ', '######'],
+    X: ['##   ##', ' ## ## ', '  ###  ', ' ## ## ', '##   ##']
+};
+
+function buildLoaderBanner() {
+    const rows = ['', '', '', '', ''];
+    for (const letter of 'VOIDEDX') {
+        const glyph = LOADER_BANNER_FONT[letter] || ['      ', '      ', '      ', '      ', '      '];
+        for (let row = 0; row < 5; row += 1) rows[row] += glyph[row] + ' ';
+    }
+    return [
+        '--[[',
+        '   ' + rows[0],
+        '   ' + rows[1],
+        '   ' + rows[2],
+        '   ' + rows[3],
+        '   ' + rows[4],
+        '',
+        '   VoidedX Loader   //   voidedx.vercel.app',
+        '   protected delivery build   |   do not resell',
+        ']]'
+    ].join('\n');
+}
+
+function createLoaderNames() {
+    const used = new Set();
+    return () => {
+        let name;
+        do {
+            name = `_0x${randomBytes(4).toString('hex')}`;
+        } while (used.has(name));
+        used.add(name);
+        return name;
+    };
+}
+
+// The returned bootstrap carries only ciphertext: the inner loader is sealed
+// with the token-derived seed, and the gate URL (which embeds the live token)
+// is sealed with a per-build key. It opens with a VoidedX banner and refuses to
+// decrypt when the runtime has been instrumented, so a dumped body cannot be
+// read or replayed with a hooked loadstring/HttpGet. The gate response releases
+// the seed, so a captured body alone still cannot be decrypted offline.
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
-    // The credit line lives inside the inner loader, so it appears only after a
-    // successful gate decrypt. The outer bootstrap stays ciphertext + decoder.
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
     const sealed = obfuscateLoaderSource(source);
@@ -97,56 +143,168 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     gateUrl.searchParams.set('format', 'token-check');
     if (key) gateUrl.searchParams.set('key', key);
 
-    return `local _b0="${cipher}"
-local _b1=${luaString(gateUrl.href)}
-local _bmap={}
-do
-local _ba="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-for _bi=1,#_ba do _bmap[string.sub(_ba,_bi,_bi)]=_bi-1 end
-end
-local function _bb(v)
+    // The URL never appears as a literal. It is XORed with a per-build key and
+    // stored as base64url, then rebuilt next to the gate request.
+    const urlKey = randomBytes(4).readUInt32BE(0) || 1;
+    const urlCipher = xorKeystream(gateUrl.href, urlKey).toString('base64url');
+    const chunkName = randomBytes(6).toString('hex');
+
+    const name = createLoaderNames();
+    const n = {
+        data: name(), map: name(), alpha: name(), index: name(), b64: name(), xor: name(),
+        cap: name(), guard: name(), deny: name(), url: name(), ok: name(), res: name(),
+        seed: name(), loader: name(), chunk: name(), err: name(),
+        lstr: name(), ld: name(), gv: name(), gf: name(), dmp: name(), envs: name(), adde: name(),
+        env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
+        code: name(), arg: name(), pos: name()
+    };
+    const cap = i => `${n.cap}[${i}]`;
+
+    return `${buildLoaderBanner()}
+local ${n.data}="${cipher}"
+local ${n.map}={}
+do local ${n.alpha}="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+for ${n.index}=1,#${n.alpha} do ${n.map}[string.sub(${n.alpha},${n.index},${n.index})]=${n.index}-1 end end
+local function ${n.b64}(v)
 v=string.gsub(v,"%-","+")
 v=string.gsub(v,"_","/")
-local _r=#v%4
-if _r==2 then v=v.."==" elseif _r==3 then v=v.."=" end
-local _o={}
-local _i=1
-while _i<=#v do
-local _c1=_bmap[string.sub(v,_i,_i)] or 0
-local _c2=_bmap[string.sub(v,_i+1,_i+1)] or 0
-local _c3=_bmap[string.sub(v,_i+2,_i+2)]
-local _c4=_bmap[string.sub(v,_i+3,_i+3)]
-local _n=_c1*262144+_c2*4096+(_c3 or 0)*64+(_c4 or 0)
-_o[#_o+1]=string.char(math.floor(_n/65536)%256)
-if _c3 then _o[#_o+1]=string.char(math.floor(_n/256)%256) end
-if _c4 then _o[#_o+1]=string.char(_n%256) end
-_i=_i+4
+local r=#v%4
+if r==2 then v=v.."==" elseif r==3 then v=v.."=" end
+local o={}
+local i=1
+while i<=#v do
+local c1=${n.map}[string.sub(v,i,i)] or 0
+local c2=${n.map}[string.sub(v,i+1,i+1)] or 0
+local c3=${n.map}[string.sub(v,i+2,i+2)]
+local c4=${n.map}[string.sub(v,i+3,i+3)]
+local x=c1*262144+c2*4096+(c3 or 0)*64+(c4 or 0)
+o[#o+1]=string.char(math.floor(x/65536)%256)
+if c3 then o[#o+1]=string.char(math.floor(x/256)%256) end
+if c4 then o[#o+1]=string.char(x%256) end
+i=i+4
 end
-return table.concat(_o)
+return table.concat(o)
 end
-local function _bx(v,s)
-local _xor,_ls,_rs=bit32.bxor,bit32.lshift,bit32.rshift
-local _o={}
-for _i=1,#v do
-local _j=(_i-1)%4
-if _j==0 then
-s=_xor(s,_ls(s,13))
-s=_xor(s,_rs(s,17))
-s=_xor(s,_ls(s,5))
+local function ${n.xor}(v,s)
+local o={}
+local i=1
+while i<=#v do
+local j=(i-1)%4
+if j==0 then
+s=bit32.bxor(s,bit32.lshift(s,13))
+s=bit32.bxor(s,bit32.rshift(s,17))
+s=bit32.bxor(s,bit32.lshift(s,5))
 end
-_o[_i]=string.char(_xor(string.byte(v,_i),_rs(s,24-_j*8)%256))
+o[#o+1]=string.char(bit32.bxor(string.byte(v,i),bit32.rshift(s,24-j*8)%256))
+i=i+1
 end
-return table.concat(_o)
+return table.concat(o)
 end
-local _bok,_bres=pcall(function() return game:HttpGet(_b1) end)
-if not _bok or type(_bres)~="string" then return error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
-local _bseed=string.match(_bres,"^vx1|(%x+)|%x+$")
-if not _bseed then return error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
-local _bc=loadstring or load
-if type(_bc)~="function" then return error("[VoidedX] This executor does not support loadstring.",0) end
-local _bf,_be=_bc(_bx(_bb(_b0),tonumber(_bseed,16)))
-if not _bf then return error(tostring(_be),0) end
-return _bf()`;
+local ${n.cap}={}
+do
+${cap(1)}=string.byte ${cap(2)}=string.char ${cap(3)}=string.sub ${cap(4)}=string.gsub ${cap(5)}=string.match
+${cap(6)}=table.concat ${cap(7)}=pcall ${cap(8)}=error ${cap(9)}=type ${cap(10)}=math.floor
+${cap(11)}=loadstring or load
+${cap(12)}=game.HttpGet
+${cap(13)}=game.HttpGet==game.HttpGet
+${cap(14)}=(loadstring or load)==(loadstring or load)
+${cap(15)}=type(getgenv)=="function" and getgenv or nil
+${cap(16)}=type(getfenv)=="function" and getfenv or nil
+${cap(17)}=type(setfenv)=="function" and setfenv or nil
+${cap(18)}=type(debug)=="table" and debug.gethook or nil
+${cap(19)}=type(bit32)=="table" and bit32 or nil
+${cap(20)}=type(tostring)=="function" and tostring or nil
+${cap(21)}=type(tonumber)=="function" and tonumber or nil
+end
+local ${n.lstr}=loadstring
+local ${n.ld}=load
+local ${n.gv}=type(getgenv)=="function" and getgenv or nil
+local ${n.gf}=type(getfenv)=="function" and getfenv or nil
+local ${n.dmp}=type(string.dump)=="function" and string.dump or nil
+local function ${n.guard}()
+if ${cap(14)} and (loadstring or load)~=${cap(11)} then return false end
+if ${cap(13)} and game.HttpGet~=${cap(12)} then return false end
+if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} then return false end
+if table.concat~=${cap(6)} or pcall~=${cap(7)} or error~=${cap(8)} or type~=${cap(9)} or math.floor~=${cap(10)} then return false end
+if ${cap(15)} and (type(getgenv)~="function" or getgenv~=${cap(15)}) then return false end
+if ${cap(16)} and (type(getfenv)~="function" or getfenv~=${cap(16)}) then return false end
+if ${cap(17)} and (type(setfenv)~="function" or setfenv~=${cap(17)}) then return false end
+if ${cap(19)} and (bit32.bxor~=${cap(19)}.bxor or bit32.lshift~=${cap(19)}.lshift or bit32.rshift~=${cap(19)}.rshift) then return false end
+if ${cap(18)} then local ok,h=${cap(7)}(${cap(18)}) if ok and h~=nil then return false end end
+if ${n.dmp} and string.dump~=${n.dmp} then return false end
+local ${n.envs}={}
+local function ${n.adde}(e)
+if type(e)~="table" then return end
+for i=1,#${n.envs} do if ${n.envs}[i]==e then return end end
+${n.envs}[#${n.envs}+1]=e
+end
+if ${n.gf} then local ok,e=${cap(7)}(${n.gf},0) if ok then ${n.adde}(e) end end
+if ${n.gv} then local ok,e=${cap(7)}(${n.gv}) if ok then ${n.adde}(e) end end
+for i=1,#${n.envs} do
+local ls=${n.envs}[i].loadstring
+local ld=${n.envs}[i].load
+if ${n.lstr} and type(ls)=="function" and ls~=${n.lstr} then return false end
+if ${n.ld} and type(ld)=="function" and ld~=${n.ld} then return false end
+end
+if ${n.dmp} then
+if ${n.lstr} and ${cap(7)}(${n.dmp},${n.lstr}) and ${n.ld} and type(${n.ld})=="function" and not ${cap(7)}(${n.dmp},${n.ld}) then return false end
+if ${n.ld} and ${cap(7)}(${n.dmp},${n.ld}) and ${n.lstr} and type(${n.lstr})=="function" and not ${cap(7)}(${n.dmp},${n.lstr}) then return false end
+end
+return true
+end
+local ${n.deny}="Voided: Doing this is not allowed."
+if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
+local ${n.url}=${n.xor}(${n.b64}("${urlCipher}"),0x${urlKey.toString(16)})
+local ${n.ok},${n.res}=${cap(7)}(function() return game:HttpGet(${n.url}) end)
+if not ${n.ok} or type(${n.res})~="string" then return ${cap(8)}("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
+local ${n.seed}=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
+if not ${n.seed} then return ${cap(8)}("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
+if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
+local ${n.loader}=${cap(11)}
+if ${n.ld} and ${n.ld}~=${n.loader} then local ok,f=${cap(7)}(${n.ld},"return 1") if ok and type(f)=="function" then ${n.loader}=${n.ld} end end
+if type(${n.loader})~="function" then return ${cap(8)}("[VoidedX] This executor does not support loadstring.",0) end
+local ${n.code}=${n.xor}(${n.b64}(${n.data}),${cap(21)}(${n.seed},16))
+local ${n.arg}=${n.code}
+local okProbe,probeFn=${cap(7)}(${n.loader},function() return nil end)
+if okProbe and type(probeFn)=="function" then
+local ${n.pos}=0
+${n.arg}=function()
+if ${n.pos}>=#${n.code} then return nil end
+local part=${cap(3)}(${n.code},${n.pos}+1,${n.pos}+4096)
+${n.pos}=${n.pos}+4096
+return part
+end
+end
+local ${n.chunk},${n.err}=${n.loader}(${n.arg},"=${chunkName}")
+if not ${n.chunk} then return ${cap(8)}(${cap(20)}(${n.err}),0) end
+local ${n.sh}=type(debug)=="table" and debug.sethook or nil
+local ${n.gh}=type(debug)=="table" and debug.gethook or nil
+local ${n.env}=nil
+if ${n.gv} then local ok,e=${cap(7)}(${n.gv}) if ok and type(e)=="table" then ${n.env}=e end end
+local ${n.wd},${n.off}
+if ${n.sh} and ${n.gh} then
+local ${n.ticks}=0
+${n.off}=function()
+local ok,h=${cap(7)}(${n.gh})
+if ok and h==${n.wd} then ${cap(7)}(${n.sh}) end
+if ${n.env} then ${cap(7)}(function() if ${n.env}._vxwd==${n.wd} then ${n.env}._vxwd=nil end end) end
+end
+${n.wd}=function()
+${n.ticks}=${n.ticks}+1
+if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} or table.concat~=${cap(6)} or pcall~=${cap(7)} or type~=${cap(9)} or math.floor~=${cap(10)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
+local ok,h=${cap(7)}(${n.gh})
+if ok and h~=nil and h~=${n.wd} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
+if ${n.ticks}>=64 then ${n.off}() end
+end
+if ${cap(7)}(${n.sh},${n.wd},"",250000) then
+local ok,h=${cap(7)}(${n.gh})
+if ok and h==${n.wd} then
+if ${n.env} then ${cap(7)}(function() ${n.env}._vxwd=${n.wd} end) end
+if type(task)=="table" and type(task.delay)=="function" then ${cap(7)}(task.delay,10,${n.off}) end
+else ${cap(7)}(${n.sh}) end
+end
+end
+return ${n.chunk}()`;
 }
 
 export function buildPayloadRuntime(origin, options = {}) {
@@ -186,6 +344,13 @@ local vxBxor, vxLshift, vxRshift, vxBand = vxBit.bxor, vxBit.lshift, vxBit.rshif
 local vxHttpGet = game.HttpGet
 local vxHttpGetStable = game.HttpGet == game.HttpGet
 local vxLoad = loadstring or load
+-- Prefer the other native compile entry when both exist: a logger that only
+-- wraps loadstring never sees the armored payload, and vice versa.
+local vxLoadAlt = (loadstring and load and loadstring ~= load) and ((vxLoad == loadstring) and load or loadstring) or nil
+if type(vxLoadAlt) == "function" then
+    local vxAltOk, vxAltProbe = pcall(vxLoadAlt, "return 1")
+    if vxAltOk and type(vxAltProbe) == "function" then vxLoad = vxLoadAlt end
+end
 local vxLoadStable = (loadstring or load) == vxLoad
 local vxJsonDecode = HttpService.JSONDecode
 local vxJsonStable = HttpService.JSONDecode == vxJsonDecode
@@ -529,7 +694,18 @@ local function vxRunPayload(token, userId, shield, report)
     end
 
     vxProgress(97, "Compiling")
-    local scriptChunk, compileError = vxLoad(executionCode)
+    local compileArg = executionCode
+    local readerOk, readerProbe = vxPcall(vxLoad, function() return nil end)
+    if readerOk and vxTypeOf(readerProbe) == "function" then
+        local readPos = 0
+        compileArg = function()
+            if readPos >= #executionCode then return nil end
+            local part = vxSub(executionCode, readPos + 1, readPos + 4096)
+            readPos = readPos + 4096
+            return part
+        end
+    end
+    local scriptChunk, compileError = vxLoad(compileArg)
     if not scriptChunk then
         vxProgress(97, "Compilation failed")
         return error("[VoidedX] " .. tostring(compileError), 0)

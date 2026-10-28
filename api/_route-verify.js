@@ -145,14 +145,14 @@ export default async function handler(req, res) {
 
         const initialVaultData = initialSnap.data();
         if (initialVaultData.launchPaused === true) {
-            return json(res, 423, { ok: false, message: 'This vault is temporarily paused by its owner.' });
+            return json(res, 200, { ok: false, message: 'This vault is temporarily paused by its owner.' });
         }
         const initiallyKeyed = !!initialVaultData.requireKey;
         if (initiallyKeyed) {
             const rateLimit = await consumeVerificationAttempt(id, req, initialVaultData.verifyLimitAttempts);
             if (!rateLimit.allowed) {
                 res.setHeader('Retry-After', String(rateLimit.retryAfter));
-                return json(res, 429, { ok: false, message: 'Too many key checks from this network. Wait a few minutes and try again.' });
+                return json(res, 200, { ok: false, message: 'Too many key checks from this network. Wait a few minutes and try again.' });
             }
             if (!userId) return json(res, 400, { ok: false, message: 'A player ID is required for key verification.' });
             if (!key) return json(res, 400, { ok: false, message: 'Missing key.' });
@@ -212,11 +212,11 @@ export default async function handler(req, res) {
                 return failure(200, 'This vault has been removed or deleted. Contact the owner for support.', 'vault_removed');
             }
             const vault = freshSnap.data();
-            if (vault.launchPaused === true) return failure(423, 'This vault is temporarily paused by its owner.');
+            if (vault.launchPaused === true) return failure(200, 'This vault is temporarily paused by its owner.');
             if (!!vault.requireKey !== initiallyKeyed) {
-                return failure(403, 'The vault access settings changed. Run the current loader again.');
+                return failure(200, 'The vault access settings changed. Run the current loader again.');
             }
-            if (isBanned(vault, userId)) return failure(403, 'You are banned from this vault.');
+            if (isBanned(vault, userId)) return failure(200, 'You are banned from this vault.');
 
             const allowedTicketLifetimes = [20, 30, 45, 60];
             const ticketLifetimeSeconds = allowedTicketLifetimes.includes(Number(vault.deliveryTicketSeconds))
@@ -264,17 +264,17 @@ export default async function handler(req, res) {
                 if (keyIndex >= 0) matched = keys[keyIndex];
             }
 
-            if (!matched) return failure(403, 'Invalid key.');
-            if (publicKeyDisabled(vault, matched)) return failure(403, 'The public key for this vault has been disabled by the owner.');
-            if (matched.terminated) return failure(403, 'This key has been terminated by the owner.');
+            if (!matched) return failure(200, 'Invalid or expired key.');
+            if (publicKeyDisabled(vault, matched)) return failure(200, 'The public key for this vault has been disabled by the owner.');
+            if (matched.terminated) return failure(200, 'This key has been terminated by the owner.');
             const keyExpiry = keyExpiresAt(matched);
-            if (keyExpiry != null && now >= keyExpiry) return failure(403, 'This key has expired.');
+            if (keyExpiry != null && now >= keyExpiry) return failure(200, 'This key has expired.');
 
             const clientAddress = getClientIp(req);
             const vaultUpdates = {};
             if (vault.ipLock) {
                 if (!vault.boundIp) vaultUpdates.boundIp = clientAddress;
-                else if (vault.boundIp !== clientAddress) return failure(403, 'This key is locked to a different network/IP.');
+                else if (vault.boundIp !== clientAddress) return failure(200, 'This key is locked to a different network/IP.');
             }
 
             const boundUsers = Array.isArray(matched.boundUsers) ? matched.boundUsers : [];
@@ -284,7 +284,7 @@ export default async function handler(req, res) {
             const maxUsersUnlimited = matched.maxUsersUnlimited === true || matched.maxUsers === 'unlimited';
             const maxUsers = Math.max(1, Number(matched.maxUsers) || 1);
             if (userId && !existingBinding && !maxUsersUnlimited && boundUsers.length >= maxUsers) {
-                return failure(403, `This key is already in use by the maximum number of players (${maxUsers}). Ask the vault owner to reset or raise the limit.`);
+                return failure(200, `This key is already in use by the maximum number of players (${maxUsers}). Ask the vault owner to reset or raise the limit.`);
             }
 
             if (userId && !existingBinding) {

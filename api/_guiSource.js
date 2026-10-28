@@ -75,6 +75,7 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local TextService = game:GetService("TextService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local savedKeyPath = ${luaString(savedKeyFile)}
 ${buildPayloadRuntime(origin, options)}
@@ -161,9 +162,14 @@ overlayGradient.Parent = overlay
 TweenService:Create(overlay, TweenInfo.new(0.4, EASE_OUT), { BackgroundTransparency = 0 }):Play()
 
 local camera = workspace.CurrentCamera
+local touchDevice = false
+pcall(function()
+    touchDevice = UserInputService.TouchEnabled == true
+end)
 local CARD_BASE_HEIGHT = 346
 local cardWidth = 430
 local cardScale = 1
+local phoneLayout = false
 local statusHeight = 0
 
 local card = Instance.new("Frame")
@@ -533,15 +539,50 @@ layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
 
+local watchedCamera = nil
+local applyHeader = nil
 local function applyLayout()
-    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-    cardScale = math.clamp(math.min(viewport.X / 470, viewport.Y / 660), 0.68, 1)
-    cardWidth = math.clamp(math.floor((viewport.X - 28 * cardScale) / cardScale), 250, 430)
+    local activeCamera = camera
+    if not (activeCamera and activeCamera.Parent) then activeCamera = workspace.CurrentCamera end
+    if activeCamera then camera = activeCamera end
+    local viewport = nil
+    if activeCamera then
+        local size = activeCamera.ViewportSize
+        if size and size.X > 0 and size.Y > 0 then viewport = size end
+    end
+    if not viewport then
+        local guiSize = screenGui.AbsoluteSize
+        if guiSize and guiSize.X > 0 and guiSize.Y > 0 then viewport = guiSize end
+    end
+    if not viewport then viewport = Vector2.new(1280, 720) end
+    -- Phones get a smaller card so the panel does not swallow the game view.
+    local phone = touchDevice and math.min(viewport.X, viewport.Y) < 560
+    phoneLayout = phone
+    cardScale = math.clamp(math.min(viewport.X / (phone and 520 or 470), viewport.Y / 660), phone and 0.6 or 0.68, 1)
+    cardWidth = math.clamp(math.floor((viewport.X - (phone and 20 or 28) * cardScale) / cardScale), 240, phone and 350 or 430)
     local height = CARD_BASE_HEIGHT + statusHeight
     card.Size = UDim2.fromOffset(cardWidth, height)
     content.Size = UDim2.fromOffset(cardWidth, height)
     uiScale.Scale = cardScale
+    if applyHeader then applyHeader(phone) end
 end
+local function watchCamera()
+    local activeCamera = workspace.CurrentCamera
+    if not activeCamera or activeCamera == watchedCamera then return end
+    watchedCamera = activeCamera
+    camera = activeCamera
+    pcall(function()
+        activeCamera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayout)
+    end)
+end
+watchCamera()
+pcall(function()
+    workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        watchCamera()
+        applyLayout()
+    end)
+    screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout)
+end)
 applyLayout()
 uiScale.Scale = cardScale * 0.86
 TweenService:Create(uiScale, TweenInfo.new(0.55, EASE_BACK), { Scale = cardScale }):Play()
@@ -549,13 +590,6 @@ TweenService:Create(card, TweenInfo.new(0.48, EASE_OUT), {
     Position = UDim2.new(0.5, 0, 0.5, 0)
 }):Play()
 TweenService:Create(cardStroke, TweenInfo.new(0.5, EASE_OUT), { Transparency = 0.55 }):Play()
-if camera then
-    pcall(function()
-        camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-            applyLayout()
-        end)
-    end)
-end
 
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 52)
@@ -689,6 +723,16 @@ task.spawn(function()
         back.Completed:Wait()
     end
 end)
+
+applyHeader = function(phone)
+    -- Narrow phone cards drop the seal chip so the title is not truncated.
+    local inset = phone and 110 or 186
+    eyebrow.Size = UDim2.new(1, -inset, 0, 10)
+    title.Size = UDim2.new(1, -inset, 0, 21)
+    subtitle.Size = UDim2.new(1, -inset, 0, 13)
+    stateChip.Visible = not phone
+end
+applyHeader(phoneLayout)
 
 local vaultPill = Instance.new("Frame")
 vaultPill.Size = UDim2.new(1, 0, 0, 34)
@@ -1161,11 +1205,21 @@ local function showKeyTimer(remainingSeconds, fileSaved, expiresAtMs)
     screenGui.Name = "VoidedXKeyStatus"
 
     local camera = workspace.CurrentCamera
-    local viewportWidth = camera and camera.ViewportSize.X or 360
-    local panelWidth = math.max(240, math.min(320, viewportWidth - 28))
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local touchPanel = touchDevice and math.min(viewportSize.X, viewportSize.Y) < 560
+    local panelWidth = math.max(200, math.min(touchPanel and 260 or 320, viewportSize.X - 28))
     local panel = Instance.new("Frame")
-    panel.AnchorPoint = Vector2.new(1, 1)
-    panel.Position = UDim2.new(1, -14, 1, 22)
+    local panelStart = UDim2.new(1, -14, 1, 22)
+    local panelRest = UDim2.new(1, -14, 1, -14)
+    if touchPanel then
+        -- Keep the status card off the mobile jump/thumbstick corners.
+        panel.AnchorPoint = Vector2.new(0.5, 0)
+        panelStart = UDim2.new(0.5, 0, 0, -10)
+        panelRest = UDim2.new(0.5, 0, 0, 14)
+    else
+        panel.AnchorPoint = Vector2.new(1, 1)
+    end
+    panel.Position = panelStart
     panel.Size = UDim2.new(0, panelWidth, 0, 108)
     panel.BackgroundColor3 = COL_DEEP
     panel.BackgroundTransparency = 1
@@ -1187,7 +1241,7 @@ local function showKeyTimer(remainingSeconds, fileSaved, expiresAtMs)
     panelScale.Scale = 0.92
     panelScale.Parent = panel
     TweenService:Create(panel, TweenInfo.new(0.38, EASE_OUT), {
-        Position = UDim2.new(1, -14, 1, -14),
+        Position = panelRest,
         BackgroundTransparency = 0.06
     }):Play()
     TweenService:Create(panelStroke, TweenInfo.new(0.32, EASE_OUT), { Transparency = 0.3 }):Play()

@@ -26,8 +26,10 @@ export const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
 // Fast only. Every level stays at a single VM layer: the bundled VM corrupts a
 // fraction of programs once a second Vmify wraps the first VM's own bytecode
 // (wrong string slots, nil index, silent early return), and every interpreter
-// we test disagrees about which programs break. High and Absolute get their
-// extra weight from the Strong preset and the heavier armor levels instead.
+// we test disagrees about which programs break. Extra depth comes from nested
+// VoidedX containers inside the armor module, which are independent copies of
+// the same decode-then-load path. High and Absolute also use the Strong preset
+// and the heavier armor settings.
 const PRESETS = Object.freeze({ fast: 'Weak', low: 'Medium', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
 const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 1, absolute: 1 });
 const MIN_JOB_TIMEOUT_MS = 120_000;

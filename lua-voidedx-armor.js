@@ -14,12 +14,17 @@ const MIN_MATCH = 3;
 const FLUSH_BYTES = 192;
 
 const LEVEL_CONFIG = Object.freeze({
-    fast: { segments: 6, passes: 1, depth: 24, dead: 1, hookGuard: false, robloxCheck: true },
-    low: { segments: 10, passes: 2, depth: 44, dead: 2, hookGuard: false, robloxCheck: true },
-    medium: { segments: 14, passes: 4, depth: 60, dead: 3, hookGuard: false, robloxCheck: true },
-    high: { segments: 18, passes: 4, depth: 72, dead: 4, hookGuard: true, robloxCheck: true },
-    absolute: { segments: 24, passes: 5, depth: 104, dead: 5, hookGuard: true, robloxCheck: true }
+    fast: { segments: 6, passes: 1, depth: 24, dead: 1, robloxCheck: true, layers: 1 },
+    low: { segments: 10, passes: 2, depth: 44, dead: 2, robloxCheck: true, layers: 2 },
+    medium: { segments: 14, passes: 4, depth: 60, dead: 3, robloxCheck: true, layers: 3 },
+    high: { segments: 18, passes: 4, depth: 72, dead: 4, robloxCheck: true, layers: 3 },
+    absolute: { segments: 24, passes: 5, depth: 104, dead: 5, robloxCheck: true, layers: 4 }
 });
+
+// Each nested container re-encodes the previous one, so a layer costs roughly
+// 1.35x. Stop nesting before large scripts become impossible to store.
+const MAX_ARMOR_NEST_CHARS = 420 * 1024;
+const MAX_ARMOR_TOTAL_CHARS = 3 * 1024 * 1024;
 
 function createRng() {
     const cryptoObj = typeof crypto !== 'undefined' ? crypto : null;
@@ -561,9 +566,14 @@ function buildLoader(o) {
     add(`local ${p.pcall}=pcall`);
     add(`local ${p.rawequal}=rawequal`);
     add(`local ${p.error}=error`);
-    add(`local ${p.load}=loadstring or load`);
+    add(`local ${p.loadstr}=loadstring`);
+    add(`local ${p.loadchunk}=load`);
+    add(`local ${p.load}=${p.loadstr} or ${p.loadchunk}`);
+    add(`do local ${p.alt}=${p.loadchunk} if ${p.load}==${p.loadchunk} then ${p.alt}=${p.loadstr} end`);
+    add(`if ${p.type}(${p.alt})=="function" and ${p.alt}~=${p.load} then local ok,f=${p.pcall}(${p.alt},"return 1") if ok and ${p.type}(f)=="function" then ${p.load}=${p.alt} end end end`);
     add(`local ${p.debug}=debug`);
     add(`local ${p.gethook}=${p.debug} and ${p.debug}.gethook or nil`);
+    add(`local ${p.getgenv}=type(getgenv)=="function" and getgenv or nil`);
     add(`local ${p.msg}=function(t,k) local o="" for i=1,#t do o=o..${p.schar}((t[i]-k)%256) end return ${p.error}(o,0) end`);
     add(`if not ${p.load} or not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
@@ -576,12 +586,18 @@ function buildLoader(o) {
     add(`    if table.concat~=${p.sconcat} then return false end`);
     add(`    if rawequal~=${p.rawequal} then return false end`);
     add(`    if ${p.pcall}(function() ${p.error}("vx_probe",0) end) then return false end`);
-    if (o.hookGuard) {
-        add(`    if ${p.gethook} then`);
-        add(`        local ok,hook=${p.pcall}(${p.gethook})`);
-        add('        if ok and hook~=nil then return false end');
-        add('    end');
-    }
+    // A debug hook installed before or during the run is the standard way a
+    // dumper traces decrypted chunks. The bootstrap installs its own watchdog
+    // hook and records it in getgenv()._vxwd, so that one hook is allowed;
+    // any other hook, or a marker pointing at a different function, blocks.
+    add(`    if ${p.gethook} then`);
+    add(`        local ok,hook=${p.pcall}(${p.gethook})`);
+    add('        if ok and hook~=nil then');
+    add('            local expected=nil');
+    add(`            if ${p.getgenv} then local envOk,env=${p.pcall}(${p.getgenv}) if envOk and ${p.type}(env)=="table" then expected=env._vxwd end end`);
+    add('            if expected~=hook then return false end');
+    add('        end');
+    add('    end');
     add('    return true');
     add('end');
     add('');
@@ -756,7 +772,18 @@ function buildLoader(o) {
     add(`local ${p.src}=${p.decode}()`);
     add(`if not ${p.src} then return ${p.msg}(${o.messages.integrity.table},${o.messages.integrity.key}) end`);
     add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
-    add(`local ${p.fn},${p.err}=${p.load}(${p.src},"=${o.chunkName}")`);
+    add(`local ${p.arg}=${p.src}`);
+    add(`local okProbe,probeFn=${p.pcall}(${p.load},function() return nil end)`);
+    add(`if okProbe and ${p.type}(probeFn)=="function" then`);
+    add(`local ${p.pos}=0`);
+    add(`${p.arg}=function()`);
+    add(`if ${p.pos}>=${p.slen}(${p.src}) then return nil end`);
+    add(`local piece=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+4096)`);
+    add(`${p.pos}=${p.pos}+4096`);
+    add('return piece');
+    add('end');
+    add('end');
+    add(`local ${p.fn},${p.err}=${p.load}(${p.arg},"=${o.chunkName}")`);
     add('if not ' + p.fn + ' then');
     add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add('end');
@@ -765,12 +792,70 @@ function buildLoader(o) {
     return lines.join('\n');
 }
 
-export function armorVoidedxSource(source, options = {}) {
-    if (typeof source !== 'string' || source.length === 0) {
-        throw new Error('The obfuscation engine returned an empty script.');
+// Five-row block letters keep the banner aligned without multi-byte glyphs, so
+// it survives every executor's source viewer and never terminates the long
+// comment it lives in.
+const BANNER_FONT = {
+    V: ['##   ##', '##   ##', '##   ##', ' ## ## ', '  ###  '],
+    O: [' ##### ', '##   ##', '##   ##', '##   ##', ' ##### '],
+    I: ['######', '  ##  ', '  ##  ', '  ##  ', '######'],
+    D: ['##### ', '##  ##', '##  ##', '##  ##', '##### '],
+    E: ['######', '##    ', '####  ', '##    ', '######'],
+    X: ['##   ##', ' ## ## ', '  ###  ', ' ## ## ', '##   ##'],
+    ' ': ['  ', '  ', '  ', '  ', '  ']
+};
+
+function renderBannerWord(word) {
+    const rows = ['', '', '', '', ''];
+    for (const letter of word) {
+        const glyph = BANNER_FONT[letter] || BANNER_FONT[' '];
+        for (let row = 0; row < 5; row += 1) rows[row] += glyph[row] + ' ';
     }
-    const level = options.level || 'medium';
-    const config = LEVEL_CONFIG[level] || LEVEL_CONFIG.medium;
+    return rows;
+}
+
+function buildBanner() {
+    const art = renderBannerWord('VOIDEDX');
+    return [
+        '--[[',
+        '   ' + art[0],
+        '   ' + art[1],
+        '   ' + art[2],
+        '   ' + art[3],
+        '   ' + art[4],
+        '',
+        '   V O I D E D X   //   V M   A R M O R   B U I L D',
+        '   voidedx.vercel.app   |   do not resell   |   all rights reserved',
+        ']]'
+    ].join('\n');
+}
+
+// Decorative statements only: every block is self-contained, uses literals, and
+// leaves no globals behind, so the preamble cannot change runtime behavior.
+function buildJunkCode(rng, count) {
+    const hex = value => '0x' + value.toString(16);
+    const lines = [];
+    for (let i = 0; i < count; i += 1) {
+        const name = '_0x' + randomInt(rng, 0xffffff).toString(16).padStart(6, '0');
+        const alt = '_0x' + randomInt(rng, 0xffffff).toString(16).padStart(6, '0');
+        const a = 1 + randomInt(rng, 0xffff);
+        const b = 1 + randomInt(rng, 0xff);
+        const c = 1 + randomInt(rng, 0xffff);
+        const mod = 2 + randomInt(rng, 250);
+        if (i % 3 === 0) {
+            lines.push(`do local ${name}=(${hex(a)}*${b}+${hex(c)})%${mod};if ${name}==-1 then ${name}=0 end end`);
+        } else if (i % 3 === 1) {
+            const values = [];
+            for (let k = 0; k < 3 + randomInt(rng, 4); k += 1) values.push(hex(1 + randomInt(rng, 0xff)));
+            lines.push(`do local ${name}={${values.join(',')}};local ${alt}=${name}[${1 + randomInt(rng, 2)}] or 0 end`);
+        } else {
+            lines.push(`do local ${name}=0;for ${alt}=1,${2 + randomInt(rng, 5)} do ${name}=${name}+${alt} end end`);
+        }
+    }
+    return lines.join('\n');
+}
+
+function armorOnce(source, config) {
     const rng = createRng();
     const nextName = createNameFactory(rng);
 
@@ -838,7 +923,8 @@ export function armorVoidedxSource(source, options = {}) {
             sbyte: nextName(), schar: nextName(), ssub: nextName(), slen: nextName(),
             sconcat: nextName(), sunpack: nextName(), floor: nextName(), type: nextName(),
             pcall: nextName(), rawequal: nextName(), error: nextName(), load: nextName(),
-            debug: nextName(), gethook: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
+            loadstr: nextName(), loadchunk: nextName(), alt: nextName(), arg: nextName(), pos: nextName(),
+            debug: nextName(), gethook: nextName(), getgenv: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
             inflate: nextName(), adler: nextName(), sum2: nextName(), segs: nextName(),
             keys: nextName(), order: nextName(), passKeys: nextName(), compLen: nextName(),
@@ -855,7 +941,6 @@ export function armorVoidedxSource(source, options = {}) {
         checksum1: adler32(compressed),
         checksum2: weightedSum(compressed),
         dead: config.dead,
-        hookGuard: config.hookGuard,
         robloxCheck: config.robloxCheck,
         opaqueA,
         opaqueB,
@@ -864,6 +949,29 @@ export function armorVoidedxSource(source, options = {}) {
         opaqueExpected: (opaqueA * opaqueB + opaqueC) % opaqueM
     });
     return messifyLua(loader, rng);
+}
+
+export function armorVoidedxSource(source, options = {}) {
+    if (typeof source !== 'string' || source.length === 0) {
+        throw new Error('The obfuscation engine returned an empty script.');
+    }
+    const level = options.level || 'medium';
+    const config = LEVEL_CONFIG[level] || LEVEL_CONFIG.medium;
+
+    // Nested containers: each layer decodes and loads the previous one inside
+    // its own randomized VM. The Prometheus VM stack stays at one layer because
+    // stacking Vmify corrupts real scripts; these independent VoidedX layers are
+    // safe because every one of them is the same proven decode-then-load path.
+    let text = armorOnce(source, config);
+    const requestedLayers = Math.max(1, Math.min(Number(config.layers) || 1, 6));
+    for (let layer = 1; layer < requestedLayers; layer += 1) {
+        if (text.length > MAX_ARMOR_NEST_CHARS) break;
+        if (text.length * 1.35 > MAX_ARMOR_TOTAL_CHARS) break;
+        text = armorOnce(text, config);
+    }
+
+    const bannerRng = createRng();
+    return buildBanner() + '\n' + buildJunkCode(bannerRng, 16) + '\n' + text;
 }
 
 export const ARMOR_LEVELS = Object.freeze(Object.keys(LEVEL_CONFIG));
