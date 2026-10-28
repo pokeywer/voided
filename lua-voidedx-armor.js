@@ -389,6 +389,20 @@ function numericExpr(value, rng) {
     return String(value);
 }
 
+// Masked message bytes, spelled as small arithmetic expressions. Error text is
+// only rebuilt when a check fails, so the delivered file never carries the
+// loader's messages as readable strings.
+function maskedMessageTable(text, key, rng) {
+    const bytes = stringToBytes(text);
+    const parts = [];
+    for (const byte of bytes) {
+        const masked = (byte + key) % 256;
+        const offset = 1 + randomInt(rng, 90);
+        parts.push(rng() < 0.5 && masked >= offset ? `(${masked - offset}+${offset})` : String(masked));
+    }
+    return `{${parts.join(',')}}`;
+}
+
 function splitAlphabetLiteral(alphabet, rng) {
     const cuts = [0];
     const first = 12 + randomInt(rng, 20);
@@ -550,7 +564,8 @@ function buildLoader(o) {
     add(`local ${p.load}=loadstring or load`);
     add(`local ${p.debug}=debug`);
     add(`local ${p.gethook}=${p.debug} and ${p.debug}.gethook or nil`);
-    add(`if not ${p.load} or not ${p.sconcat} or not ${p.sunpack} then return ${p.error}("[VoidedX] This executor cannot run protected scripts.",0) end`);
+    add(`local ${p.msg}=function(t,k) local o="" for i=1,#t do o=o..${p.schar}((t[i]-k)%256) end return ${p.error}(o,0) end`);
+    add(`if not ${p.load} or not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
 
     add(buildDeadLua(p.nextName, o.rng, o.dead));
@@ -576,7 +591,7 @@ function buildLoader(o) {
         add('    local players=game:GetService("Players")');
         add('    return players~=nil');
         add('end)');
-        add(`if not ${p.probe} then return ${p.error}("[VoidedX] This copy must run inside Roblox.",0) end`);
+        add(`if not ${p.probe} then return ${p.msg}(${o.messages.roblox.table},${o.messages.roblox.key}) end`);
         add('');
     }
 
@@ -737,13 +752,13 @@ function buildLoader(o) {
     add('');
 
     add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
-    add(`if not ${p.check}() then return ${p.error}("[VoidedX] This copy was blocked because the runtime was modified.",0) end`);
+    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
     add(`local ${p.src}=${p.decode}()`);
-    add(`if not ${p.src} then return ${p.error}("[VoidedX] This copy failed its integrity check. Run the loader again.",0) end`);
-    add(`if not ${p.check}() then return ${p.error}("[VoidedX] This copy was blocked because the runtime was modified.",0) end`);
-    add(`local ${p.fn},${p.err}=${p.load}(${p.src},"=(VoidedX)")`);
+    add(`if not ${p.src} then return ${p.msg}(${o.messages.integrity.table},${o.messages.integrity.key}) end`);
+    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
+    add(`local ${p.fn},${p.err}=${p.load}(${p.src},"=${o.chunkName}")`);
     add('if not ' + p.fn + ' then');
-    add(`    return ${p.error}("[VoidedX] This copy could not start. Run the loader again.",0)`);
+    add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add('end');
     add(`return ${p.fn}()`);
 
@@ -798,6 +813,20 @@ export function armorVoidedxSource(source, options = {}) {
         order: logicalIndex
     }));
 
+    const messageTexts = {
+        executor: '[VoidedX] This executor cannot run protected scripts.',
+        roblox: '[VoidedX] This copy must run inside Roblox.',
+        blocked: '[VoidedX] This copy was blocked because the runtime was modified.',
+        integrity: '[VoidedX] This copy failed its integrity check. Run the loader again.',
+        start: '[VoidedX] This copy could not start. Run the loader again.'
+    };
+    const messages = {};
+    for (const [name, text] of Object.entries(messageTexts)) {
+        const key = 1 + randomInt(rng, 255);
+        messages[name] = { key, table: maskedMessageTable(text, key, rng) };
+    }
+    const chunkName = Array.from({ length: 7 }, () => BASE64_ALPHABET[randomInt(rng, BASE64_ALPHABET.length)]).join('');
+
     const opaqueA = 23 + randomInt(rng, 200);
     const opaqueB = 29 + randomInt(rng, 200);
     const opaqueC = 11 + randomInt(rng, 700);
@@ -809,7 +838,7 @@ export function armorVoidedxSource(source, options = {}) {
             sbyte: nextName(), schar: nextName(), ssub: nextName(), slen: nextName(),
             sconcat: nextName(), sunpack: nextName(), floor: nextName(), type: nextName(),
             pcall: nextName(), rawequal: nextName(), error: nextName(), load: nextName(),
-            debug: nextName(), gethook: nextName(), check: nextName(), probe: nextName(),
+            debug: nextName(), gethook: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
             inflate: nextName(), adler: nextName(), sum2: nextName(), segs: nextName(),
             keys: nextName(), order: nextName(), passKeys: nextName(), compLen: nextName(),
@@ -819,6 +848,8 @@ export function armorVoidedxSource(source, options = {}) {
         rng,
         alphabet,
         segments,
+        messages,
+        chunkName,
         passKeys,
         compressedLength: compressed.length,
         checksum1: adler32(compressed),
