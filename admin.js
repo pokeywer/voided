@@ -45,6 +45,12 @@ const adminOperationsStatus = document.getElementById('admin-operations-status')
 const adminRestoreRequests = document.getElementById('admin-restore-requests');
 const adminBackupList = document.getElementById('admin-backup-list');
 const adminStaffList = document.getElementById('admin-staff-list');
+const adminTokenSubject = document.getElementById('admin-token-subject');
+const adminTokenAmount = document.getElementById('admin-token-amount');
+const adminTokenGive = document.getElementById('admin-token-give');
+const adminTokenRevoke = document.getElementById('admin-token-revoke');
+const adminTokenStatus = document.getElementById('admin-token-status');
+const adminTokenGrantList = document.getElementById('admin-token-grant-list');
 
 async function requestJson(path, options = {}) {
     const response = await fetch(path, {
@@ -232,6 +238,23 @@ function renderAdminOperations(result) {
             }[scope] || scope));
             const actions = item.active ? [{ action: 'revoke-staff', label: 'Revoke', icon: 'fa-user-slash', uid: item.uid, danger: true }] : [];
             adminStaffList.appendChild(operationLine(item.email || 'Guest account', `${item.uid} · ${state} · ${scopeLabels.join(', ')}`, actions));
+        }
+    }
+
+    adminTokenGrantList.replaceChildren();
+    if (!result.tokenGrants?.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-help';
+        empty.textContent = 'No void token grants yet.';
+        adminTokenGrantList.appendChild(empty);
+    } else {
+        for (const item of result.tokenGrants) {
+            const where = item.subject.startsWith('discord:') ? 'Discord' : 'Website';
+            adminTokenGrantList.appendChild(operationLine(
+                `${where} · ${item.subject.replace(/^(discord|web):/, '')}`,
+                `${item.amount > 0 ? `+${item.amount}` : item.amount} bonus · balance after ${item.bonusAfter} bonus + ${item.dailyRemaining} daily · ${formatDate(item.createdAt)}`,
+                []
+            ));
         }
     }
 }
@@ -1003,7 +1026,7 @@ loginButton.addEventListener('click', signIn);
 document.getElementById('admin-refresh-btn').addEventListener('click', refreshDashboard);
 document.getElementById('admin-operations-refresh').addEventListener('click', async event => {
     setLoading(event.currentTarget, true, 'LOADING…');
-    try { await loadAdminOperations(); setOperationsStatus('Recovery and staff data refreshed.', 'success'); }
+    try { await loadAdminOperations(); setOperationsStatus('Recovery, staff, and void token data refreshed.', 'success'); }
     catch (error) { setOperationsStatus(error.message, 'error'); }
     finally { setLoading(event.currentTarget, false); }
 });
@@ -1030,6 +1053,40 @@ document.getElementById('admin-staff-form').addEventListener('submit', async eve
         await loadAdminOperations();
     } catch (error) { setOperationsStatus(error.message, 'error'); }
     finally { setLoading(button, false); }
+});
+function setTokenStatus(message, kind = 'info') {
+    adminTokenStatus.textContent = message;
+    adminTokenStatus.className = `admin-status ${kind}`;
+    adminTokenStatus.classList.remove('hidden');
+}
+async function submitTokenAction(action) {
+    const subject = adminTokenSubject.value.trim();
+    if (!subject) {
+        setTokenStatus('Enter a Discord user ID or a VoidedX account ID.', 'error');
+        adminTokenSubject.focus();
+        return;
+    }
+    const button = action === 'revoke_tokens' ? adminTokenRevoke : adminTokenGive;
+    setLoading(button, true, action === 'revoke_tokens' ? 'CLEARING…' : 'GIVING…');
+    try {
+        const result = await requestJson('/api/admin-operations', {
+            method: 'POST',
+            body: JSON.stringify({ action, subject, amount: Number(adminTokenAmount.value) })
+        });
+        const change = action === 'revoke_tokens' ? 'Bonus tokens cleared' : `Gave ${Number(adminTokenAmount.value) || 0} bonus tokens`;
+        setTokenStatus(`${change} for ${result.subject}. Balance: ${result.credits} left today (${result.dailyRemaining} daily + ${result.bonus} bonus).`, 'success');
+        await loadAdminOperations();
+    } catch (error) { setTokenStatus(error.message, 'error'); }
+    finally { setLoading(button, false); }
+}
+adminTokenGive.addEventListener('click', () => submitTokenAction('grant_tokens'));
+adminTokenRevoke.addEventListener('click', async () => {
+    if (!(await window.vxDialog.confirm('Clear this account\'s bonus void tokens? Daily tokens are not affected.', {
+        title: 'Revoke bonus tokens?',
+        confirmLabel: 'Revoke bonus',
+        tone: 'danger'
+    }))) return;
+    submitTokenAction('revoke_tokens');
 });
 const staffScopeDependencies = [
     ['vaultSource', 'vaults'],

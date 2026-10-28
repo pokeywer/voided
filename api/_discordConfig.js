@@ -73,7 +73,7 @@ export function discordCommands() {
             options: [{ type: 3, name: 'vault_id', description: 'The vault ID to look up.', required: true }]
         },
         {
-            name: 'obfuscate', description: 'Get 5 void tokens and a private obfuscation link.',
+            name: 'obfuscate', description: 'Get a private obfuscation link (8 void tokens per day).',
             options: [
                 { type: 11, name: 'file',  description: 'Upload a .lua file to preload on the page.', required: false },
                 { type: 3,  name: 'code',  description: 'Paste Lua code to preload on the page.', required: false },

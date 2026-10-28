@@ -165,7 +165,7 @@ export default async function handler(req, res) {
                     '`/stats` — Live site activity & stats',
                     '`/vault <id>` — Look up vault info',
                     '`/verify <id>` — Open a vault access page',
-                    '`/obfuscate [file] [code] [level]` — Get 5 void tokens + obfuscation link',
+                    '`/obfuscate [file] [code] [level]` — Private obfuscation link (8 tokens/day)',
                     '`/panel` — Open the Creator Panel',
                     '`/scripts` — Browse public scripts'
                 ].join('\n'), inline: false },
@@ -319,6 +319,8 @@ export default async function handler(req, res) {
 
                 const obfuscateUrl = `${DISCORD_SITE_URL}/obfuscation?vx=${encodeURIComponent(session.token)}`;
                 const expiresUnix = Math.floor((session.expiresAt || Date.now()) / 1000);
+                const resetUnix = Math.floor((session.resetsAt || Date.now()) / 1000);
+                const left = Math.max(0, Number(session.credits) || 0);
 
                 await editFollowUp(appId, itoken, {
                     embeds: [{
@@ -328,15 +330,17 @@ export default async function handler(req, res) {
                                 ? `**File:** \`${filename}\` (${source.length.toLocaleString()} chars)`
                                 : '**File:** upload or paste it on the page',
                             `**Default strength:** \`${level}\``,
-                            `**Void tokens:** **${session.credits}**${session.reused ? ' remaining on your link' : ' available'}`,
+                            `**Void tokens:** **${left}** of ${session.dailyLimit || 8} left today`,
                             '',
-                            'Open the page to obfuscate and download the protected file. You can also save the result to a VoidedX vault.',
+                            left > 0
+                                ? 'Open the page to obfuscate and download the protected file. Choose strength, armor layers, junk noise, and output style there. You can also save the result to a VoidedX vault.'
+                                : 'Today\'s tokens are used up. Open the page to queue a script for tomorrow, or ask an admin for bonus tokens.',
                             '',
-                            'Each successful obfuscation uses one token. The link is personal, so do not share it.',
-                            `⏱️ Expires <t:${expiresUnix}:R>.`
+                            'Each successful obfuscation uses one token. Tokens refill at midnight UTC; the link is personal, so do not share it. Bonus tokens granted by an admin are spent after the daily ones.',
+                            `⏱️ Tokens reset <t:${resetUnix}:R>. Link expires <t:${expiresUnix}:R>.`
                         ].join('\n'),
                         color: 0xa855f7,
-                        footer: { text: 'VoidedX  •  5 void tokens per link' },
+                        footer: { text: 'VoidedX  •  8 void tokens per day' },
                         timestamp: new Date().toISOString()
                     }],
                     components: [{ type: 1, components: [

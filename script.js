@@ -395,10 +395,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const chkObfuscation = document.getElementById('chk-obfuscation');
     const chkFastLoadCache = document.getElementById('chk-fast-load-cache');
     const obfuscationLevelSelect = document.getElementById('obfuscation-level');
+    const obfuscationLayersSelect = document.getElementById('obfuscation-layers');
+    const obfuscationJunkSelect = document.getElementById('obfuscation-junk');
+    const obfuscationLayoutSelect = document.getElementById('obfuscation-layout');
     const chkTamperCheck = document.getElementById('chk-tamper-check');
     const chkInstantRun = document.getElementById('chk-instant-run');
     const chkVmProtection = document.getElementById('chk-vm-protection');
     const chkExpandedTransforms = document.getElementById('chk-expanded-transforms');
+    const chkJunkComments = document.getElementById('chk-junk-comments');
     const backupNowBtn = document.getElementById('backup-now-btn');
     const previewObfuscatedBtn = document.getElementById('preview-obfuscated-btn');
     const obfuscatedPreviewPanel = document.getElementById('obfuscated-preview-panel');
@@ -467,10 +471,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const absoluteMode = enabled && requestedLevel === 'absolute';
         const fastMode = enabled && requestedLevel === 'fast';
         const vmProtection = enabled;
+        const layerChoice = Math.floor(Number(obfuscationLayersSelect ? obfuscationLayersSelect.value : ''));
         const protection = {
             tamperCheck: absoluteMode || !!(chkTamperCheck && chkTamperCheck.checked),
             vmProtection,
-            expandedTransforms: absoluteMode || (!fastMode && !!(chkExpandedTransforms && chkExpandedTransforms.checked))
+            expandedTransforms: absoluteMode || (!fastMode && !!(chkExpandedTransforms && chkExpandedTransforms.checked)),
+            layers: Number.isFinite(layerChoice) && layerChoice > 0 ? layerChoice : 0,
+            junk: ['off', 'normal', 'heavy'].includes(obfuscationJunkSelect?.value) ? obfuscationJunkSelect.value : 'normal',
+            comments: !!(chkJunkComments && chkJunkComments.checked),
+            layout: obfuscationLayoutSelect?.value === 'compact' ? 'compact' : 'messy'
         };
         return {
             enabled,
@@ -1297,6 +1306,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkInstantRun) chkInstantRun.checked = data.instantRunEnabled === true;
         if (chkVmProtection) chkVmProtection.checked = true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
+        if (obfuscationLayersSelect) {
+            const savedLayers = Number(data.armorLayerCount);
+            obfuscationLayersSelect.value = Number.isSafeInteger(savedLayers) && savedLayers >= 1 && savedLayers <= 6
+                ? String(savedLayers)
+                : 'auto';
+        }
+        if (obfuscationJunkSelect) {
+            obfuscationJunkSelect.value = ['off', 'normal', 'heavy'].includes(data.junkPreambleMode) ? data.junkPreambleMode : 'normal';
+        }
+        if (obfuscationLayoutSelect) {
+            obfuscationLayoutSelect.value = data.armorLayout === 'compact' ? 'compact' : 'messy';
+        }
+        if (chkJunkComments) chkJunkComments.checked = data.junkCommentsEnabled !== false;
         setEditorDirty(false);
         if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 17) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
@@ -1365,6 +1387,10 @@ document.addEventListener('DOMContentLoaded', () => {
             chkVmProtection.disabled = true;
         }
         if (obfuscationLevelSelect) obfuscationLevelSelect.disabled = !obfuscationOn;
+        if (obfuscationLayersSelect) obfuscationLayersSelect.disabled = !obfuscationOn;
+        if (obfuscationJunkSelect) obfuscationJunkSelect.disabled = !obfuscationOn;
+        if (obfuscationLayoutSelect) obfuscationLayoutSelect.disabled = !obfuscationOn;
+        if (chkJunkComments) chkJunkComments.disabled = !obfuscationOn || obfuscationJunkSelect?.value === 'off';
         if (chkTamperCheck) chkTamperCheck.disabled = !obfuscationOn || absoluteMode;
         if (chkExpandedTransforms) chkExpandedTransforms.disabled = !obfuscationOn || absoluteMode || fastMode;
     }
@@ -1393,6 +1419,27 @@ document.addEventListener('DOMContentLoaded', () => {
         setEditorDirty(true);
     });
     if (chkExpandedTransforms) chkExpandedTransforms.addEventListener('change', () => {
+        obfuscationRevision += 1;
+        markObfuscatedPreviewStale();
+        setEditorDirty(true);
+    });
+    if (obfuscationLayersSelect) obfuscationLayersSelect.addEventListener('change', () => {
+        obfuscationRevision += 1;
+        markObfuscatedPreviewStale();
+        setEditorDirty(true);
+    });
+    if (obfuscationJunkSelect) obfuscationJunkSelect.addEventListener('change', () => {
+        syncObfuscationProtectionControls();
+        obfuscationRevision += 1;
+        markObfuscatedPreviewStale();
+        setEditorDirty(true);
+    });
+    if (obfuscationLayoutSelect) obfuscationLayoutSelect.addEventListener('change', () => {
+        obfuscationRevision += 1;
+        markObfuscatedPreviewStale();
+        setEditorDirty(true);
+    });
+    if (chkJunkComments) chkJunkComments.addEventListener('change', () => {
         obfuscationRevision += 1;
         markObfuscatedPreviewStale();
         setEditorDirty(true);
@@ -1593,6 +1640,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const vmProtectionEnabled = obfuscationSettings.protection.vmProtection;
         const tamperCheckEnabled = obfuscationSettings.protection.tamperCheck;
         const expandedTransformsEnabled = obfuscationSettings.protection.expandedTransforms;
+        const armorLayerCount = obfuscationSettings.protection.layers || null;
+        const junkPreambleMode = obfuscationSettings.protection.junk;
+        const junkCommentsEnabled = obfuscationSettings.protection.comments;
+        const armorLayout = obfuscationSettings.protection.layout;
         if (obfuscationEnabled) {
             lockBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> OBFUSCATING ${effectiveObfuscationLevel.toUpperCase()}...`;
             try {
@@ -1662,6 +1713,10 @@ document.addEventListener('DOMContentLoaded', () => {
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),
             vmProtectionEnabled,
             expandedTransformsEnabled,
+            armorLayerCount: obfuscationEnabled ? armorLayerCount : null,
+            junkPreambleMode,
+            junkCommentsEnabled,
+            armorLayout,
             obfuscatedCodeLevel: obfuscationEnabled ? effectiveObfuscationLevel : null,
             obfuscatedCode: encodedObfuscatedCode ? encodedObfuscatedCode.value : null,
             obfuscatedCodeEncoding: encodedObfuscatedCode ? encodedObfuscatedCode.encoding : null,
@@ -1767,6 +1822,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkInstantRun) chkInstantRun.checked = false;
         if (chkVmProtection) chkVmProtection.checked = false;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = false;
+        if (obfuscationLayersSelect) obfuscationLayersSelect.value = 'auto';
+        if (obfuscationJunkSelect) obfuscationJunkSelect.value = 'normal';
+        if (obfuscationLayoutSelect) obfuscationLayoutSelect.value = 'messy';
+        if (chkJunkComments) chkJunkComments.checked = true;
         if (chkFastLoadCache) chkFastLoadCache.checked = false;
         syncObfuscationProtectionControls();
         setEditorDirty(false);

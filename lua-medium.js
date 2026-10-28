@@ -1,4 +1,4 @@
-import { armorVoidedxSource, ARMOR_LEVELS } from './lua-voidedx-armor.js';
+import { armorVoidedxSource, ARMOR_LEVELS, MAX_ARMOR_LAYERS } from './lua-voidedx-armor.js';
 
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
@@ -204,13 +204,24 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
     const vmProtection = true;
     const expandedTransforms = absoluteMode || (!fastMode && protection.expandedTransforms === true);
     const vmLayers = VM_LAYER_COUNTS[level] || 1;
+    const requestedLayers = Math.floor(Number(protection.layers));
+    const armorLayers = Number.isFinite(requestedLayers) && requestedLayers > 0
+        ? Math.min(requestedLayers, MAX_ARMOR_LAYERS)
+        : 0;
+    const junk = ['off', 'normal', 'heavy'].includes(protection.junk) ? protection.junk : 'normal';
+    const comments = protection.comments !== false;
+    const layout = protection.layout === 'compact' ? 'compact' : 'messy';
     if (lastSuccessfulObfuscation?.source === source
         && lastSuccessfulObfuscation.level === level
         && lastSuccessfulObfuscation.tamperCheck === tamperCheck
         && lastSuccessfulObfuscation.vmProtection === vmProtection
         && lastSuccessfulObfuscation.expandedTransforms === expandedTransforms
         && lastSuccessfulObfuscation.fastMode === fastMode
-        && lastSuccessfulObfuscation.vmLayers === vmLayers) {
+        && lastSuccessfulObfuscation.vmLayers === vmLayers
+        && lastSuccessfulObfuscation.armorLayers === armorLayers
+        && lastSuccessfulObfuscation.junk === junk
+        && lastSuccessfulObfuscation.comments === comments
+        && lastSuccessfulObfuscation.layout === layout) {
         return Promise.resolve(lastSuccessfulObfuscation.output);
     }
 
@@ -234,7 +245,10 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
             }
             const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
             if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
-                lastSuccessfulObfuscation = { source, level, tamperCheck, vmProtection, expandedTransforms, fastMode, vmLayers, output };
+                lastSuccessfulObfuscation = {
+                    source, level, tamperCheck, vmProtection, expandedTransforms, fastMode, vmLayers,
+                    armorLayers, junk, comments, layout, output
+                };
             } else {
                 lastSuccessfulObfuscation = null;
             }
@@ -264,7 +278,13 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                         // script no longer carries Prometheus shapes (watermark statement, helper
                         // names, plain `loadstring`-free layout). The inner VM is unchanged.
                         const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
-                        const output = armorVoidedxSource(patched, { level: armorLevel });
+                        const output = armorVoidedxSource(patched, {
+                            level: armorLevel,
+                            layers: armorLayers || undefined,
+                            junk,
+                            comments,
+                            layout
+                        });
                         const outputBytes = getUtf8ByteLength(output);
                         if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
                             throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');

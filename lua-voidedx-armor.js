@@ -35,6 +35,7 @@ const LEVEL_CONFIG = Object.freeze({
 // 1.35x. Stop nesting before large scripts become impossible to store.
 const MAX_ARMOR_NEST_CHARS = 420 * 1024;
 const MAX_ARMOR_TOTAL_CHARS = 3 * 1024 * 1024;
+const MAX_ARMOR_LAYERS = 6;
 
 function createRng() {
     const cryptoObj = typeof crypto !== 'undefined' ? crypto : null;
@@ -547,7 +548,8 @@ function needsTokenGap(prev, next) {
     return false;
 }
 
-function messifyLua(code, rng) {
+function messifyLua(code, rng, layout = 'messy') {
+    const compact = layout === 'compact';
     const tokens = [];
     const n = code.length;
     let i = 0;
@@ -648,7 +650,7 @@ function messifyLua(code, rng) {
         const token = tokens[t];
         const prev = tokens[t - 1];
         if (t > 0) {
-            const gap = needsTokenGap(prev, token) ? ' ' : (rng() < 0.18 ? ' ' : '');
+            const gap = needsTokenGap(prev, token) ? ' ' : (compact ? '' : (rng() < 0.18 ? ' ' : ''));
             out += gap;
         }
         out += token;
@@ -658,8 +660,11 @@ function messifyLua(code, rng) {
         const breakSafe = token !== '(' && token !== '{' && token !== '['
             && tokens[t + 1] !== '(' && tokens[t + 1] !== '{' && tokens[t + 1] !== '['
             && prev !== 'return';
-        if (breakSafe && sinceBreak > 30 && (rng() < 0.14 || sinceBreak > 240)) {
-            out += rng() < 0.02 ? '\n\n' : '\n';
+        const shouldBreak = compact
+            ? sinceBreak > 200
+            : sinceBreak > 30 && (rng() < 0.14 || sinceBreak > 240);
+        if (breakSafe && shouldBreak) {
+            out += !compact && rng() < 0.02 ? '\n\n' : '\n';
             sinceBreak = 0;
         }
     }
@@ -1051,7 +1056,8 @@ function noiseComment(rng) {
 // its own `do ... end` locals, and leaves no globals behind. Two portability
 // rules hold for every shape: no empty statement (LuaJIT rejects `;;`) and no
 // bare-variable table keys (those would read a global instead of a name).
-function buildJunkCode(rng, count) {
+function buildJunkCode(rng, count, options = {}) {
+    const comments = options.comments !== false;
     const next = createConfusableFactory(rng);
     const hex = value => '0x' + value.toString(16);
     const small = () => 1 + randomInt(rng, 9);
@@ -1103,7 +1109,7 @@ function buildJunkCode(rng, count) {
             blocks.push(`do local ${a}=math.floor(${(1 + randomInt(rng, 4000)) / 16});`
                 + `local ${b}=math.abs(${a}-${small()});if ${b}<0 then ${b}=0 end end`);
         }
-        if (rng() < 0.45) blocks.push('-- ' + noiseComment(rng));
+        if (comments && rng() < 0.45) blocks.push('-- ' + noiseComment(rng));
     }
     return blocks.join('\n');
 }
@@ -1210,7 +1216,7 @@ function armorOnce(source, config) {
         opaqueM,
         opaqueExpected: (opaqueA * opaqueB + opaqueC) % opaqueM
     });
-    return messifyLua(loader, rng);
+    return messifyLua(loader, rng, config.layout);
 }
 
 export function armorVoidedxSource(source, options = {}) {
@@ -1218,14 +1224,20 @@ export function armorVoidedxSource(source, options = {}) {
         throw new Error('The obfuscation engine returned an empty script.');
     }
     const level = options.level || 'medium';
-    const config = LEVEL_CONFIG[level] || LEVEL_CONFIG.medium;
+    const base = LEVEL_CONFIG[level] || LEVEL_CONFIG.medium;
+    const layout = options.layout === 'compact' ? 'compact' : 'messy';
+    const config = { ...base, layout };
 
     // Nested containers: each layer decodes and loads the previous one inside
     // its own randomized VM. The Prometheus VM stack stays at one layer because
     // stacking Vmify corrupts real scripts; these independent VoidedX layers are
     // safe because every one of them is the same proven decode-then-load path.
     let text = armorOnce(source, config);
-    const requestedLayers = Math.max(1, Math.min(Number(config.layers) || 1, 6));
+    const layerOption = Math.floor(Number(options.layers));
+    const requestedLayers = Math.max(1, Math.min(
+        Number.isFinite(layerOption) && layerOption > 0 ? layerOption : Number(base.layers) || 1,
+        MAX_ARMOR_LAYERS
+    ));
     for (let layer = 1; layer < requestedLayers; layer += 1) {
         if (text.length > MAX_ARMOR_NEST_CHARS) break;
         if (text.length * 1.35 > MAX_ARMOR_TOTAL_CHARS) break;
@@ -1233,9 +1245,15 @@ export function armorVoidedxSource(source, options = {}) {
     }
 
     const bannerRng = createRng();
+    const junkCount = options.junk === 'off'
+        ? 0
+        : options.junk === 'heavy'
+            ? 34 + randomInt(bannerRng, 22)
+            : 16 + randomInt(bannerRng, 14);
     return buildBanner() + '\n'
-        + buildJunkCode(bannerRng, 16 + randomInt(bannerRng, 14)) + '\n'
+        + (junkCount ? buildJunkCode(bannerRng, junkCount, { comments: options.comments !== false }) + '\n' : '')
         + text;
 }
 
 export const ARMOR_LEVELS = Object.freeze(Object.keys(LEVEL_CONFIG));
+export { MAX_ARMOR_LAYERS };

@@ -31,17 +31,29 @@ const db = getFirestore(app);
 
 const els = {
     loading: document.getElementById('obf-loading'),
+    loadingTitle: document.getElementById('obf-loading-title'),
+    loadingNote: document.getElementById('obf-loading-note'),
     error: document.getElementById('obf-error'),
+    errorTitle: document.getElementById('obf-error-title'),
     errorMessage: document.getElementById('obf-error-message'),
+    errorAction: document.getElementById('obf-error-action'),
     app: document.getElementById('obf-app'),
+    eyebrow: document.getElementById('obf-eyebrow'),
+    intro: document.getElementById('obf-intro'),
     tokenCard: document.getElementById('obf-token-card'),
     credits: document.getElementById('obf-credits'),
+    creditsNote: document.getElementById('obf-credits-note'),
     sessionLine: document.getElementById('obf-session-line'),
     file: document.getElementById('obf-file'),
     source: document.getElementById('obf-source'),
     level: document.getElementById('obf-level'),
+    layers: document.getElementById('obf-layers'),
+    junk: document.getElementById('obf-junk'),
+    layout: document.getElementById('obf-layout'),
+    comments: document.getElementById('obf-comments'),
     tamper: document.getElementById('obf-tamper'),
     expanded: document.getElementById('obf-expanded'),
+    autodownload: document.getElementById('obf-autodownload'),
     run: document.getElementById('obf-run'),
     status: document.getElementById('obf-status'),
     title: document.getElementById('obf-title'),
@@ -49,7 +61,8 @@ const els = {
     vaultStatus: document.getElementById('obf-vault-status'),
     result: document.getElementById('obf-result'),
     output: document.getElementById('obf-output'),
-    download: document.getElementById('obf-download')
+    download: document.getElementById('obf-download'),
+    copy: document.getElementById('obf-copy')
 };
 
 const params = new URLSearchParams(location.search);
@@ -59,7 +72,15 @@ if (!sessionToken) {
     if (match) sessionToken = match[1];
 }
 
+// A link token means the Discord flow; no token means the visitor is using the
+// public page directly, which spends this browser account's own daily tokens.
+const webMode = !sessionToken;
+
 let credits = 0;
+let dailyRemaining = 0;
+let dailyLimit = 8;
+let bonus = 0;
+let resetsAt = 0;
 let session = null;
 let generated = null;
 let running = false;
@@ -94,6 +115,15 @@ function showError(message) {
     els.errorMessage.textContent = message;
 }
 
+function formatWhen(timestamp) {
+    if (!timestamp) return '';
+    try {
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(timestamp));
+    } catch {
+        return '';
+    }
+}
+
 function baseName() {
     const raw = (els.title.value || session?.filename || 'script').trim();
     return (raw.replace(/[\\/:*?"<>|\r\n]/g, '').replace(/\.(lua|txt)$/i, '').trim() || 'script').slice(0, 80);
@@ -103,10 +133,26 @@ function downloadName() {
     return `${baseName()}-obfuscated.lua`;
 }
 
+function exhaustedMessage() {
+    return webMode
+        ? 'All of today\'s void tokens are used. They refill at midnight UTC, and an admin can grant bonus tokens to this account.'
+        : 'All of today\'s void tokens are used on this Discord balance. They refill at midnight UTC, or ask an admin for bonus tokens.';
+}
+
+function applyTokenState(data) {
+    credits = Math.max(0, Number(data.credits) || 0);
+    dailyRemaining = Math.max(0, Number(data.dailyRemaining ?? data.credits) || 0);
+    dailyLimit = Math.max(1, Number(data.dailyLimit) || 8);
+    bonus = Math.max(0, Number(data.bonus) || 0);
+    resetsAt = Number(data.resetsAt) || 0;
+    updateCredits();
+    renderSessionLine();
+}
+
 function updateCredits() {
-    const shown = Math.max(0, Number(credits) || 0);
-    els.credits.textContent = String(shown);
-    els.tokenCard.classList.toggle('empty', shown <= 0);
+    els.credits.textContent = String(Math.max(0, Number(credits) || 0));
+    els.creditsNote.textContent = bonus > 0 ? `left today + ${bonus} bonus` : 'left today';
+    els.tokenCard.classList.toggle('empty', credits <= 0);
     refreshButtons();
 }
 
@@ -118,19 +164,39 @@ function refreshButtons() {
     const stale = !generated || els.source.value !== generated.source;
     els.save.disabled = saving || !generated || stale || Boolean(savedVaultId);
     els.download.disabled = !generated;
+    els.copy.disabled = !generated || !generated.inline;
 }
 
 function renderSessionLine() {
-    if (!session) return;
     const parts = [];
-    if (session.discordUsername) parts.push(`Issued to ${session.discordUsername}`);
-    parts.push(`${credits} of 5 void tokens remaining`);
-    if (session.expiresAt) {
-        try {
-            parts.push(`Link expires ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(session.expiresAt))}`);
-        } catch {}
+    if (webMode) {
+        parts.push('Website copy · this browser\'s guest account');
+    } else if (session?.discordUsername) {
+        parts.push(`Issued to ${session.discordUsername}`);
+    }
+    parts.push(`${dailyRemaining} of ${dailyLimit} daily void tokens left`);
+    if (bonus > 0) parts.push(`${bonus} bonus`);
+    const reset = formatWhen(resetsAt);
+    if (reset) parts.push(`Tokens reset ${reset}`);
+    if (!webMode && session?.expiresAt) {
+        const expires = formatWhen(session.expiresAt);
+        if (expires) parts.push(`Link expires ${expires}`);
     }
     els.sessionLine.textContent = parts.join('  ·  ');
+}
+
+function applyModeCopy() {
+    if (webMode) {
+        els.loadingTitle.textContent = 'Loading your void tokens';
+        els.loadingNote.textContent = 'Preparing the obfuscator and counting today\'s allowance.';
+        els.eyebrow.innerHTML = '<i class="fa-solid fa-shield-halved"></i> VOIDEDX OBFUSCATOR';
+        els.intro.textContent = 'Obfuscate a Lua or Luau script with the VoidedX engine, then download the protected copy or save it to a vault. Every account gets 8 void tokens per day; each successful obfuscation uses one, and admins can add bonus tokens.';
+        return;
+    }
+    els.loadingTitle.textContent = 'Checking your link';
+    els.loadingNote.textContent = 'Loading your void tokens and any script sent from Discord.';
+    els.eyebrow.innerHTML = '<i class="fa-brands fa-discord"></i> OBFUSCATOR · DISCORD LINK';
+    els.intro.textContent = 'This private link is tied to your Discord balance. Pick any options you want, obfuscate, and download the protected copy. Each run spends one of your 8 daily void tokens.';
 }
 
 function triggerDownload() {
@@ -146,20 +212,63 @@ function triggerDownload() {
     setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+async function ensureUser() {
+    const user = authUser || auth.currentUser;
+    if (user) return user;
+    const credential = await signInAnonymously(auth);
+    authUser = credential.user;
+    return authUser;
+}
+
+async function signedInHeaders() {
+    const user = await ensureUser();
+    const idToken = await user.getIdToken();
+    return { Authorization: `Bearer ${idToken}` };
+}
+
 async function consumeToken() {
-    const res = await fetch('/api/obfuscation-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vx: sessionToken, action: 'consume' })
-    });
+    const endpoint = webMode ? '/api/obfuscation-tokens' : '/api/obfuscation-session';
+    const options = webMode
+        ? {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(await signedInHeaders()) },
+            body: JSON.stringify({ action: 'consume' })
+        }
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vx: sessionToken, action: 'consume' })
+        };
+    const res = await fetch(endpoint, options);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error(data.message || 'This void token could not be used.');
-    credits = Math.max(0, Number(data.credits) || 0);
-    updateCredits();
-    renderSessionLine();
+    if (!res.ok || !data.ok) {
+        const error = new Error(data.message || 'This void token could not be used.');
+        error.status = res.status;
+        throw error;
+    }
+    applyTokenState(data);
 }
 
 async function loadSession() {
+    applyModeCopy();
+    if (webMode) {
+        try {
+            const res = await fetch('/api/obfuscation-tokens', { headers: await signedInHeaders(), cache: 'no-store' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) throw new Error(data.message || 'Could not load your void tokens.');
+            els.loading.classList.add('hidden');
+            els.app.classList.remove('hidden');
+            applyTokenState(data);
+            if (credits <= 0) setMessage(els.status, exhaustedMessage(), 'error');
+        } catch (error) {
+            els.errorTitle.textContent = 'Could not load the obfuscator';
+            els.errorAction.href = location.pathname;
+            els.errorAction.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Reload the page';
+            showError(error.message || 'Could not reach the void token service. Check your connection and reload.');
+        }
+        return;
+    }
+
     if (!/^[A-Za-z0-9_-]{24,64}$/.test(sessionToken)) {
         showError('This obfuscation link is not valid. Run /obfuscate again in Discord.');
         return;
@@ -169,7 +278,6 @@ async function loadSession() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data.message || 'This obfuscation link is invalid or has expired.');
         session = data;
-        credits = Math.max(0, Number(data.credits) || 0);
         els.loading.classList.add('hidden');
         els.app.classList.remove('hidden');
         if (data.source) els.source.value = data.source;
@@ -177,11 +285,8 @@ async function loadSession() {
         if (data.filename && data.filename !== 'script.lua') {
             els.title.value = data.filename.replace(/\.(lua|txt)$/i, '').slice(0, 80);
         }
-        updateCredits();
-        renderSessionLine();
-        if (credits <= 0) {
-            setMessage(els.status, 'You have used all 5 void tokens on this link. Run /obfuscate again in Discord for a new link.', 'error');
-        }
+        applyTokenState(data);
+        if (credits <= 0) setMessage(els.status, exhaustedMessage(), 'error');
     } catch (error) {
         showError(error.message || 'This obfuscation link is invalid or has expired.');
     }
@@ -229,7 +334,7 @@ els.title.addEventListener('input', () => {
 els.run.addEventListener('click', async () => {
     if (running) return;
     if (credits <= 0) {
-        setMessage(els.status, 'You have used all 5 void tokens on this link. Run /obfuscate again in Discord.', 'error');
+        setMessage(els.status, exhaustedMessage(), 'error');
         return;
     }
     const source = els.source.value;
@@ -247,6 +352,11 @@ els.run.addEventListener('click', async () => {
     const effectiveLevel = resolveObfuscationLevel(source, requestedLevel);
     const tamperCheck = requestedLevel === 'absolute' || els.tamper.checked;
     const expandedTransforms = requestedLevel === 'absolute' || (requestedLevel !== 'fast' && els.expanded.checked);
+    const layerChoice = Number(els.layers.value);
+    const armorLayers = Number.isFinite(layerChoice) && layerChoice > 0 ? Math.min(6, Math.floor(layerChoice)) : 0;
+    const junk = els.junk.value;
+    const layout = els.layout.value;
+    const comments = els.comments.checked;
 
     running = true;
     setBusy(els.run, true, 'Obfuscating...');
@@ -259,18 +369,28 @@ els.run.addEventListener('click', async () => {
         const output = await obfuscateLua(source, effectiveLevel, {
             tamperCheck,
             expandedTransforms,
-            vmProtection: true
+            vmProtection: true,
+            layers: armorLayers || undefined,
+            junk,
+            comments,
+            layout
         });
+        const outputBytes = getUtf8ByteLength(output);
+        const inline = outputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES;
         generated = {
             source,
             requestedLevel,
             effectiveLevel,
             tamperCheck,
             expandedTransforms,
+            armorLayers,
+            junk,
+            layout,
+            comments,
+            inline,
             output
         };
-        const outputBytes = getUtf8ByteLength(output);
-        if (outputBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
+        if (inline) {
             els.output.value = output;
             els.output.placeholder = '';
         } else {
@@ -279,18 +399,16 @@ els.run.addEventListener('click', async () => {
         }
         els.result.classList.remove('hidden');
         refreshButtons();
-        triggerDownload();
+        if (els.autodownload.checked) triggerDownload();
 
         try {
             await consumeToken();
-            setMessage(els.status, `Protected file generated at ${effectiveLevel} strength and downloaded. ${credits} void token${credits === 1 ? '' : 's'} left.`, 'success');
+            setMessage(els.status, `Protected file generated at ${effectiveLevel} strength. ${credits} void token${credits === 1 ? '' : 's'} left today.`, 'success');
         } catch (error) {
-            if (/all 5|expired|invalid/i.test(error.message || '')) {
-                credits = 0;
-                updateCredits();
-                renderSessionLine();
+            if (error.status === 429) {
+                applyTokenState({ credits: 0, dailyRemaining: 0, dailyLimit, bonus, resetsAt });
             }
-            setMessage(els.status, `The file was generated and downloaded, but the link could not spend a void token: ${error.message}`, 'error');
+            setMessage(els.status, `The file was generated, but the void token could not be spent: ${error.message}`, 'error');
         }
     } catch (error) {
         generated = null;
@@ -304,6 +422,25 @@ els.run.addEventListener('click', async () => {
 });
 
 els.download.addEventListener('click', triggerDownload);
+
+els.copy.addEventListener('click', async () => {
+    if (!generated?.inline) {
+        setMessage(els.status, 'This copy is too large to copy as text. Use the download button.', 'error');
+        return;
+    }
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(generated.output);
+        } else {
+            els.output.focus();
+            els.output.select();
+            document.execCommand('copy');
+        }
+        setMessage(els.status, 'Copied the protected script to the clipboard.', 'success');
+    } catch {
+        setMessage(els.status, 'Could not copy. Select the output and copy it manually.', 'error');
+    }
+});
 
 els.save.addEventListener('click', async () => {
     if (saving || !generated) return;
@@ -321,12 +458,7 @@ els.save.addEventListener('click', async () => {
     saving = true;
     setBusy(els.save, true, 'Saving...');
     try {
-        let user = authUser || auth.currentUser;
-        if (!user) {
-            const credential = await signInAnonymously(auth);
-            user = credential.user;
-            authUser = user;
-        }
+        const user = await ensureUser();
 
         const existing = await getDocs(query(collection(db, 'vaults'), where('uid', '==', user.uid)));
         if (existing.size >= 5) {
@@ -349,6 +481,10 @@ els.save.addEventListener('click', async () => {
             tamperCheckEnabled: generated.tamperCheck,
             vmProtectionEnabled: true,
             expandedTransformsEnabled: generated.expandedTransforms,
+            armorLayerCount: generated.armorLayers || null,
+            junkPreambleMode: generated.junk,
+            junkCommentsEnabled: generated.comments,
+            armorLayout: generated.layout,
             obfuscatedCodeLevel: generated.effectiveLevel,
             obfuscatedCode: encodedOutput.value,
             obfuscatedCodeEncoding: encodedOutput.encoding,

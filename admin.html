@@ -232,6 +232,24 @@
                     <h3 class="admin-operations-subheading">Current staff grants</h3>
                     <div id="admin-staff-list" class="admin-operation-list"><div class="info-box"><p>Loading staff…</p></div></div>
                 </section>
+
+                <section class="admin-card admin-operations-card">
+                    <div class="admin-section-heading"><div><p class="admin-eyebrow">OBFUSCATOR</p><h2><i class="fa-solid fa-coins"></i> Void tokens</h2></div></div>
+                    <p class="admin-help">Every account gets 8 void tokens per day for the obfuscator, on the website and through the Discord link. Bonus tokens are spent after the daily ones and do not expire. Use a Discord user ID (17-20 digits) or a VoidedX account ID; revoking clears that account's whole bonus balance.</p>
+                    <div class="admin-staff-form">
+                        <label class="panel-label" for="admin-token-subject">DISCORD USER ID OR ACCOUNT ID</label>
+                        <input id="admin-token-subject" class="input-field" maxlength="128" autocomplete="off" placeholder="123456789012345678 or the account UID">
+                        <label class="panel-label" for="admin-token-amount">BONUS TOKENS</label>
+                        <input id="admin-token-amount" class="input-field" type="number" min="1" max="10000" value="10">
+                        <div class="admin-token-actions">
+                            <button class="btn-primary" type="button" id="admin-token-give"><i class="fa-solid fa-plus"></i> Give tokens</button>
+                            <button class="btn-ghost" type="button" id="admin-token-revoke"><i class="fa-solid fa-eraser"></i> Revoke bonus</button>
+                        </div>
+                    </div>
+                    <div id="admin-token-status" class="admin-status hidden" role="status" aria-live="polite"></div>
+                    <h3 class="admin-operations-subheading">Recent token grants</h3>
+                    <div id="admin-token-grant-list" class="admin-operation-list"><div class="info-box"><p>Loading token grants…</p></div></div>
+                </section>
             </div>
 
             <section class="admin-card admin-script-review-card">

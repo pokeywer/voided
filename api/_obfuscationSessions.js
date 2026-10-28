@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { db } from './_admin.js';
+import {
+    DAILY_TOKEN_LIMIT, consumeTokens, discordSubject, readTokens, summarizeTokens
+} from './_obfuscationTokens.js';
 
-export const OBFUSCATION_SESSION_CREDITS = 5;
+export const OBFUSCATION_DAILY_TOKENS = DAILY_TOKEN_LIMIT;
 export const OBFUSCATION_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SESSION_SOURCE_CHARS = 200_000;
 const COLLECTION = 'obfuscationSessions';
@@ -26,53 +29,51 @@ function cleanFilename(value) {
     return (name || 'script.lua').slice(0, 120);
 }
 
+// The link only carries identity and a preloaded source. The allowance lives in
+// the token ledger, so a second /obfuscate keeps the same daily balance instead
+// of minting a fresh batch.
 export async function createDiscordObfuscationSession({ discordUserId, discordUsername, source, level, filename }) {
-    const userId = String(discordUserId || '').trim();
-    if (!/^\d{17,20}$/.test(userId)) throw sessionError('Discord user ID was missing.', 400);
-
+    const subject = discordSubject(discordUserId);
     const now = Date.now();
     const username = String(discordUsername || '').trim().slice(0, 64);
     const nextSource = typeof source === 'string' ? source.slice(0, MAX_SESSION_SOURCE_CHARS) : '';
     const nextLevel = cleanLevel(String(level || 'auto'));
     const nextFilename = cleanFilename(filename);
+    const tokens = await readTokens(subject);
 
-    // One active link per Discord user. The pointer avoids a composite-index
-    // query and keeps re-running /obfuscate from farming unlimited tokens.
-    const ownerRef = db.collection(OWNER_COLLECTION).doc(userId);
+    const ownerRef = db.collection(OWNER_COLLECTION).doc(String(discordUserId).trim());
     const ownerSnap = await ownerRef.get();
     const pointer = ownerSnap.exists ? ownerSnap.data() : null;
 
     if (pointer && isValidObfuscationToken(pointer.token) && Number(pointer.expiresAt) > now) {
         const sessionRef = db.collection(COLLECTION).doc(pointer.token);
         const sessionSnap = await sessionRef.get();
-        if (sessionSnap.exists) {
-            const data = sessionSnap.data();
-            const activeCredits = Math.max(0, Number(data.credits) || 0);
-            if (Number(data.expiresAt) > now && activeCredits > 0) {
-                const updates = { discordUsername: username, updatedAt: now };
-                if (nextSource) {
-                    updates.initialSource = nextSource;
-                    updates.initialLevel = nextLevel;
-                    updates.filename = nextFilename;
-                    updates.sourceUpdatedAt = now;
-                }
-                await sessionRef.update(updates);
-                return {
-                    token: pointer.token,
-                    credits: activeCredits,
-                    expiresAt: Number(data.expiresAt) || 0,
-                    reused: true
-                };
+        if (sessionSnap.exists && Number(sessionSnap.data().expiresAt) > now) {
+            const updates = { discordUsername: username, updatedAt: now };
+            if (nextSource) {
+                updates.initialSource = nextSource;
+                updates.initialLevel = nextLevel;
+                updates.filename = nextFilename;
+                updates.sourceUpdatedAt = now;
             }
+            await sessionRef.update(updates);
+            return {
+                token: pointer.token,
+                credits: tokens.remaining,
+                dailyLimit: tokens.dailyLimit,
+                resetsAt: tokens.resetsAt,
+                expiresAt: Number(sessionSnap.data().expiresAt) || 0,
+                reused: true
+            };
         }
     }
 
     const token = randomBytes(24).toString('base64url');
     const expiresAt = now + OBFUSCATION_SESSION_TTL_MS;
     await db.collection(COLLECTION).doc(token).set({
-        discordUserId: userId,
+        discordUserId: String(discordUserId).trim(),
+        subject,
         discordUsername: username,
-        credits: OBFUSCATION_SESSION_CREDITS,
         initialSource: nextSource,
         initialLevel: nextLevel,
         filename: nextFilename,
@@ -80,7 +81,7 @@ export async function createDiscordObfuscationSession({ discordUserId, discordUs
         updatedAt: now,
         expiresAt
     });
-    await ownerRef.set({ token, expiresAt, createdAt: now, updatedAt: now });
+    await ownerRef.set({ token, expiresAt, subject, createdAt: now, updatedAt: now });
     const previousToken = pointer?.token;
     if (isValidObfuscationToken(previousToken) && previousToken !== token) {
         await db.collection(COLLECTION).doc(previousToken).delete().catch(() => {});
@@ -88,7 +89,9 @@ export async function createDiscordObfuscationSession({ discordUserId, discordUs
 
     return {
         token,
-        credits: OBFUSCATION_SESSION_CREDITS,
+        credits: tokens.remaining,
+        dailyLimit: tokens.dailyLimit,
+        resetsAt: tokens.resetsAt,
         expiresAt,
         reused: false
     };
@@ -107,30 +110,21 @@ export async function getObfuscationSession(token) {
     return { id: snap.id, ...data };
 }
 
+export async function sessionTokens(session) {
+    if (!session) return summarizeTokens(null);
+    try {
+        return (await readTokens(session.subject || discordSubject(session.discordUserId)));
+    } catch {
+        return summarizeTokens(null);
+    }
+}
+
 export async function consumeObfuscationToken(token) {
-    if (!isValidObfuscationToken(token)) throw sessionError('This obfuscation link is not valid.', 400);
-    const ref = db.collection(COLLECTION).doc(token);
+    const session = await getObfuscationSession(token);
+    if (!session) throw sessionError('This obfuscation link is invalid or has expired. Run /obfuscate again in Discord.', 404);
 
-    return db.runTransaction(async transaction => {
-        const snap = await transaction.get(ref);
-        if (!snap.exists) throw sessionError('This obfuscation link is invalid or has expired. Run /obfuscate again in Discord.', 404);
-
-        const data = snap.data();
-        if (Number(data.expiresAt) <= Date.now()) {
-            throw sessionError('This obfuscation link has expired. Run /obfuscate again in Discord.', 410);
-        }
-
-        const credits = Math.max(0, Number(data.credits) || 0);
-        if (credits <= 0) {
-            throw sessionError('You have used all 5 void tokens on this link. Run /obfuscate again in Discord.', 403);
-        }
-
-        const remaining = credits - 1;
-        transaction.update(ref, {
-            credits: remaining,
-            updatedAt: Date.now(),
-            lastUsedAt: Date.now()
-        });
-        return { credits: remaining };
-    });
+    const subject = session.subject || discordSubject(session.discordUserId);
+    const result = await consumeTokens(subject);
+    await db.collection(COLLECTION).doc(token).update({ lastUsedAt: Date.now() }).catch(() => {});
+    return result;
 }

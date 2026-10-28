@@ -44,6 +44,8 @@
         .obf-hint { color: #64748b; font-size: 11px; line-height: 1.6; }
         .obf-hint a { color: #67e8f9; }
         .obf-result { display: flex; flex-direction: column; gap: 9px; padding-top: 13px; border-top: 1px solid var(--border-color); }
+        .obf-result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .obf-result-actions .btn-ghost { flex: 1 1 150px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
         .obf-vault-link { display: inline-flex; align-items: center; gap: 7px; width: fit-content; color: #67e8f9; font-size: 11px; font-weight: 800; text-decoration: none; }
         .obf-vault-link:hover { text-decoration: underline; }
         .obf-note { margin-top: 18px; color: #64748b; font-size: 10px; line-height: 1.7; }
@@ -86,28 +88,28 @@
     <main class="obf-main">
         <section id="obf-loading" class="obf-state" aria-live="polite">
             <div class="obf-state-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
-            <h1>Checking your link</h1>
-            <p>Loading your void tokens and any script sent from Discord.</p>
+            <h1 id="obf-loading-title">Checking your link</h1>
+            <p id="obf-loading-note">Loading your void tokens and any script sent from Discord.</p>
         </section>
 
         <section id="obf-error" class="obf-state hidden" aria-live="assertive">
             <div class="obf-state-icon"><i class="fa-solid fa-link-slash"></i></div>
-            <h1>Link unavailable</h1>
+            <h1 id="obf-error-title">Link unavailable</h1>
             <p id="obf-error-message">Run /obfuscate again in Discord to get a fresh link.</p>
-            <a href="/" class="btn-primary"><i class="fa-solid fa-code"></i> Open the script editor</a>
+            <a id="obf-error-action" href="/" class="btn-primary"><i class="fa-solid fa-code"></i> Open the script editor</a>
         </section>
 
         <section id="obf-app" class="hidden" aria-live="polite">
             <div class="obf-head">
                 <div class="obf-head-copy">
-                    <span class="creator-panel-eyebrow"><i class="fa-solid fa-shield-halved"></i> DISCORD OBFUSCATOR</span>
+                    <span id="obf-eyebrow" class="creator-panel-eyebrow"><i class="fa-solid fa-shield-halved"></i> VOIDEDX OBFUSCATOR</span>
                     <h1>Your file.<br><span>Protected.</span></h1>
-                    <p>Obfuscate a Lua or Luau script with the VoidedX engine, download the protected copy, or save it to a vault. Each successful obfuscation uses one void token from your personal link.</p>
+                    <p id="obf-intro">Obfuscate a Lua or Luau script with the VoidedX engine, download the protected copy, or save it to a vault. Each successful obfuscation uses one void token; every account gets 8 tokens per day.</p>
                 </div>
                 <div id="obf-token-card" class="obf-token-card">
                     <span>VOID TOKENS</span>
-                    <strong id="obf-credits">5</strong>
-                    <small>left on this link</small>
+                    <strong id="obf-credits">8</strong>
+                    <small id="obf-credits-note">left today</small>
                 </div>
             </div>
 
@@ -160,8 +162,34 @@
                                 <option value="absolute">Absolute · Strong preset + heavy armor (slowest)</option>
                             </select>
                         </label>
+                        <label for="obf-layers">Armor layers
+                            <select id="obf-layers" class="input-field">
+                                <option value="" selected>Auto (strength default)</option>
+                                <option value="1">1 · fastest startup</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4 · default for Absolute</option>
+                                <option value="5">5 · slow startup</option>
+                                <option value="6">6 · slowest startup</option>
+                            </select>
+                        </label>
+                        <label for="obf-junk">Junk preamble
+                            <select id="obf-junk" class="input-field">
+                                <option value="normal" selected>Normal (16-29 blocks)</option>
+                                <option value="heavy">Heavy (34-55 blocks)</option>
+                                <option value="off">Off (banner only)</option>
+                            </select>
+                        </label>
+                        <label for="obf-layout">Output layout
+                            <select id="obf-layout" class="input-field">
+                                <option value="messy" selected>Messy VM style</option>
+                                <option value="compact">Compact (long packed lines)</option>
+                            </select>
+                        </label>
+                        <label class="obf-check" for="obf-comments"><input id="obf-comments" type="checkbox" checked> Gibberish comments</label>
                         <label class="obf-check" for="obf-tamper"><input id="obf-tamper" type="checkbox" checked> Tamper check</label>
                         <label class="obf-check" for="obf-expanded"><input id="obf-expanded" type="checkbox"> More string splitting</label>
+                        <label class="obf-check" for="obf-autodownload"><input id="obf-autodownload" type="checkbox" checked> Download automatically</label>
                     </div>
 
                     <button id="obf-run" class="btn-primary" type="button"><i class="fa-solid fa-wand-magic-sparkles"></i> Obfuscate &amp; download</button>
@@ -179,12 +207,15 @@
                     <div id="obf-result" class="obf-result hidden">
                         <h3>Generated copy</h3>
                         <textarea id="obf-output" class="input-field obf-output" readonly spellcheck="false" aria-label="Generated obfuscated script"></textarea>
-                        <button id="obf-download" class="btn-ghost" type="button"><i class="fa-solid fa-download"></i> Download protected file</button>
+                        <div class="obf-result-actions">
+                            <button id="obf-download" class="btn-ghost" type="button"><i class="fa-solid fa-download"></i> Download protected file</button>
+                            <button id="obf-copy" class="btn-ghost" type="button"><i class="fa-solid fa-copy"></i> Copy</button>
+                        </div>
                     </div>
                 </article>
             </div>
 
-            <p class="obf-note"><strong>Keep your link private.</strong> Anyone with it can use your remaining void tokens and read the script sent from Discord. Obfuscation raises the cost of static analysis, but code that runs on a client can still be captured by a compromised executor.</p>
+            <p class="obf-note"><strong>Tokens.</strong> Each account gets 8 void tokens per day, refilled at midnight UTC. Admins can grant bonus tokens, which are spent after the daily ones. Website use is tied to this browser's guest account; the Discord link uses your Discord balance. <strong>Keep your link private</strong> if you opened one — anyone with it can spend your tokens and read the preloaded script. Obfuscation raises the cost of static analysis, but code that runs on a client can still be captured by a compromised executor.</p>
         </section>
     </main>
 

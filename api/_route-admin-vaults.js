@@ -180,6 +180,12 @@ export default async function handler(req, res) {
             tamperCheckEnabled,
             vmProtectionEnabled,
             expandedTransformsEnabled,
+            // The admin editor always rebuilds with the default armor options, so
+            // record them instead of leaving the vault's previous choices behind.
+            armorLayerCount: null,
+            junkPreambleMode: 'normal',
+            junkCommentsEnabled: true,
+            armorLayout: 'messy',
             obfuscatedCodeLevel,
             obfuscatedCode,
             obfuscatedCodeEncoding,

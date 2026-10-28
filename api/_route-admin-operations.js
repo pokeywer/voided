@@ -2,6 +2,7 @@ import { db, getAdminAuth } from './_admin.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
 import { createVaultBackup, readVaultBackupData } from './_vaultBackups.js';
 import { createCommunityScriptBackup } from './_communityScriptBackups.js';
+import { grantTokens, readTokens, subjectFromAdminInput } from './_obfuscationTokens.js';
 
 const STAFF_SCOPES = new Set([
     'vaults', 'vaultSource', 'executions', 'announcements', 'announcementManage',
@@ -39,11 +40,12 @@ export default async function handler(req, res) {
 
     try {
         if (req.method === 'GET') {
-            const [backupsSnap, scriptBackupsSnap, requestsSnap, staffSnap] = await Promise.all([
+            const [backupsSnap, scriptBackupsSnap, requestsSnap, staffSnap, grantSnap] = await Promise.all([
                 db.collection('vaultBackups').orderBy('createdAt', 'desc').limit(100).get(),
                 db.collection('communityScriptBackups').orderBy('createdAt', 'desc').limit(100).get(),
                 db.collection('restoreRequests').orderBy('createdAt', 'desc').limit(100).get(),
-                db.collection('staffAccess').get()
+                db.collection('staffAccess').get(),
+                db.collection('obfuscationTokenGrants').orderBy('createdAt', 'desc').limit(20).get().catch(() => null)
             ]);
             const requests = requestsSnap.docs.map(doc => {
                 const item = doc.data();
@@ -75,7 +77,20 @@ export default async function handler(req, res) {
                 ...backupsSnap.docs.map(doc => backupSummary(doc, 'vault')),
                 ...scriptBackupsSnap.docs.map(doc => backupSummary(doc, 'communityScript'))
             ].sort((a, b) => b.createdAt - a.createdAt).slice(0, 100);
-            return json(res, 200, { ok: true, backups, requests, staff });
+            const tokenGrants = grantSnap
+                ? grantSnap.docs.map(doc => {
+                    const item = doc.data();
+                    return {
+                        id: doc.id,
+                        subject: String(item.subject || ''),
+                        amount: Number(item.amount) || 0,
+                        bonusAfter: Number(item.bonusAfter) || 0,
+                        dailyRemaining: Number(item.dailyRemaining) || 0,
+                        createdAt: Number(item.createdAt) || 0
+                    };
+                })
+                : [];
+            return json(res, 200, { ok: true, backups, requests, staff, tokenGrants });
         }
 
         const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -260,6 +275,48 @@ export default async function handler(req, res) {
             if (snap.data().status !== 'pending') return json(res, 409, { ok: false, message: 'That request is already closed.' });
             await ref.update({ status: 'denied', adminNote, handledAt: Date.now(), handledBy: 'admin', expiresAt: null });
             return json(res, 200, { ok: true, requestId });
+        }
+
+        if (action === 'grant_tokens' || action === 'revoke_tokens') {
+            let subject;
+            try {
+                subject = subjectFromAdminInput(body.subject || body.uid || body.discordId);
+            } catch (error) {
+                return json(res, 400, { ok: false, message: error.message });
+            }
+            let current;
+            try {
+                current = await readTokens(subject);
+            } catch {
+                return json(res, 500, { ok: false, message: 'Could not read the current token balance.' });
+            }
+            const delta = action === 'revoke_tokens' ? -current.bonus : Math.floor(Number(body.amount));
+            if (delta !== 0) {
+                let result;
+                try {
+                    result = await grantTokens(subject, delta);
+                } catch (error) {
+                    return json(res, Number(error.status) || 500, { ok: false, message: error.message || 'Could not update void tokens.' });
+                }
+                await db.collection('obfuscationTokenGrants').add({
+                    subject,
+                    amount: Number(result.granted || 0),
+                    bonusAfter: result.bonus,
+                    dailyRemaining: result.dailyRemaining,
+                    createdAt: Date.now(),
+                    createdBy: 'admin'
+                }).catch(() => {});
+                current = result;
+            }
+            return json(res, 200, {
+                ok: true,
+                subject,
+                credits: current.remaining,
+                dailyRemaining: current.dailyRemaining,
+                bonus: current.bonus,
+                dailyLimit: current.dailyLimit,
+                resetsAt: current.resetsAt
+            });
         }
 
         return json(res, 400, { ok: false, message: 'Choose a supported admin action.' });

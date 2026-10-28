@@ -1,5 +1,5 @@
 import {
-    consumeObfuscationToken, getObfuscationSession, isValidObfuscationToken
+    consumeObfuscationToken, getObfuscationSession, isValidObfuscationToken, sessionTokens
 } from './_obfuscationSessions.js';
 
 function json(res, status, body) {
@@ -13,6 +13,16 @@ function tokenFrom(req) {
     return typeof raw === 'string' ? raw.trim() : '';
 }
 
+function tokenState(tokens) {
+    return {
+        credits: tokens.remaining,
+        dailyRemaining: tokens.dailyRemaining,
+        dailyLimit: tokens.dailyLimit,
+        bonus: tokens.bonus,
+        resetsAt: tokens.resetsAt
+    };
+}
+
 export default async function handler(req, res) {
     if (req.method === 'GET') {
         const token = tokenFrom(req);
@@ -24,9 +34,10 @@ export default async function handler(req, res) {
             if (!session) {
                 return json(res, 404, { ok: false, message: 'This obfuscation link is invalid or has expired. Run /obfuscate again in Discord.' });
             }
+            const tokens = await sessionTokens(session);
             return json(res, 200, {
                 ok: true,
-                credits: Math.max(0, Number(session.credits) || 0),
+                ...tokenState(tokens),
                 source: typeof session.initialSource === 'string' ? session.initialSource : '',
                 level: typeof session.initialLevel === 'string' ? session.initialLevel : 'auto',
                 filename: typeof session.filename === 'string' ? session.filename : 'script.lua',
@@ -56,12 +67,13 @@ export default async function handler(req, res) {
 
     try {
         const result = await consumeObfuscationToken(token);
-        return json(res, 200, { ok: true, credits: result.credits });
+        return json(res, 200, { ok: true, ...tokenState(result) });
     } catch (error) {
         const status = Number(error?.status) || 500;
         if (status >= 500) console.error('[obfuscation-session:consume]', error);
         return json(res, status, {
             ok: false,
+            resetsAt: Number(error?.resetsAt) || 0,
             message: status >= 500 ? 'Could not use a void token right now.' : String(error.message || 'Could not use a void token.')
         });
     }
