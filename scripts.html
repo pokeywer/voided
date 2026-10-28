@@ -68,7 +68,7 @@
             </div>
 
             <div class="script-browser-tools">
-                <label class="script-search"><i class="fa-solid fa-magnifying-glass"></i><input id="script-search-input" type="search" placeholder="Search scripts, games, or tags…" name="script-search-ignore" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" data-autofill-guard readonly><kbd>/</kbd></label>
+                <label class="script-search"><i class="fa-solid fa-magnifying-glass"></i><input id="script-search-input" type="search" placeholder="Search scripts, games, or tags…" name="script-search-ignore" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-autofill-guard readonly><kbd>/</kbd></label>
                 <select id="script-category-filter" class="input-field" aria-label="Filter by category">
                     <option value="all">All categories</option><option>Universal</option><option>Simulator</option><option>Combat</option><option>Utility</option><option>Other</option>
                 </select>
@@ -106,7 +106,7 @@
             <div class="auth-tabs"><button id="scripts-login-tab" class="auth-tab active" type="button">Sign in</button><button id="scripts-signup-tab" class="auth-tab" type="button">Create account</button></div>
             <div id="scripts-auth-error" class="auth-banner error hidden" role="alert"></div>
             <label class="panel-label" for="scripts-auth-email">EMAIL</label><input id="scripts-auth-email" class="input-field" type="email" autocomplete="email" placeholder="you@example.com">
-            <label class="panel-label" for="scripts-auth-password">PASSWORD</label><input id="scripts-auth-password" class="input-field" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+            <label class="panel-label" for="scripts-auth-password">PASSWORD</label><input id="scripts-auth-password" class="input-field" type="text" autocomplete="off" placeholder="At least 6 characters">
             <button id="scripts-auth-submit" class="btn-primary" type="button">Sign in</button>
             <button class="btn-ghost" type="button" data-close-modal>Cancel</button>
         </div>

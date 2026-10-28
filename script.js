@@ -597,8 +597,43 @@ document.addEventListener('DOMContentLoaded', () => {
         protectionKeyStatus.classList.toggle('off', !isEnabled);
     }
 
+    let allowUnload = false;
+
+    function askBeforeLeaving(destination) {
+        const ask = window.vxDialog
+            ? window.vxDialog.confirm('Changes you made may not be saved.', {
+                title: 'Leave this page?',
+                detail: 'Save your vault first if you want to keep these edits.',
+                confirmLabel: 'Leave page',
+                cancelLabel: 'Stay here',
+                tone: 'warning'
+            })
+            : Promise.resolve(window.confirm('Leave this page? Changes you made may not be saved.'));
+        ask.then((leave) => {
+            if (!leave) return;
+            allowUnload = true;
+            window.location.href = destination;
+        });
+    }
+
+    // In-app links leave through the themed dialog. The native beforeunload
+    // prompt only remains for reloads and closing the tab, where browsers do
+    // not allow custom UI.
+    document.addEventListener('click', (event) => {
+        if (!hasUnsavedChanges || allowUnload) return;
+        if (event.defaultPrevented || event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = event.target.closest('a[href]');
+        if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+        const destination = new URL(link.href, window.location.href);
+        if (destination.origin !== window.location.origin) return;
+        if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+        event.preventDefault();
+        askBeforeLeaving(destination.href);
+    });
+
     window.addEventListener('beforeunload', (event) => {
-        if (!hasUnsavedChanges) return;
+        if (!hasUnsavedChanges || allowUnload) return;
         event.preventDefault();
         event.returnValue = '';
     });

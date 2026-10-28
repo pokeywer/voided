@@ -57,8 +57,33 @@ function showToast(message, kind = 'info') {
     close.addEventListener('click', remove); setTimeout(remove, 4200);
 }
 
-function openModal(modal) { modal.classList.remove('hidden'); }
-function closeModal(modal) { modal.classList.add('hidden'); }
+// A password input in the DOM makes Chrome offer saved logins in the search
+// field, so the auth password only becomes a real password field while the
+// modal is open.
+function armAuthPassword() {
+    const password = $('#scripts-auth-password');
+    if (!password) return;
+    password.type = 'password';
+    password.autocomplete = authMode === 'signup' ? 'new-password' : 'current-password';
+}
+
+function disarmAuthPassword() {
+    const password = $('#scripts-auth-password');
+    if (!password) return;
+    password.value = '';
+    password.type = 'text';
+    password.autocomplete = 'off';
+}
+
+function openModal(modal) {
+    modal.classList.remove('hidden');
+    if (modal === authModal) armAuthPassword();
+}
+
+function closeModal(modal) {
+    modal.classList.add('hidden');
+    if (modal === authModal) disarmAuthPassword();
+}
 
 async function requestApi(url, { method = 'GET', body, authRequired = false } = {}) {
     const headers = {};
