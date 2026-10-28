@@ -396,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chkFastLoadCache = document.getElementById('chk-fast-load-cache');
     const obfuscationLevelSelect = document.getElementById('obfuscation-level');
     const chkTamperCheck = document.getElementById('chk-tamper-check');
+    const chkInstantRun = document.getElementById('chk-instant-run');
     const chkVmProtection = document.getElementById('chk-vm-protection');
     const chkExpandedTransforms = document.getElementById('chk-expanded-transforms');
     const backupNowBtn = document.getElementById('backup-now-btn');
@@ -1293,6 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             obfuscationLevelSelect.value = ['auto', 'fast', 'low', 'medium', 'high', 'absolute'].includes(data.obfuscationLevel) ? data.obfuscationLevel : 'auto';
         }
         if (chkTamperCheck) chkTamperCheck.checked = data.tamperCheckEnabled === true;
+        if (chkInstantRun) chkInstantRun.checked = data.instantRunEnabled !== false;
         if (chkVmProtection) chkVmProtection.checked = true;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = data.expandedTransformsEnabled === true;
         setEditorDirty(false);
@@ -1346,6 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setEditorDirty(true);
     });
     if (chkFastLoadCache) chkFastLoadCache.addEventListener('change', () => setEditorDirty(true));
+    if (chkInstantRun) chkInstantRun.addEventListener('change', () => setEditorDirty(true));
     function syncObfuscationProtectionControls() {
         const obfuscationOn = !!(chkObfuscation && chkObfuscation.checked);
         const absoluteMode = obfuscationOn && !!(obfuscationLevelSelect && obfuscationLevelSelect.value === 'absolute');
@@ -1656,6 +1659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             obfuscationProfileVersion: 14,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
+            instantRunEnabled: !(chkInstantRun && !chkInstantRun.checked),
             vmProtectionEnabled,
             expandedTransformsEnabled,
             obfuscatedCodeLevel: obfuscationEnabled ? effectiveObfuscationLevel : null,
@@ -1760,6 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chkObfuscation) chkObfuscation.checked = false;
         if (obfuscationLevelSelect) obfuscationLevelSelect.value = 'auto';
         if (chkTamperCheck) chkTamperCheck.checked = true;
+        if (chkInstantRun) chkInstantRun.checked = true;
         if (chkVmProtection) chkVmProtection.checked = false;
         if (chkExpandedTransforms) chkExpandedTransforms.checked = false;
         if (chkFastLoadCache) chkFastLoadCache.checked = false;

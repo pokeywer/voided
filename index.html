@@ -220,6 +220,11 @@
                         </div>
                         <div class="obfuscation-protection-options">
                             <label class="toggle-row">
+                                <span class="toggle-label-stack"><span>Instant run</span><small>No console progress lines; runs the script as soon as it arrives. Only the VoidedX site line prints</small></span>
+                                <input type="checkbox" id="chk-instant-run" checked>
+                                <span class="switch"></span>
+                            </label>
+                            <label class="toggle-row">
                                 <span class="toggle-label-stack"><span>Tamper check</span><small>Stops after basic integrity edits; no debug traps</small></span>
                                 <input type="checkbox" id="chk-tamper-check" checked>
                                 <span class="switch"></span>
@@ -235,6 +240,7 @@
                                 <span class="switch"></span>
                             </label>
                         </div>
+                        <p class="instant-note"><i class="fa-solid fa-triangle-exclamation"></i> <span><strong>Instant run</strong> removes the console progress bar. Key checks, integrity checks, and tamper protection still run before the script starts.</span></p>
                         <label class="toggle-row">
                             <span>Auto .txt Local Backup</span>
                             <input type="checkbox" id="chk-backup" checked>

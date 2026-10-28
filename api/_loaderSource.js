@@ -1,6 +1,7 @@
 import { deriveBootstrapSeed } from './_loaderToken.js';
 import { xorKeystream } from './_loaderShield.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
+import { obfuscateLoaderSource } from './_loaderObfuscator.js';
 
 export function luaString(str) {
     const escaped = String(str)
@@ -88,7 +89,8 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     // successful gate decrypt. The outer bootstrap stays ciphertext + decoder.
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
-    const cipher = xorKeystream(`${innerBanner}\n${source}`, seed).toString('base64url');
+    const sealed = obfuscateLoaderSource(source);
+    const cipher = xorKeystream(`${innerBanner}\n${sealed}`, seed).toString('base64url');
     const gateUrl = new URL('/api/raw', origin);
     gateUrl.searchParams.set('id', id);
     gateUrl.searchParams.set('token', token);
@@ -147,7 +149,29 @@ if not _bf then return error(tostring(_be),0) end
 return _bf()`;
 }
 
-export function buildPayloadRuntime(origin) {
+export function buildPayloadRuntime(origin, options = {}) {
+    const instant = options.instant === true;
+    // Instant loaders carry no progress renderer at all, so the only console
+    // output they can produce is the VoidedX credit line.
+    const progressPrinter = instant
+        ? 'local function vxProgress() end'
+        : `local vxLastProgressBlocks, vxLastProgressStage
+local function vxProgress(percent, stage)
+    percent = math.max(0, math.min(100, math.floor(percent)))
+    local width = 14
+    local filled = math.floor(width * percent / 100)
+    if filled == vxLastProgressBlocks and stage == vxLastProgressStage then return end
+    vxLastProgressBlocks = filled
+    vxLastProgressStage = stage
+    local line = vxFormat(
+        "[VoidedX] [%s%s] %3d%%  %s",
+        vxRep("=", filled),
+        vxRep("-", width - filled),
+        percent,
+        stage
+    )
+    vxPcall(vxPrint, line)
+end`;
     const payloadBase = luaString(`${origin}/api/payload?session=`);
     const integrityBase = luaString(`${origin}/api/integrity?session=`);
     return `
@@ -177,8 +201,31 @@ local vxPcall = pcall
 local vxInfo = type(debug) == "table" and debug.info or nil
 local vxInfoStable = vxInfo ~= nil and debug.info == vxInfo
 local vxRawEqual = rawequal
+-- Snapshot the runtime pieces a hook would have to replace. Identity is only
+-- trusted for accessors that returned the same function twice at startup, since
+-- some executors build a fresh closure on every read.
+local vxPrint = print
+local vxTostring = tostring
+local vxTonumber = tonumber
+local vxTypeOf = type
+local vxError = error
+local vxNext = next
+local vxIpairs = ipairs
+local vxSetmetatable = setmetatable
+local vxRawset = rawset
+local vxFloor = math.floor
+local vxGetgenv = type(getgenv) == "function" and getgenv or nil
+local vxShared = type(shared) == "table" and shared or nil
+local vxGetService = game.GetService
+local vxServiceStable = game.GetService == game.GetService
+local vxUrlEncode = HttpService.UrlEncode
+local vxUrlEncodeStable = HttpService.UrlEncode == HttpService.UrlEncode
+local vxTaskWait = type(task) == "table" and task.wait or nil
+local vxTaskSpawn = type(task) == "table" and task.spawn or nil
 
-vxPcall(print, "[VoidedX] VoidedX Protection - protect your scripts at https://voidedx.vercel.app")
+vxPcall(vxPrint, "[VoidedX] VoidedX Protection - protect your scripts at https://voidedx.vercel.app")
+
+local vxInstant = ${instant ? 'true' : 'false'}
 
 local vxB64Map = {}
 do
@@ -273,6 +320,22 @@ local function vxCollectFlags()
     if pcall ~= vxPcall then add("pcall_swapped") end
     if rawequal ~= vxRawEqual then add("rawequal_swapped") end
     if vxInfoStable and (type(debug) ~= "table" or debug.info ~= vxInfo) then add("debug_swapped") end
+    if print ~= vxPrint then add("print_swapped") end
+    if tostring ~= vxTostring or tonumber ~= vxTonumber or type ~= vxTypeOf
+        or next ~= vxNext or ipairs ~= vxIpairs
+        or setmetatable ~= vxSetmetatable or rawset ~= vxRawset
+        or math.floor ~= vxFloor then
+        add("builtin_swapped")
+    end
+    if string.format ~= vxFormat or string.rep ~= vxRep or string.gsub ~= vxGsub or string.match ~= vxMatch then
+        add("builtin_swapped")
+    end
+    if vxGetgenv and (type(getgenv) ~= "function" or getgenv ~= vxGetgenv) then add("env_swapped") end
+    if vxServiceStable and game.GetService ~= vxGetService then add("service_swapped") end
+    if vxUrlEncodeStable and HttpService.UrlEncode ~= vxUrlEncode then add("urlencode_swapped") end
+    if (vxTaskWait and task.wait ~= vxTaskWait) or (vxTaskSpawn and task.spawn ~= vxTaskSpawn) then
+        add("task_swapped")
+    end
     return flags
 end
 
@@ -292,23 +355,7 @@ local function vxReport(report, trace, flags)
     return decodedOk and type(decoded) == "table" and decoded.block == true
 end
 
-local vxLastProgressBlocks, vxLastProgressStage
-local function vxProgress(percent, stage)
-    percent = math.max(0, math.min(100, math.floor(percent)))
-    local width = 14
-    local filled = math.floor(width * percent / 100)
-    if filled == vxLastProgressBlocks and stage == vxLastProgressStage then return end
-    vxLastProgressBlocks = filled
-    vxLastProgressStage = stage
-    local line = vxFormat(
-        "[VoidedX] [%s%s] %3d%%  %s",
-        vxRep("=", filled),
-        vxRep("-", width - filled),
-        percent,
-        stage
-    )
-    vxPcall(print, line)
-end
+${progressPrinter}
 
 local function vxUnshield(result, shield)
     if type(result.parts) ~= "table" or type(shield.order) ~= "table" then
@@ -351,6 +398,55 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] The server did not issue a protected payload. Get a new loader from the website.", 0)
     end
 
+    -- Honeypots. Nothing in this loader calls these functions. They are published
+    -- under getgenv().VoidedX so anyone who finds the loaded chunk and tries to
+    -- poke at its "unlock" or "dump" helpers reports themselves to /api/integrity
+    -- before the payload is requested. Reading an unknown field trips the guard
+    -- too, which catches tools that enumerate the table.
+    local function vxHoneypotHit()
+        vxReport(report, shield.trace, { "honeypot_triggered" })
+        return vxError("[VoidedX] This loader was modified. Get a new loader from the website.", 0)
+    end
+
+    local function vxDecoyUnlock()
+        return vxHoneypotHit()
+    end
+
+    local function vxDecoyDump()
+        return vxHoneypotHit()
+    end
+
+    if vxGetgenv then
+        local envOk, env = vxPcall(vxGetgenv)
+        if envOk and vxTypeOf(env) == "table" then
+            local decoy = {
+                unlock = vxDecoyUnlock,
+                bypass = vxDecoyUnlock,
+                signature = vxDecoyDump,
+                extract = vxDecoyDump,
+                payload = vxDecoyDump,
+                key = vxDecoyUnlock,
+                token = vxDecoyDump,
+                session = vxDecoyDump
+            }
+            local armed = vxPcall(function()
+                vxSetmetatable(decoy, {
+                    __index = function()
+                        return vxHoneypotHit()
+                    end,
+                    __newindex = function(self, name, value)
+                        vxRawset(self, name, value)
+                        return vxHoneypotHit()
+                    end
+                })
+            end)
+            if armed then
+                vxPcall(function() env.VoidedX = decoy end)
+                if vxShared then vxPcall(function() vxShared.VoidedX = decoy end) end
+            end
+        end
+    end
+
     local flags = vxCollectFlags()
     if #flags > 0 and vxReport(report, shield.trace, flags) then
         return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
@@ -365,7 +461,7 @@ local function vxRunPayload(token, userId, shield, report)
     vxProgress(progress, "Connecting to server")
 
     local asyncStarted = false
-    if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
+    if not vxInstant and type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
         asyncStarted = vxPcall(function()
             task.spawn(function()
                 requestOk, response = vxPcall(function() return vxHttpGet(game, payloadUrl) end)
@@ -446,13 +542,13 @@ local function vxRunPayload(token, userId, shield, report)
 end
 `.trim();
 }
-export function buildKeyLoader(id, key, origin, loaderToken) {
+export function buildKeyLoader(id, key, origin, loaderToken, options = {}) {
     const verifyBase = `${origin}/api/verify`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin)}
+${buildPayloadRuntime(origin, options)}
 
 local ok, response = vxPcall(function()
     return vxHttpGet(
@@ -485,13 +581,13 @@ return vxRunPayload(result.token, player and player.UserId or nil, result.shield
 `), { id, key, origin, token: loaderToken });
 }
 
-export function buildTrackedScript(id, origin, loaderToken, key = '') {
+export function buildTrackedScript(id, origin, loaderToken, key = '', options = {}) {
     const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin)}
+${buildPayloadRuntime(origin, options)}
 local verifyUrl = ${luaString(verifyUrl)}
 if player then verifyUrl = verifyUrl .. "&userId=" .. HttpService:UrlEncode(tostring(player.UserId)) end
 

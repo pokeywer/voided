@@ -143,6 +143,9 @@ textarea::-webkit-scrollbar { height: 10px; width: 10px; }
 .obfuscation-protection-options .toggle-row { gap: 10px; }
 .obfuscation-note { margin: 8px 0 0; padding: 9px 10px; border-left: 2px solid #fbbf24; border-radius: 4px; background: rgba(245,158,11,.07); color: var(--text-muted); font-size: 10px; line-height: 1.55; }
 .obfuscation-note strong { color: #fbbf24; }
+.instant-note { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 8px; padding: 8px 10px; border: 1px solid rgba(245, 158, 11, 0.28); border-radius: 6px; background: rgba(245, 158, 11, 0.06); color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.instant-note i { color: #fbbf24; font-size: 11px; margin-top: 1px; }
+.instant-note strong { color: #fbbf24; }
 .obfuscation-credit { margin: 5px 0 0; color: var(--text-muted); font-size: 9px; line-height: 1.4; }
 .obfuscation-credit a { color: var(--cyan); }
 .obfuscated-preview-tools, .obfuscated-preview-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
