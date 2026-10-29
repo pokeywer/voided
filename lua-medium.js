@@ -47,6 +47,37 @@ export function resolveObfuscationLevel(source, requestedLevel = 'auto') {
     return getUtf8ByteLength(source) > AUTO_HIGH_BYTE_THRESHOLD ? 'low' : 'high';
 }
 
+// Engine failures arrive as a Lua traceback full of internal chunk names and
+// parser paths. Visitors only ever see a short, plain explanation.
+const ENGINE_TRACEBACK = /stack traceback|\[string "|\/src\/|\.lua:\d+|in function|in upvalue|in main chunk|tail calls|errorCallback/i;
+const ENGINE_PARSE_ERROR = /Parsing Error|unexpected token|expected <Symbol>|expected <Name>/i;
+const ENGINE_NOISE = /prometheus|parser|pipeline|logger|vmify|armor|watermark/i;
+
+export function describeObfuscationError(error) {
+    const raw = String(error && error.message ? error.message : error || '').trim();
+    if (!raw) return 'The obfuscator could not process that script. Check it for syntax errors and try again.';
+    if (/<Eof>|end of file/i.test(raw)) {
+        return 'That script could not be read. Check that it is not empty or missing an end, ), or }, then try again.';
+    }
+    if (ENGINE_PARSE_ERROR.test(raw)) {
+        return 'That script has a syntax error, so it cannot be obfuscated. Fix the script and try again.';
+    }
+    if (ENGINE_TRACEBACK.test(raw) || ENGINE_NOISE.test(raw)) {
+        return 'The obfuscator could not process that script. Check it for syntax errors and try again.';
+    }
+    return raw;
+}
+
+function publicObfuscationError(error) {
+    if (!error) return error;
+    const friendly = describeObfuscationError(error);
+    const current = error && error.message ? error.message : String(error);
+    if (friendly === current.trim()) return error;
+    const wrapped = new Error(friendly);
+    if (error && error.status !== undefined) wrapped.status = error.status;
+    return wrapped;
+}
+
 // ---------------------------------------------------------------------------
 // patchObfuscatedLengthOps
 //
@@ -240,7 +271,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
             if (timeoutId !== undefined) clearTimeout(timeoutId);
             try { worker?.terminate(); } catch {}
             if (error) {
-                reject(error);
+                reject(publicObfuscationError(error));
                 return;
             }
             const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);

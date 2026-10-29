@@ -6,7 +6,7 @@ import {
 import {
     getFirestore, collection, doc, setDoc, addDoc, getDoc, getDocs, deleteDoc, updateDoc, query, where, serverTimestamp, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { obfuscateLua, resolveObfuscationLevel, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, describeObfuscationError, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES } from './lua-medium.js';
 import { setEmbeddedTokenLoader } from './loader-ui.js';
 
 // --- YOUR FIREBASE CONFIG HERE ---
@@ -1315,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (chkJunkComments) chkJunkComments.checked = data.junkCommentsEnabled !== false;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 17) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 18) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1482,7 +1482,7 @@ document.addEventListener('DOMContentLoaded', () => {
             copyObfuscatedBtn.disabled = true;
             downloadObfuscatedBtn.disabled = true;
             obfuscatedPreviewStatus.textContent = 'Preview could not be generated.';
-            showToast('Could not generate the obfuscated preview: ' + (error && error.message ? error.message : 'unknown error'), 'error', 9000);
+            showToast('Could not generate the obfuscated preview: ' + describeObfuscationError(error), 'error', 9000);
         } finally {
             previewObfuscatedBtn.disabled = false;
             previewObfuscatedBtn.innerHTML = originalHtml;
@@ -1645,7 +1645,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 generatedObfuscatedCode = await obfuscateLua(code, effectiveObfuscationLevel, obfuscationSettings.protection);
                 encodedObfuscatedCode = await encodeObfuscatedCode(generatedObfuscatedCode);
             } catch (error) {
-                const errorMessage = error && error.message ? error.message : 'unknown error';
+                const errorMessage = describeObfuscationError(error);
                 if (generatedObfuscatedCode && saveObfuscationRevision === obfuscationRevision) {
                     offerUnstoredObfuscatedPreview(generatedObfuscatedCode, effectiveObfuscationLevel, errorMessage);
                     showToast('Vault saving stopped; the existing vault was left unchanged. The generated copy is available in the preview panel.', 'error', 8000);
@@ -1702,7 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 17,
+            obfuscationProfileVersion: 18,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),

@@ -449,8 +449,89 @@ function buildDeadLua(nextName, rng, count) {
     return out;
 }
 
+// The engine emits every internal as `<prefix>_<short>` (`eai_C`, `eai_n`, ...).
+// That prefix is the cheapest fingerprint a deobfuscator can key on, so the
+// dominant prefixed family is redrawn from this build's name factory before the
+// chunk is compressed. Redrawing is scope-blind on purpose: the whole family is
+// renamed consistently, so locals, upvalues and shadowing keep their bindings.
+function collectPrefixedIdentifiers(code) {
+    const families = new Map();
+    let i = 0;
+    const n = code.length;
+    while (i < n) {
+        const c = code[i];
+        if (c === '[') {
+            let eqs = 0;
+            let j = i + 1;
+            while (j < n && code[j] === '=') { eqs++; j++; }
+            if (j < n && code[j] === '[') {
+                const close = ']' + '='.repeat(eqs) + ']';
+                const end = code.indexOf(close, j + 1);
+                if (end !== -1) { i = end + close.length; continue; }
+            }
+            i++; continue;
+        }
+        if (c === '"' || c === "'") {
+            let j = i + 1;
+            while (j < n) {
+                if (code[j] === '\\') { j += 2; continue; }
+                if (code[j] === c) { j++; break; }
+                if (code[j] === '\n' || code[j] === '\r') break;
+                j++;
+            }
+            i = j; continue;
+        }
+        if (c === '-' && code[i + 1] === '-') {
+            let j = i + 2;
+            if (code[j] === '[') {
+                let eqs = 0;
+                let k = j + 1;
+                while (k < n && code[k] === '=') { eqs++; k++; }
+                if (k < n && code[k] === '[') {
+                    const close = ']' + '='.repeat(eqs) + ']';
+                    const end = code.indexOf(close, k + 1);
+                    if (end !== -1) { i = end + close.length; continue; }
+                }
+            }
+            const newline = code.indexOf('\n', j);
+            i = newline === -1 ? n : newline + 1;
+            continue;
+        }
+        if (/[A-Za-z_]/.test(c)) {
+            let j = i + 1;
+            while (j < n && /[A-Za-z0-9_]/.test(code[j])) j++;
+            const word = code.slice(i, j);
+            const field = i > 0 && (code[i - 1] === '.' || code[i - 1] === ':');
+            if (!field) {
+                const match = /^([A-Za-z][A-Za-z0-9]*)_[A-Za-z0-9_]+$/.exec(word);
+                if (match) {
+                    const family = families.get(match[1]) || new Set();
+                    family.add(word);
+                    families.set(match[1], family);
+                }
+            }
+            i = j; continue;
+        }
+        i++;
+    }
+    return families;
+}
+
+function scrubPrometheusNames(code, nextName) {
+    let best = null;
+    for (const names of collectPrefixedIdentifiers(code).values()) {
+        if (names.size < 12) continue;
+        if (!best || names.size > best.size) best = names;
+    }
+    if (!best) return code;
+    const mapping = {};
+    for (const name of best) mapping[name] = nextName();
+    return replaceCodeIdentifiers(code, mapping);
+}
+
 function prepareInner(source, rng, nextName, deadCount) {
     let inner = disguiseWatermark(source);
+    inner = scrubPrometheusNames(inner, nextName);
 
     const shimName = nextName();
     const lenName = nextName();
@@ -710,17 +791,59 @@ function buildLoader(o) {
     add(`local ${p.pcall}=pcall`);
     add(`local ${p.rawequal}=rawequal`);
     add(`local ${p.error}=error`);
-    add(`local ${p.loadstr}=loadstring`);
-    add(`local ${p.loadchunk}=load`);
-    add(`local ${p.load}=${p.loadstr} or ${p.loadchunk}`);
-    add(`do local ${p.alt}=${p.loadchunk} if ${p.load}==${p.loadchunk} then ${p.alt}=${p.loadstr} end`);
-    add(`if ${p.type}(${p.alt})=="function" and ${p.alt}~=${p.load} then local ${p.okA},${p.fA}=${p.pcall}(${p.alt},"return 1") if ${p.okA} and ${p.type}(${p.fA})=="function" then ${p.load}=${p.alt} end end end`);
     add(`local ${p.debug}=debug`);
     add(`local ${p.gethook}=${p.debug} and ${p.debug}.gethook or nil`);
     add(`local ${p.getgenv}=type(getgenv)=="function" and getgenv or nil`);
+    add(`local ${p.info}=nil`);
+    add(`do local ${p.infoAlt}=${p.debug} if ${p.infoAlt} then ${p.info}=${p.infoAlt}.info or ${p.infoAlt}.getinfo end end`);
+
+    // A loader is only trusted while it is still the engine's own C function.
+    // Every dump starts with hookfunction(loadstring) or hookfunction(load),
+    // which swaps the C function for a Lua closure that records the chunk it is
+    // handed. debug.info/debug.getinfo reports "C" for the untouched builtin and
+    // the wrapper's script source for a hooked one, so a replacement is caught
+    // before any payload is compiled through it.
+    const nv = locals(['fn', 'ok', 'd', 'what', 'ok2', 's']);
+    add(`local ${p.native}=function(${nv.fn})`);
+    add(`    if ${p.type}(${nv.fn})~="function" then return false end`);
+    add(`    if not ${p.info} then return true end`);
+    add(`    local ${nv.ok},${nv.d}=${p.pcall}(${p.info},${nv.fn},"S")`);
+    add(`    if ${nv.ok} and ${p.type}(${nv.d})=="table" then`);
+    add(`        local ${nv.what}=${nv.d}.what`);
+    add(`        if ${nv.what}=="C" or ${nv.what}==nil then return true end`);
+    add(`        return false`);
+    add(`    end`);
+    add(`    local ${nv.ok2},${nv.s}=${p.pcall}(${p.info},${nv.fn},"s")`);
+    add(`    if ${nv.ok2} and ${p.type}(${nv.s})=="string" then return ${nv.s}=="[C]" end`);
+    add(`    return true`);
+    add(`end`);
+
+    // Loaders from every environment the executor exposes: a dumper often hooks
+    // the executor global_env but leaves getrenv()/_G pristine, so the first
+    // native candidate wins over anything that has been wrapped.
+    const cd = locals(['list', 'add', 'count', 'i', 'f', 'envs', 'ec', 'e', 'ok', 'v']);
+    add(`local ${cd.list},${cd.count}={},0`);
+    add(`local ${cd.add}=function(${cd.v})`);
+    add(`    if ${p.type}(${cd.v})~="function" then return end`);
+    add(`    local ${cd.i}=1`);
+    add(`    while ${cd.i}<=${cd.count} do if ${cd.list}[${cd.i}]==${cd.v} then return end ${cd.i}=${cd.i}+1 end`);
+    add(`    ${cd.count}=${cd.count}+1 ${cd.list}[${cd.count}]=${cd.v}`);
+    add(`end`);
+    add(`${cd.add}(loadstring) ${cd.add}(load)`);
+    add(`if ${p.type}(_G)=="table" then ${cd.add}(_G.loadstring) ${cd.add}(_G.load) end`);
+    add(`do local ${cd.envs},${cd.ec}={},0`);
+    add(`    if ${p.type}(getfenv)=="function" then local ${cd.ok},${cd.e}=${p.pcall}(getfenv,0) if ${cd.ok} and ${p.type}(${cd.e})=="table" then ${cd.ec}=${cd.ec}+1 ${cd.envs}[${cd.ec}]=${cd.e} end end`);
+    add(`    if ${p.type}(getgenv)=="function" then local ${cd.ok},${cd.e}=${p.pcall}(getgenv) if ${cd.ok} and ${p.type}(${cd.e})=="table" then ${cd.ec}=${cd.ec}+1 ${cd.envs}[${cd.ec}]=${cd.e} end end`);
+    add(`    if ${p.type}(getrenv)=="function" then local ${cd.ok},${cd.e}=${p.pcall}(getrenv) if ${cd.ok} and ${p.type}(${cd.e})=="table" then ${cd.ec}=${cd.ec}+1 ${cd.envs}[${cd.ec}]=${cd.e} end end`);
+    add(`    local ${cd.i}=1`);
+    add(`    while ${cd.i}<=${cd.ec} do local ${cd.e}=${cd.envs}[${cd.i}] ${cd.add}(${cd.e}.loadstring) ${cd.add}(${cd.e}.load) ${cd.i}=${cd.i}+1 end`);
+    add(`end`);
+    add(`local ${p.load}=nil`);
+    add(`do local ${cd.i}=1 while ${cd.i}<=${cd.count} do local ${cd.f}=${cd.list}[${cd.i}] if ${p.native}(${cd.f}) then ${p.load}=${cd.f} break end ${cd.i}=${cd.i}+1 end end`);
     const msgL = locals(['t', 'k', 'o', 'i']);
     add(`local ${p.msg}=function(${msgL.t},${msgL.k}) local ${msgL.o}="" for ${msgL.i}=1,#${msgL.t} do ${msgL.o}=${msgL.o}..${p.schar}((${msgL.t}[${msgL.i}]-${msgL.k})%256) end return ${p.error}(${msgL.o},0) end`);
-    add(`if not ${p.load} or not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+    add(`if not ${p.load} then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
+    add(`if not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
 
     add(buildDeadLua(nextName, rng, o.dead));
@@ -731,6 +854,11 @@ function buildLoader(o) {
     add(`    if string.byte~=${p.sbyte} or string.char~=${p.schar} or string.sub~=${p.ssub} or string.len~=${p.slen} then return false end`);
     add(`    if table.concat~=${p.sconcat} then return false end`);
     add(`    if rawequal~=${p.rawequal} then return false end`);
+    add(`    if not ${p.native}(${p.pcall}) or not ${p.native}(${p.error}) or not ${p.native}(${p.rawequal}) or not ${p.native}(${p.load}) then return false end`);
+    // Decoding primitives are checked too: hooking table.concat or string.char
+    // captures the decoded chunk just as easily as hooking the loader itself.
+    add(`    if not ${p.native}(${p.sbyte}) or not ${p.native}(${p.schar}) or not ${p.native}(${p.ssub}) or not ${p.native}(${p.slen}) then return false end`);
+    add(`    if not ${p.native}(${p.sconcat}) or not ${p.native}(${p.sunpack}) or not ${p.native}(${p.floor}) then return false end`);
     add(`    if ${p.pcall}(function() ${p.error}("vx_probe",0) end) then return false end`);
     // A debug hook installed before or during the run is the standard way a
     // dumper traces decrypted chunks. The bootstrap installs its own watchdog
@@ -964,11 +1092,12 @@ function buildLoader(o) {
     add(`local ${p.pos}=0`);
     add(`${p.arg}=function()`);
     add(`if ${p.pos}>=${p.slen}(${p.src}) then return nil end`);
-    add(`local ${p.piece}=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+4096)`);
-    add(`${p.pos}=${p.pos}+4096`);
+    add(`local ${p.piece}=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+${o.readPiece})`);
+    add(`${p.pos}=${p.pos}+${o.readPiece}`);
     add(`return ${p.piece}`);
     add(`end`);
     add(`end`);
+    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
     add(`local ${p.fn},${p.err}=${p.load}(${p.arg},"=${o.chunkName}")`);
     add(`if not ${p.fn} then`);
     add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
@@ -1182,7 +1311,7 @@ function armorOnce(source, config) {
             sbyte: nextName(), schar: nextName(), ssub: nextName(), slen: nextName(),
             sconcat: nextName(), sunpack: nextName(), floor: nextName(), type: nextName(),
             pcall: nextName(), rawequal: nextName(), error: nextName(), load: nextName(),
-            loadstr: nextName(), loadchunk: nextName(), alt: nextName(), arg: nextName(), pos: nextName(),
+            info: nextName(), infoAlt: nextName(), native: nextName(), arg: nextName(), pos: nextName(),
             okA: nextName(), fA: nextName(), okProbe: nextName(), probeFn: nextName(), piece: nextName(),
             debug: nextName(), gethook: nextName(), getgenv: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
@@ -1205,6 +1334,7 @@ function armorOnce(source, config) {
             unmask: 96 + randomInt(rng, 224),
             inflate: 96 + randomInt(rng, 224)
         },
+        readPiece: 1024 + randomInt(rng, 7168),
         compressedLength: compressed.length,
         checksum1: adler32(compressed),
         checksum2: weightedSum(compressed),

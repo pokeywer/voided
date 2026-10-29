@@ -9,6 +9,7 @@ import {
     MAX_INLINE_OBFUSCATED_PREVIEW_BYTES,
     MAX_OBFUSCATION_SOURCE_BYTES,
     MAX_VAULT_DOCUMENT_ESTIMATE_BYTES,
+    describeObfuscationError,
     encodeObfuscatedCode,
     encodeVaultSource,
     getUtf8ByteLength,
@@ -638,7 +639,7 @@ els.run.addEventListener('click', async () => {
     } catch (error) {
         generated = null;
         els.result.classList.add('hidden');
-        setMessage(els.status, `Obfuscation failed: ${error.message || 'unknown error'}`, 'error');
+        setMessage(els.status, `Obfuscation failed: ${describeObfuscationError(error)}`, 'error');
     } finally {
         running = false;
         setBusy(els.run, false);
@@ -701,7 +702,7 @@ els.save.addEventListener('click', async () => {
             loaderVersion: 1,
             obfuscationEnabled: true,
             fastLoadCacheEnabled: false,
-            obfuscationProfileVersion: 17,
+            obfuscationProfileVersion: 18,
             obfuscationLevel: generated.requestedLevel,
             tamperCheckEnabled: generated.tamperCheck,
             vmProtectionEnabled: true,
