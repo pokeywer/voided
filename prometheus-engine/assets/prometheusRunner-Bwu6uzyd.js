@@ -8260,10 +8260,27 @@ NumbersToExpressions.SettingsDescriptor = {
 	},
 }
 
+-- Generated expressions are re-evaluated by the target runtime, which may only
+-- have IEEE-754 doubles (LuaU has no integer subtype). Above 2^53 the emitted
+-- literals stop being exact, and the re-created value silently changes, so all
+-- intermediates are kept inside a range that is exact in both Lua 5.4 and LuaU.
+local MAX_EXACT_MAGNITUDE = 2 ^ 40
+
 local function generateModuloExpression(n)
 	local rhs = n + math.random(1, 2^24)
-	local multiplier = math.random(1, 2^8)
+	local headroom = MAX_EXACT_MAGNITUDE - math.abs(n)
+	if math.abs(rhs) > headroom then
+		return nil
+	end
+	local maxMultiplier = math.min(2 ^ 8, math.floor(headroom / math.abs(rhs)))
+	if maxMultiplier < 1 then
+		return nil
+	end
+	local multiplier = math.random(1, maxMultiplier)
 	local lhs = n + (multiplier * rhs)
+	if math.abs(lhs) > MAX_EXACT_MAGNITUDE then
+		return nil
+	end
 	return lhs, rhs
 end
 
@@ -8306,6 +8323,9 @@ function NumbersToExpressions:init(_)
 
 		function(val, depth) -- Modulo
 			local lhs, rhs = generateModuloExpression(val)
+			if not lhs then
+				return false
+			end
 			if tonumber(tostring(lhs)) % tonumber(tostring(rhs)) ~= val then
 				return false
 			end
@@ -8319,6 +8339,10 @@ function NumbersToExpressions:init(_)
 end
 
 function NumbersToExpressions:CreateNumberExpression(val, depth)
+	if type(val) == "number" and math.abs(val) > MAX_EXACT_MAGNITUDE then
+		return Ast.NumberExpression(val)
+	end
+
 	if depth > 0 and math.random() >= self.InternalThreshold or depth > 15 then
 		local format = self.AllowedNumberRepresentations[math.random(1, #self.AllowedNumberRepresentations)]
 		if not self.NumberRepresentationMutation then
