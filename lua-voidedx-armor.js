@@ -962,10 +962,12 @@ function buildLoader(o) {
     add(`end`);
     add('');
 
-    // The chunk is never assembled. This inflater is a pull iterator: it keeps
-    // the window and the token position, emits at most one piece per call, and
-    // resumes mid-run when a literal run or a match copy crosses a piece edge,
-    // so the plaintext source exists only as the piece `load` is parsing.
+    // The inflater is a pull iterator: it keeps the window and the token
+    // position, emits at most one piece per call, and resumes mid-run when a
+    // literal run or a match copy crosses a piece edge. Where the loader
+    // accepts reader functions the chunk is never assembled; Roblox's
+    // loadstring takes strings only, so there the pieces are drained into one
+    // string just before compiling.
     const f = locals(['s', 'n', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j', 'litLeft']);
     // b1/b2 are the two offset bytes in stream order; the expression turns them
     // back into a distance using this build's byte order and bias.
@@ -1110,11 +1112,31 @@ function buildLoader(o) {
     add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.src}=${p.decode}()`);
     add(`if not ${p.src} then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},function() return nil end)`);
+    // Roblox's loadstring/load compile strings only, so a reader is an optional
+    // upgrade, never a requirement. Probing with a function chunk refused every
+    // real executor while passing Lua 5.4, where load accepts readers.
+    add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},"return nil")`);
     add(`if not ${p.okProbe} or ${p.type}(${p.probeFn})~="function" then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+    const rd = locals(['ok', 'fn', 'canRead']);
+    add(`local ${rd.ok},${rd.fn}=${p.pcall}(${p.load},function() return nil end)`);
+    add(`local ${rd.canRead}=${rd.ok} and ${p.type}(${rd.fn})=="function"`);
     add(`local ${p.arg}=${p.inflate}(${p.src})`);
     add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`local ${p.fn},${p.err}=${p.load}(${p.arg},"=${o.chunkName}")`);
+    add(`local ${p.fn}`);
+    const cp = locals(['ok', 'fn', 'parts', 'i', 'piece']);
+    add(`if ${rd.canRead} then`);
+    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${p.arg},"=${o.chunkName}")`);
+    add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
+    add(`else`);
+    add(`    local ${cp.parts},${cp.i}={},0`);
+    add(`    while true do`);
+    add(`        local ${cp.piece}=${p.arg}()`);
+    add(`        if ${cp.piece}==nil then break end`);
+    add(`        ${cp.i}=${cp.i}+1 ${cp.parts}[${cp.i}]=${cp.piece}`);
+    add(`    end`);
+    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${p.sconcat}(${cp.parts}),"=${o.chunkName}")`);
+    add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
+    add(`end`);
     add(`if not ${p.fn} then`);
     add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add(`end`);
@@ -1348,7 +1370,9 @@ function armorOnce(source, config) {
             b64: 96 + randomInt(rng, 224),
             unmask: 96 + randomInt(rng, 224)
         },
-        readPiece: 1024 + randomInt(rng, 7168),
+        // Luau and Lua 5.4 both cap table.unpack near 7000 results, and each
+        // piece reaches string.char through it.
+        readPiece: 1024 + randomInt(rng, 5120),
         compressedLength: compressed.length,
         checksum1: adler32(compressed),
         checksum2: weightedSum(compressed),
