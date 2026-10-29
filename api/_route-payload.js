@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from './_admin.js';
 import { getCodeForExecution } from './_deliveryCode.js';
-import { encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
+import { cipherTag, encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import { publicKeyDisabled } from './_keyAccess.js';
 
 function json(res, status, body) {
@@ -35,6 +35,22 @@ function getVaultKeys(vault) {
 function getClientIp(req) {
     const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     return forwarded || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+function bindHash(value) {
+    return createHash('sha256').update(String(value ?? '')).digest('hex');
+}
+
+// A ticket is only good for the connection that opened it: same address, same
+// client signature, same player, same place. DELIVERY_TICKET_BIND=0 disables the
+// address and signature part for networks whose egress address changes between
+// the two requests.
+function bindingMismatch(session, req, placeId) {
+    if (process.env.DELIVERY_TICKET_BIND === '0') return false;
+    if (session.bindIp && session.bindIp !== bindHash(getClientIp(req))) return true;
+    if (session.bindUa && session.bindUa !== bindHash(String(req.headers['user-agent'] || '').slice(0, 200))) return true;
+    if (session.placeId && String(session.placeId) !== placeId) return true;
+    return false;
 }
 
 async function findSessionKey(session, vault) {
@@ -84,6 +100,10 @@ export default async function handler(req, res) {
     if (requestedUserId && !/^\d{1,20}$/.test(requestedUserId)) {
         return json(res, 400, { ok: false, message: 'Invalid player ID.' });
     }
+    const requestedPlaceId = req.query?.placeId == null ? '' : String(req.query.placeId);
+    if (requestedPlaceId && !/^\d{1,20}$/.test(requestedPlaceId)) {
+        return json(res, 400, { ok: false, message: 'Invalid place ID.' });
+    }
     const cacheRequested = req.query?.cache === '1';
     const cacheHash = String(req.query?.cacheHash || '').toLowerCase();
     if (cacheHash && !/^[a-f0-9]{64}$/.test(cacheHash)) {
@@ -107,6 +127,11 @@ export default async function handler(req, res) {
             if (session.userId && String(session.userId) !== requestedUserId) {
                 tx.delete(sessionRef);
                 return { ok: false, status: 403, message: 'Delivery ticket belongs to a different player.' };
+            }
+            // A mismatch leaves the ticket in place: the caller that opened it
+            // may still be the one about to use it.
+            if (bindingMismatch(session, req, requestedPlaceId)) {
+                return { ok: false, status: 403, message: 'This delivery ticket is no longer valid. Run the loader again.' };
             }
             tx.delete(sessionRef);
             return { ok: true, session };
@@ -147,7 +172,6 @@ export default async function handler(req, res) {
         const shielded = typeof session.shieldHash === 'string'
             && typeof session.shieldTrace === 'string'
             && typeof session.shieldPayloadHash === 'string'
-            && Array.isArray(session.shieldOrder)
             && Number.isFinite(Number(session.shieldSeed));
 
         if (shielded) {
@@ -158,26 +182,21 @@ export default async function handler(req, res) {
             if (sha256Hex(watermarked) !== session.shieldHash) {
                 return json(res, 409, { ok: false, message: 'The payload no longer matches this loader session. Run the loader again.' });
             }
-            const order = session.shieldOrder.map(Number);
-            const declaredParts = Number(session.shieldParts);
-            if (order.length !== declaredParts || order.length < 1 || order.length > 64) {
-                return json(res, 500, { ok: false, message: 'The protected payload is unavailable.' });
-            }
-            const parts = encryptParts(watermarked, Number(session.shieldSeed), order);
+            const parts = encryptParts(watermarked, Number(session.shieldSeed));
+            const tag = cipherTag(parts);
             try {
                 await db.collection('loaderDeliveries').doc(session.shieldTrace).set({
                     deliveredAt: Date.now(),
                     deliveredIp: getClientIp(req),
                     deliveredUserAgent: String(req.headers['user-agent'] || '').slice(0, 200),
-                    version: 4
+                    version: 5
                 }, { merge: true });
             } catch {}
             return json(res, 200, {
                 ok: true,
-                version: 4,
+                v: 5,
                 parts,
-                trace: session.shieldTrace,
-                crc: session.shieldCrc
+                tag
             });
         }
 

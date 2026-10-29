@@ -63,56 +63,34 @@ export function choosePartCount(byteLength) {
     return Math.max(3, Math.min(12, Math.ceil(length / 65536) + 2));
 }
 
-export function buildOrder(seed, count) {
-    const size = Math.max(1, Math.min(64, Number(count) || 1));
-    const order = Array.from({ length: size }, (_, index) => index + 1);
-    let state = normalizeSeed((Number(seed) || 0) ^ 0x5EED5EED);
-    for (let i = size - 1; i > 0; i--) {
-        state = nextSeedState(state);
-        const swap = state % (i + 1);
-        const held = order[i];
-        order[i] = order[swap];
-        order[swap] = held;
-    }
-    return order;
-}
-
 export function buildShield({ code, trace }) {
     const source = String(code ?? '');
     const seed = normalizeSeed(randomBytes(4).readUInt32BE(0));
-    const parts = choosePartCount(Buffer.byteLength(source, 'utf8'));
     return {
         seed,
         seedHex: seed.toString(16).padStart(8, '0'),
         trace: String(trace || ''),
-        parts,
-        order: buildOrder(seed, parts),
-        hash: sha256Hex(source),
-        crc: crc32(source)
+        hash: sha256Hex(source)
     };
 }
 
-export function encryptParts(code, seed, order) {
+export function encryptParts(code, seed) {
     const cipher = xorKeystream(code, seed);
-    const sequence = Array.isArray(order) ? order.map(Number) : [];
-    const count = sequence.length || 3;
-    const chunks = [];
-    if (cipher.length === 0) {
-        for (let i = 0; i < count; i++) chunks.push(Buffer.alloc(0));
-    } else {
-        const size = Math.ceil(cipher.length / count);
-        for (let i = 0; i < count; i++) {
-            chunks.push(cipher.subarray(i * size, Math.min((i + 1) * size, cipher.length)));
-        }
-    }
-    const output = new Array(count);
+    const count = choosePartCount(cipher.length);
+    const size = Math.ceil(cipher.length / count) || 1;
+    const parts = [];
     for (let i = 0; i < count; i++) {
-        const sourceIndex = sequence[i];
-        output[i] = (Number.isInteger(sourceIndex) && sourceIndex >= 1 && sourceIndex <= count)
-            ? chunks[sourceIndex - 1]
-            : Buffer.alloc(0);
+        parts.push(cipher.subarray(i * size, Math.min((i + 1) * size, cipher.length)).toString('base64url'));
     }
-    return output.map(chunk => chunk.toString('base64url'));
+    return parts;
+}
+
+// Integrity travels as a checksum of the ciphertext the client received. The
+// loader verifies it before decrypting, so a mangled transfer is caught without
+// publishing a checksum of the plaintext for someone to check a decode against.
+export function cipherTag(parts) {
+    const buffers = (Array.isArray(parts) ? parts : []).map(part => Buffer.from(String(part || ''), 'base64url'));
+    return crc32(Buffer.concat(buffers));
 }
 
 export function watermarkPrefix(trace) {

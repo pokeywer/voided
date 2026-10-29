@@ -1507,7 +1507,8 @@ local function attemptVerify(fromSavedKey)
             "${verifyBase}?id=${encodeURIComponent(id)}" ..
             "&key=" .. HttpService:UrlEncode(typedKey) ..
             "&userId=" .. tostring(player.UserId) ..
-            "&username=" .. HttpService:UrlEncode(player.Name)
+            "&username=" .. HttpService:UrlEncode(player.Name) ..
+            vxPlaceParam()
         )
     end)
 

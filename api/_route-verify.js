@@ -55,6 +55,19 @@ function getClientIp(req) {
     return forwarded || (req.socket && req.socket.remoteAddress) || 'unknown';
 }
 
+// Tickets are tied to the connection that asked for them. Hashes are stored so
+// the session document never carries a raw address or user agent.
+function bindHash(value) {
+    return createHash('sha256').update(String(value ?? '')).digest('hex');
+}
+
+function requestBinding(req) {
+    return {
+        bindIp: bindHash(getClientIp(req)),
+        bindUa: bindHash(String(req.headers['user-agent'] || '').slice(0, 200))
+    };
+}
+
 function keyDigest(key) {
     return createHash('sha256').update(String(key)).digest('hex');
 }
@@ -122,6 +135,11 @@ export default async function handler(req, res) {
     if (rawUserId && !/^\d{1,20}$/.test(rawUserId)) {
         return json(res, 400, { ok: false, message: 'Invalid player ID.' });
     }
+    const rawPlaceId = req.query?.placeId == null ? '' : String(req.query.placeId);
+    if (rawPlaceId && !/^\d{1,20}$/.test(rawPlaceId)) {
+        return json(res, 400, { ok: false, message: 'Invalid place ID.' });
+    }
+    const placeId = rawPlaceId || null;
     const userId = rawUserId || null;
     const username = typeof req.query?.username === 'string'
         ? req.query.username.replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ').trim().slice(0, 32) || 'Unknown'
@@ -167,38 +185,32 @@ export default async function handler(req, res) {
             }
         }
 
-        // Build the payload shield before the session is created. The seed and
-        // chunk order travel in this verify response; the ciphertext travels in a
-        // separate payload request, so capturing either one alone is not enough.
+        // Build the payload shield before the session is created. Only the
+        // per-session key and trace travel in this response; the ciphertext and
+        // its checksum travel in a separate, single-use payload request.
         const reportToken = randomBytes(32).toString('hex');
         const trace = traceForSession(sessionToken);
         let shield = null;
+        let shieldHash = '';
         let payloadHash = '';
         try {
             const executionCode = getCodeForExecution(initialVaultData);
             if (typeof executionCode === 'string' && executionCode.trim()) {
                 const built = buildShield({ code: watermarkPrefix(trace) + executionCode, trace });
                 shield = {
-                    v: 1,
-                    seed: built.seedHex,
-                    order: built.order,
-                    parts: built.parts,
-                    hash: built.hash,
-                    crc: built.crc,
+                    key: built.seedHex,
                     trace
                 };
+                shieldHash = built.hash;
                 payloadHash = sha256Hex(executionCode);
             }
         } catch {}
 
         const shieldFields = shield
             ? {
-                shieldSeed: parseInt(shield.seed, 16) >>> 0,
-                shieldOrder: shield.order,
-                shieldParts: shield.parts,
-                shieldHash: shield.hash,
-                shieldCrc: shield.crc,
+                shieldSeed: parseInt(shield.key, 16) >>> 0,
                 shieldTrace: shield.trace,
+                shieldHash,
                 shieldPayloadHash: payloadHash,
                 reportToken,
                 tamperFlags: [],
@@ -230,7 +242,9 @@ export default async function handler(req, res) {
                 uses: 0,
                 maxUses: 1,
                 userId,
+                placeId,
                 requireKey: initiallyKeyed,
+                ...requestBinding(req),
                 ...shieldFields
             };
 
@@ -242,7 +256,8 @@ export default async function handler(req, res) {
                     issuedAt: now,
                     ip: getClientIp(req),
                     userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
-                    version: 1
+                    placeId,
+                    version: 5
                 }, { merge: true });
             }
 

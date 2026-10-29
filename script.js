@@ -1315,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (chkJunkComments) chkJunkComments.checked = data.junkCommentsEnabled !== false;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 18) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 19) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1702,7 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 18,
+            obfuscationProfileVersion: 19,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),

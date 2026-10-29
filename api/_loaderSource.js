@@ -388,6 +388,12 @@ local vxUrlEncodeStable = HttpService.UrlEncode == HttpService.UrlEncode
 local vxTaskWait = type(task) == "table" and task.wait or nil
 local vxTaskSpawn = type(task) == "table" and task.spawn or nil
 
+local function vxPlaceParam()
+    local place = game and game.PlaceId
+    if type(place) == "number" then return "&placeId=" .. vxTostring(place) end
+    return ""
+end
+
 vxPcall(vxPrint, "[VoidedX] VoidedX Protection - protect your scripts at https://voidedx.vercel.app")
 
 local vxInstant = ${instant ? 'true' : 'false'}
@@ -523,32 +529,29 @@ end
 ${progressPrinter}
 
 local function vxUnshield(result, shield)
-    if type(result.parts) ~= "table" or type(shield.order) ~= "table" then
+    if type(result.parts) ~= "table" then
         return nil, "payload_shape_invalid"
     end
-    local count = #shield.order
-    if #result.parts ~= count or count < 1 or count > 64 then
+    local count = #result.parts
+    if count < 1 or count > 64 then
         return nil, "payload_shape_invalid"
     end
     local chunks = {}
-    local seen = {}
     for index = 1, count do
-        local target = shield.order[index]
-        if type(target) ~= "number" or target < 1 or target > count or seen[target] then
-            return nil, "order_invalid"
-        end
-        seen[target] = true
         if type(result.parts[index]) ~= "string" then return nil, "payload_shape_invalid" end
-        chunks[target] = vxBase64Decode(result.parts[index])
+        chunks[index] = vxBase64Decode(result.parts[index])
     end
-    local seed = tonumber(shield.seed, 16)
-    if not seed then return nil, "payload_shape_invalid" end
-    local code = vxXor(vxConcat(chunks), seed)
-    local prefix = "--[[vx:" .. shield.trace .. "]]"
-    if vxSub(code, 1, #prefix) ~= prefix then return nil, "watermark_missing" end
-    if vxCrc32(code) ~= string.lower(tostring(result.crc or "")) then
+    local cipher = vxConcat(chunks)
+    -- The checksum covers the ciphertext as received. It proves the transfer was
+    -- intact without publishing a checksum of the plaintext to calibrate against.
+    if vxCrc32(cipher) ~= string.lower(tostring(result.tag or "")) then
         return nil, "payload_crc_mismatch"
     end
+    local seed = tonumber(shield.key, 16)
+    if not seed then return nil, "payload_shape_invalid" end
+    local code = vxXor(cipher, seed)
+    local prefix = "--[[vx:" .. shield.trace .. "]]"
+    if vxSub(code, 1, #prefix) ~= prefix then return nil, "watermark_missing" end
     return code
 end
 
@@ -557,8 +560,7 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] The server did not issue a delivery ticket.", 0)
     end
     if type(shield) ~= "table"
-        or type(shield.seed) ~= "string"
-        or type(shield.order) ~= "table"
+        or type(shield.key) ~= "string"
         or type(shield.trace) ~= "string" then
         return error("[VoidedX] The server did not issue a protected payload. Get a new loader from the website.", 0)
     end
@@ -619,6 +621,7 @@ local function vxRunPayload(token, userId, shield, report)
 
     local payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token)
     if userId ~= nil then payloadUrl = payloadUrl .. "&userId=" .. HttpService:UrlEncode(tostring(userId)) end
+    payloadUrl = payloadUrl .. vxPlaceParam()
 
     local requestOk, response
     local requestDone = false
@@ -668,11 +671,7 @@ local function vxRunPayload(token, userId, shield, report)
     end
 
     local executionCode
-    if result.version == 4 then
-        if type(result.trace) ~= "string" or result.trace ~= shield.trace then
-            vxReport(report, shield.trace, { "payload_trace_mismatch" })
-            return error("[VoidedX] The payload did not match this delivery session. Run the loader again.", 0)
-        end
+    if result.v == 5 then
         local reason
         executionCode, reason = vxUnshield(result, shield)
         if not executionCode then
@@ -732,7 +731,8 @@ local ok, response = vxPcall(function()
         "${verifyBase}?id=${encodeURIComponent(id)}" ..
         "&key=" .. HttpService:UrlEncode(${luaString(key)}) ..
         "&userId=" .. tostring(player.UserId) ..
-        "&username=" .. HttpService:UrlEncode(player.Name)
+        "&username=" .. HttpService:UrlEncode(player.Name) ..
+        vxPlaceParam()
     )
 end)
 
@@ -766,6 +766,7 @@ local player = Players.LocalPlayer
 ${buildPayloadRuntime(origin, options)}
 local verifyUrl = ${luaString(verifyUrl)}
 if player then verifyUrl = verifyUrl .. "&userId=" .. HttpService:UrlEncode(tostring(player.UserId)) end
+verifyUrl = verifyUrl .. vxPlaceParam()
 
 local requestOk, response = vxPcall(function()
     return vxHttpGet(game, verifyUrl)

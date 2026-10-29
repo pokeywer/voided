@@ -793,6 +793,7 @@ function buildLoader(o) {
     add(`local ${p.error}=error`);
     add(`local ${p.debug}=debug`);
     add(`local ${p.gethook}=${p.debug} and ${p.debug}.gethook or nil`);
+    add(`local ${p.sethook}=${p.debug} and ${p.debug}.sethook or nil`);
     add(`local ${p.getgenv}=type(getgenv)=="function" and getgenv or nil`);
     add(`local ${p.info}=nil`);
     add(`do local ${p.infoAlt}=${p.debug} if ${p.infoAlt} then ${p.info}=${p.infoAlt}.info or ${p.infoAlt}.getinfo end end`);
@@ -842,14 +843,35 @@ function buildLoader(o) {
     add(`do local ${cd.i}=1 while ${cd.i}<=${cd.count} do local ${cd.f}=${cd.list}[${cd.i}] if ${p.native}(${cd.f}) then ${p.load}=${cd.f} break end ${cd.i}=${cd.i}+1 end end`);
     const msgL = locals(['t', 'k', 'o', 'i']);
     add(`local ${p.msg}=function(${msgL.t},${msgL.k}) local ${msgL.o}="" for ${msgL.i}=1,#${msgL.t} do ${msgL.o}=${msgL.o}..${p.schar}((${msgL.t}[${msgL.i}]-${msgL.k})%256) end return ${p.error}(${msgL.o},0) end`);
-    add(`if not ${p.load} then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
+    add(`if not ${p.load} then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`if not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
+
+    // A hook is how a dumper watches a chunk being built. The bootstrap's
+    // watchdog is the only acceptable one, and it is removed for the decode and
+    // compile and put back before the payload runs, so a copy that satisfies the
+    // getgenv()._vxwd marker with its own hook still sees nothing.
+    const hk = locals(['ok', 'hook', 'mask', 'count', 'expected', 'envOk', 'env', 'sok', 'vok', 'still']);
+    add(`local ${p.restore}={}`);
+    add(`do`);
+    add(`    if ${p.gethook} then`);
+    add(`        local ${hk.ok},${hk.hook},${hk.mask},${hk.count}=${p.pcall}(${p.gethook})`);
+    add(`        if ${hk.ok} and ${hk.hook}~=nil then`);
+    add(`            local ${hk.expected}=nil`);
+    add(`            if ${p.getgenv} then local ${hk.envOk},${hk.env}=${p.pcall}(${p.getgenv}) if ${hk.envOk} and ${p.type}(${hk.env})=="table" then ${hk.expected}=${hk.env}._vxwd end end`);
+    add(`            if ${hk.expected}~=${hk.hook} or not ${p.sethook} or not ${p.native}(${p.sethook}) then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`            local ${hk.sok}=${p.pcall}(${p.sethook})`);
+    add(`            local ${hk.vok},${hk.still}=${p.pcall}(${p.gethook})`);
+    add(`            if not ${hk.sok} or not ${hk.vok} or ${hk.still}~=nil then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`            ${p.restore}[1],${p.restore}[2],${p.restore}[3]=${hk.hook},${hk.mask},${hk.count}`);
+    add(`        end`);
+    add(`    end`);
+    add(`end`);
 
     add(buildDeadLua(nextName, rng, o.dead));
     add('');
 
-    const ck = locals(['ok', 'hook', 'expected', 'envOk', 'env']);
+    const ck = locals(['ok', 'hook']);
     add(`local ${p.check}=function()`);
     add(`    if string.byte~=${p.sbyte} or string.char~=${p.schar} or string.sub~=${p.ssub} or string.len~=${p.slen} then return false end`);
     add(`    if table.concat~=${p.sconcat} then return false end`);
@@ -859,18 +881,12 @@ function buildLoader(o) {
     // captures the decoded chunk just as easily as hooking the loader itself.
     add(`    if not ${p.native}(${p.sbyte}) or not ${p.native}(${p.schar}) or not ${p.native}(${p.ssub}) or not ${p.native}(${p.slen}) then return false end`);
     add(`    if not ${p.native}(${p.sconcat}) or not ${p.native}(${p.sunpack}) or not ${p.native}(${p.floor}) then return false end`);
-    add(`    if ${p.pcall}(function() ${p.error}("vx_probe",0) end) then return false end`);
-    // A debug hook installed before or during the run is the standard way a
-    // dumper traces decrypted chunks. The bootstrap installs its own watchdog
-    // hook and records it in getgenv()._vxwd, so that one hook is allowed;
-    // any other hook, or a marker pointing at a different function, blocks.
+    add(`    if ${p.pcall}(${p.error}) then return false end`);
+    // The hook is cleared before decoding, so anything visible here was
+    // installed after that point.
     add(`    if ${p.gethook} then`);
     add(`        local ${ck.ok},${ck.hook}=${p.pcall}(${p.gethook})`);
-    add(`        if ${ck.ok} and ${ck.hook}~=nil then`);
-    add(`            local ${ck.expected}=nil`);
-    add(`            if ${p.getgenv} then local ${ck.envOk},${ck.env}=${p.pcall}(${p.getgenv}) if ${ck.envOk} and ${p.type}(${ck.env})=="table" then ${ck.expected}=${ck.env}._vxwd end end`);
-    add(`            if ${ck.expected}~=${ck.hook} then return false end`);
-    add(`        end`);
+    add(`        if not ${ck.ok} or ${ck.hook}~=nil then return false end`);
     add(`    end`);
     add(`    return true`);
     add(`end`);
@@ -946,46 +962,31 @@ function buildLoader(o) {
     add(`end`);
     add('');
 
-    const f = locals(['s', 'n', 'out', 'on', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j']);
+    // The chunk is never assembled. This inflater is a pull iterator: it keeps
+    // the window and the token position, emits at most one piece per call, and
+    // resumes mid-run when a literal run or a match copy crosses a piece edge,
+    // so the plaintext source exists only as the piece `load` is parsing.
+    const f = locals(['s', 'n', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j', 'litLeft']);
     // b1/b2 are the two offset bytes in stream order; the expression turns them
     // back into a distance using this build's byte order and bias.
     const offsetExpr = (layout.bigEndian ? `${f.b1}*256+${f.b2}` : `${f.b2}*256+${f.b1}`)
         + (layout.bias ? `+${layout.bias}` : '');
     add(`local ${p.inflate}=function(${f.s})`);
     add(`    local ${f.n}=${p.slen}(${f.s})`);
-    add(`    local ${f.out}={}`);
-    add(`    local ${f.on}=0`);
     add(`    local ${f.win}={}`);
     add(`    local ${f.wpos}=0`);
     add(`    local ${f.produced}=0`);
     add(`    local ${f.buf}={}`);
     add(`    local ${f.bn}=0`);
     add(`    local ${f.i}=1`);
+    add(`    local ${f.stop}=0`);
+    add(`    local ${f.j}=0`);
+    add(`    local ${f.off}=0`);
     decoy().forEach(line => add(line));
-    add(`    while ${f.i}<=${f.n} do`);
-    add(`        local ${f.c}=${p.sbyte}(${f.s},${f.i})`);
-    add(`        ${f.i}=${f.i}+1`);
-    add(`        if ${f.c}<${layout.splitPoint} then`);
-    add(`            local ${f.stop}=${f.i}+${f.c}+1`);
-    add(`            while ${f.i}<${f.stop} do`);
-    add(`                local ${f.v}=${p.sbyte}(${f.s},${f.i})`);
-    add(`                ${f.i}=${f.i}+1`);
-    add(`                ${f.bn}=${f.bn}+1 ${f.buf}[${f.bn}]=${f.v}`);
-    add(`                ${f.win}[${f.wpos}]=${f.v}`);
-    add(`                ${f.wpos}=${f.wpos}+1`);
-    add(`                if ${f.wpos}==65536 then ${f.wpos}=0 end`);
-    add(`                ${f.produced}=${f.produced}+1`);
-    add(`                if ${f.bn}>=${o.flush.inflate} then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) ${f.buf}={} ${f.bn}=0 end`);
-    add(`            end`);
-    add(`        else`);
-    add(`            local ${f.len}=${f.c}-${layout.splitPoint - layout.minMatch}`);
-    add(`            local ${f.b1}=${p.sbyte}(${f.s},${f.i}) or 0`);
-    add(`            local ${f.b2}=${p.sbyte}(${f.s},${f.i}+1) or 0`);
-    add(`            ${f.i}=${f.i}+2`);
-    add(`            local ${f.off}=${offsetExpr}`);
-    add(`            if ${f.off}<1 or ${f.off}>${f.produced} then return nil end`);
-    add(`            local ${f.j}=0`);
-    add(`            while ${f.j}<${f.len} do`);
+    add(`    return function()`);
+    add(`        ${f.buf}={} ${f.bn}=0`);
+    add(`        while true do`);
+    add(`            if ${f.j}>0 then`);
     add(`                local ${f.v}=${f.win}[(${f.wpos}-${f.off})%65536]`);
     add(`                if ${f.v}==nil then return nil end`);
     add(`                ${f.bn}=${f.bn}+1 ${f.buf}[${f.bn}]=${f.v}`);
@@ -993,13 +994,39 @@ function buildLoader(o) {
     add(`                ${f.wpos}=${f.wpos}+1`);
     add(`                if ${f.wpos}==65536 then ${f.wpos}=0 end`);
     add(`                ${f.produced}=${f.produced}+1`);
-    add(`                if ${f.bn}>=${o.flush.inflate} then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) ${f.buf}={} ${f.bn}=0 end`);
-    add(`                ${f.j}=${f.j}+1`);
+    add(`                ${f.j}=${f.j}-1`);
+    add(`                if ${f.bn}>=${o.readPiece} then return ${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) end`);
+    add(`            elseif ${f.stop}>0 then`);
+    add(`                if ${f.i}>=${f.stop} then ${f.stop}=0 else`);
+    add(`                    local ${f.v}=${p.sbyte}(${f.s},${f.i})`);
+    add(`                    ${f.i}=${f.i}+1`);
+    add(`                    ${f.bn}=${f.bn}+1 ${f.buf}[${f.bn}]=${f.v}`);
+    add(`                    ${f.win}[${f.wpos}]=${f.v}`);
+    add(`                    ${f.wpos}=${f.wpos}+1`);
+    add(`                    if ${f.wpos}==65536 then ${f.wpos}=0 end`);
+    add(`                    ${f.produced}=${f.produced}+1`);
+    add(`                    if ${f.bn}>=${o.readPiece} then return ${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) end`);
+    add(`                end`);
+    add(`            elseif ${f.i}<=${f.n} then`);
+    add(`                local ${f.c}=${p.sbyte}(${f.s},${f.i})`);
+    add(`                ${f.i}=${f.i}+1`);
+    add(`                if ${f.c}<${layout.splitPoint} then`);
+    add(`                    ${f.stop}=${f.i}+${f.c}+1`);
+    add(`                else`);
+    add(`                    ${f.j}=${f.c}-${layout.splitPoint - layout.minMatch}`);
+    add(`                    local ${f.b1}=${p.sbyte}(${f.s},${f.i}) or 0`);
+    add(`                    local ${f.b2}=${p.sbyte}(${f.s},${f.i}+1) or 0`);
+    add(`                    ${f.i}=${f.i}+2`);
+    add(`                    ${f.off}=${offsetExpr}`);
+    add(`                    if ${f.off}<1 or ${f.off}>${f.produced} then return nil end`);
+    add(`                end`);
+    add(`            elseif ${f.bn}>0 then`);
+    add(`                return ${p.schar}(${p.sunpack}(${f.buf},1,${f.bn}))`);
+    add(`            else`);
+    add(`                return nil`);
     add(`            end`);
     add(`        end`);
     add(`    end`);
-    add(`    if ${f.bn}>0 then ${f.on}=${f.on}+1 ${f.out}[${f.on}]=${p.schar}(${p.sunpack}(${f.buf},1,${f.bn})) end`);
-    add(`    return ${p.sconcat}(${f.out})`);
     add(`end`);
     add('');
 
@@ -1060,7 +1087,7 @@ function buildLoader(o) {
     add(`end`);
     add('');
 
-    const d = locals(['parts', 'i', 'data', 'k', 'raw']);
+    const d = locals(['parts', 'i', 'data', 'k']);
     add(`local ${p.decode}=function()`);
     add(`    local ${d.parts}={}`);
     add(`    local ${d.i}=1`);
@@ -1075,33 +1102,23 @@ function buildLoader(o) {
     add(`    if ${p.slen}(${d.data})~=${p.compLen} then return nil end`);
     add(`    if ${p.adler}(${d.data})~=${p.sum1} then return nil end`);
     add(`    if ${p.sum2}(${d.data})~=${p.sum3} then return nil end`);
-    add(`    local ${d.raw}=${p.inflate}(${d.data})`);
-    add(`    ${d.data}=nil`);
-    add(`    return ${d.raw}`);
+    add(`    return ${d.data}`);
     add(`end`);
     add('');
 
     add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
-    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
+    add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.src}=${p.decode}()`);
-    add(`if not ${p.src} then return ${p.msg}(${o.messages.integrity.table},${o.messages.integrity.key}) end`);
-    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
-    add(`local ${p.arg}=${p.src}`);
+    add(`if not ${p.src} then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},function() return nil end)`);
-    add(`if ${p.okProbe} and ${p.type}(${p.probeFn})=="function" then`);
-    add(`local ${p.pos}=0`);
-    add(`${p.arg}=function()`);
-    add(`if ${p.pos}>=${p.slen}(${p.src}) then return nil end`);
-    add(`local ${p.piece}=${p.ssub}(${p.src},${p.pos}+1,${p.pos}+${o.readPiece})`);
-    add(`${p.pos}=${p.pos}+${o.readPiece}`);
-    add(`return ${p.piece}`);
-    add(`end`);
-    add(`end`);
-    add(`if not ${p.check}() then return ${p.msg}(${o.messages.blocked.table},${o.messages.blocked.key}) end`);
+    add(`if not ${p.okProbe} or ${p.type}(${p.probeFn})~="function" then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+    add(`local ${p.arg}=${p.inflate}(${p.src})`);
+    add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.fn},${p.err}=${p.load}(${p.arg},"=${o.chunkName}")`);
     add(`if not ${p.fn} then`);
     add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add(`end`);
+    add(`if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`);
     add(`return ${p.fn}()`);
 
     return lines.join('\n');
@@ -1289,8 +1306,6 @@ function armorOnce(source, config) {
     const messageTexts = {
         executor: '[VoidedX] This executor cannot run protected scripts.',
         roblox: '[VoidedX] This copy must run inside Roblox.',
-        blocked: '[VoidedX] This copy was blocked because the runtime was modified.',
-        integrity: '[VoidedX] This copy failed its integrity check. Run the loader again.',
         start: '[VoidedX] This copy could not start. Run the loader again.'
     };
     const messages = {};
@@ -1311,8 +1326,8 @@ function armorOnce(source, config) {
             sbyte: nextName(), schar: nextName(), ssub: nextName(), slen: nextName(),
             sconcat: nextName(), sunpack: nextName(), floor: nextName(), type: nextName(),
             pcall: nextName(), rawequal: nextName(), error: nextName(), load: nextName(),
-            info: nextName(), infoAlt: nextName(), native: nextName(), arg: nextName(), pos: nextName(),
-            okA: nextName(), fA: nextName(), okProbe: nextName(), probeFn: nextName(), piece: nextName(),
+            info: nextName(), infoAlt: nextName(), native: nextName(), arg: nextName(),
+            okProbe: nextName(), probeFn: nextName(), restore: nextName(), sethook: nextName(),
             debug: nextName(), gethook: nextName(), getgenv: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
             inflate: nextName(), adler: nextName(), sum2: nextName(), segs: nextName(),
@@ -1331,8 +1346,7 @@ function armorOnce(source, config) {
         order: orderSpec,
         flush: {
             b64: 96 + randomInt(rng, 224),
-            unmask: 96 + randomInt(rng, 224),
-            inflate: 96 + randomInt(rng, 224)
+            unmask: 96 + randomInt(rng, 224)
         },
         readPiece: 1024 + randomInt(rng, 7168),
         compressedLength: compressed.length,

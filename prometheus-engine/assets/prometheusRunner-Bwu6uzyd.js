@@ -6936,31 +6936,25 @@ function AntiTamper:apply(ast, pipeline)
         ]]
     end
     code = code .. [[
-    local err = function() error("Tamper Detected!") end;
+    local err = function() error("") end;
 
     local random = math.random;
-    -- Integrity probes. Each one answers a question whose correct value is
-    -- fixed by the language, never by the interpreter: a raised error is
-    -- observable, a call returns all of its values, byte sums are additive.
-    -- A single probe disagreement is tolerated because executors differ on
-    -- edge behaviour; two or more means pcall, string or table dispatch has
-    -- been replaced, and the copy stops.
     local fails = 0;
     local function probe(ok)
         if not ok then fails = fails + 1 end;
     end
-    local okProbe, probeMsg = pcall(function() error("vx_probe", 0) end);
-    probe(okProbe == false and probeMsg == "vx_probe");
+    local okProbe, probeMsg = pcall(function() error("", 0) end);
+    probe(okProbe == false and probeMsg == "");
     local o1, o2, o3, o4 = pcall(function() return 11, 22, 33 end);
     probe(o1 == true and o2 == 11 and o3 == 22 and o4 == 33);
-    local tag = "VoidedX";
+    local tag = string.char(86, 111, 105, 100, 101, 100, 88);
     local sum = 0;
     for i = 1, #tag do
         sum = sum + string.byte(tag, i);
     end
     probe(sum == 691);
-    local joined = table.concat({"vx", "guard"});
-    probe(joined == "vxguard");
+    local joined = table.concat({11, 22});
+    probe(joined == "1122");
     valid = valid and fails < 2;
 
     if valid then else
