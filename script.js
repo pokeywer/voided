@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {
-    getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
+    getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
     GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithCredential
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {
@@ -780,7 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!credential) return false;
         await signInWithCredential(auth, credential);
         closeAuthModal();
-        showToast('Signed in with Google. If you have guest vaults from before, recover them with their vault ID.', 'success', 7000);
+        showToast('Signed in with Google.', 'success', 4000);
         return true;
     }
 
@@ -871,7 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (user && !user.isAnonymous && user.email) {
             dashEls.greeting.textContent = `Welcome back, ${user.email.split('@')[0]}`;
         } else if (user && user.isAnonymous) {
-            dashEls.greeting.textContent = 'Guest session';
+            dashEls.greeting.textContent = 'Signed out';
         } else {
             dashEls.greeting.textContent = 'Welcome back';
         }
@@ -898,21 +898,13 @@ document.addEventListener('DOMContentLoaded', () => {
             userDisplay.innerHTML = `<i class="fa-solid fa-user-check text-cyan"></i> ${user.email}`;
             authBtn.innerHTML = `<i class="fa-solid fa-right-from-bracket"></i> Logout`;
             loadUserVaults();
-        } else if (user && user.isAnonymous) {
-            // Real Firebase Auth session, just without an email — this UID is what
-            // proves ownership of vaults created while "not logged in".
-            userDisplay.innerHTML = `<i class="fa-solid fa-user"></i> Guest`;
-            authBtn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Login`;
-            loadUserVaults();
         } else {
-            // No session at all yet — silently start one so this browser gets a
-            // stable, unique UID instead of everyone sharing the literal "guest".
-            signInAnonymously(auth).catch(() => {
-                userDisplay.innerHTML = `<i class="fa-solid fa-user"></i> Guest`;
-                authBtn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Login`;
-                vaultListContainer.innerHTML = '<div class="info-box"><p>Log in to save and manage your script vaults cloud-wide.</p></div>';
-                updateVaultCount(0);
-            });
+            // The site login gate owns sign-in now; this page never starts a
+            // guest session of its own.
+            userDisplay.innerHTML = `<i class="fa-solid fa-user"></i> Signed out`;
+            authBtn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Login`;
+            vaultListContainer.innerHTML = '<div class="info-box"><p>Sign in to save and manage your script vaults.</p></div>';
+            updateVaultCount(0);
         }
     });
 
@@ -1108,6 +1100,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (vaultSearch) vaultSearch.addEventListener('input', renderVaultList);
     if (vaultSort) vaultSort.addEventListener('change', renderVaultList);
     if (vaultFilter) vaultFilter.addEventListener('change', renderVaultList);
+    window.addEventListener('voidedx:vaults-claimed', () => {
+        if (currentUser && !currentUser.isAnonymous) loadUserVaults();
+    });
 
     async function loadUserVaults() {
         if (!currentUser) return;

@@ -1,4 +1,7 @@
 import { db } from './_admin.js';
+import {
+    EMAIL_ALIAS_COLLECTION, emailAliasId, mergeLedgerUsage, trustedEmail
+} from './_obfuscationIdentity.js';
 
 // Void tokens are a daily allowance plus an admin-granted bonus. The daily part
 // refills at 00:00 UTC and never banks; bonus tokens only leave when granted or
@@ -40,6 +43,50 @@ export function subjectFromAdminInput(raw) {
     const value = String(raw || '').trim();
     if (!value) throw tokenError('Enter a Discord user ID or a VoidedX account ID.', 400);
     return /^\d{17,20}$/.test(value) ? `discord:${value}` : websiteSubject(value.replace(/^web:/, ''));
+}
+
+async function foldLedger(transaction, sourceSubject, targetSubject, now) {
+    const sourceRef = db.collection(COLLECTION).doc(sourceSubject);
+    const targetRef = db.collection(COLLECTION).doc(targetSubject);
+    const [sourceSnap, targetSnap] = await Promise.all([transaction.get(sourceRef), transaction.get(targetRef)]);
+    if (!sourceSnap.exists) return;
+    const source = sourceSnap.data();
+    if (source.mergedInto === targetSubject) return;
+    const target = targetSnap.exists ? targetSnap.data() : null;
+    const merged = mergeLedgerUsage(target, source, utcDay(now));
+    transaction.set(targetRef, { subject: targetSubject, ...merged, updatedAt: now }, { merge: true });
+    transaction.set(sourceRef, { mergedInto: targetSubject, updatedAt: now }, { merge: true });
+}
+
+// Resolves the ledger a website account spends from. Accounts that prove the
+// same email share one ledger, so a new sign-in session, a re-created account,
+// or a different provider cannot reset the daily allowance. Reads run before
+// any write because Firestore transactions forbid a read after a write.
+export async function resolveWebSubject(user) {
+    const uid = String(user?.uid || '').trim();
+    const idSubject = websiteSubject(uid);
+    const email = trustedEmail(user);
+    const aliasId = emailAliasId(email);
+    if (!aliasId) return idSubject;
+
+    const aliasRef = db.collection(EMAIL_ALIAS_COLLECTION).doc(aliasId);
+    return db.runTransaction(async transaction => {
+        const now = Date.now();
+        const aliasSnap = await transaction.get(aliasRef);
+        const alias = aliasSnap.exists ? aliasSnap.data() : null;
+        const target = alias && alias.subject ? String(alias.subject) : idSubject;
+
+        if (target !== idSubject) {
+            await foldLedger(transaction, idSubject, target, now);
+        }
+
+        if (!alias) {
+            transaction.set(aliasRef, { subject: target, email, firstUid: uid, updatedAt: now });
+        } else if (alias.subject !== target || alias.email !== email) {
+            transaction.set(aliasRef, { subject: target, email, updatedAt: now }, { merge: true });
+        }
+        return target;
+    });
 }
 
 export function summarizeTokens(data, now = Date.now()) {

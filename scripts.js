@@ -516,7 +516,7 @@ onAuthStateChanged(auth, user => {
         button.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Sign out';
         if (activeTab === 'mine') loadMyScripts();
     } else {
-        label.innerHTML = '<i class="fa-solid fa-user"></i> Guest';
+        label.innerHTML = '<i class="fa-solid fa-user"></i> Signed out';
         button.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Sign in';
         myScripts = []; render();
     }

@@ -296,7 +296,7 @@
         'You are signed out.': 'Você saiu.', 'This email already has an account. You are on Log In now—use the same sign-in method you used before.': 'Este e-mail já tem uma conta. Você está na tela de acesso — use o mesmo método de entrada de antes.',
         'Could not sign in. Check your connection and try again.': 'Não foi possível entrar. Verifique sua conexão e tente novamente.',
         'Enter a valid email address.': 'Digite um endereço de e-mail válido.', 'Use a password with at least 6 characters.': 'Use uma senha com pelo menos 6 caracteres.',
-        'Enter your password.': 'Digite sua senha.', 'Sign in with an account to continue.': 'Entre com uma conta para continuar.',
+        'Enter your password.': 'Digite sua senha.', 'Enter your email address.': 'Digite seu endereço de e-mail.', 'Sign in with an account to continue.': 'Entre com uma conta para continuar.',
         'Create your account': 'Crie sua conta', 'Create an account to share with the community.': 'Crie uma conta para compartilhar com a comunidade.',
         'Opening Google…': 'Abrindo o Google…', 'Unsaved changes': 'Alterações não salvas', 'ON': 'ATIVADO',
         'OFF · Disabled': 'DESATIVADO', 'You have unsaved changes. Discard them and open this vault?': 'Há alterações não salvas. Descartá-las e abrir este cofre?',
@@ -442,18 +442,53 @@
         'SIZE': 'TAMANHO', 'CHARACTERS': 'CARACTERES', 'LINES': 'LINHAS', 'BUILD TIME': 'TEMPO DE MONTAGEM',
         'Build settings used for this copy': 'Configurações usadas nesta cópia', 'Generated obfuscated script': 'Script ofuscado gerado',
         'Download protected file': 'Baixar arquivo protegido', 'Store this build': 'Guardar esta montagem',
-        'Keeps the protected copy in a VoidedX vault under this browser\'s guest session, up to five per browser. Signed-in editors can manage the same vaults from the Creator Panel.':
-            'Guarda a cópia protegida em um cofre VoidedX nesta sessão de visitante, até cinco por navegador. Editores logados podem gerenciar os mesmos cofres pelo Painel do Criador.',
+        'Keeps the protected copy in a VoidedX vault on your account, up to five vaults. Manage them from the Creator Panel.':
+            'Guarda a cópia protegida em um cofre VoidedX na sua conta, até cinco cofres. Gerencie-os pelo Painel do Criador.',
         'Save to vault': 'Salvar em cofre',
         '8 void tokens a day': '8 fichas void por dia', 'Refilled at 00:00 UTC. Admins can add bonus tokens, which are spent after the daily ones.':
             'Renovadas às 00:00 UTC. Administradores podem adicionar fichas bônus, gastas depois das diárias.',
-        'Private by default': 'Privado por padrão', 'Website builds use this browser\'s guest account. A Discord link spends that balance, so keep it to yourself.':
-            'Montagens no site usam a conta de visitante deste navegador. Um link do Discord gasta aquele saldo, então não compartilhe.',
+        'Private by default': 'Privado por padrão', 'Website builds spend your VoidedX account\'s daily allowance. A Discord link spends that Discord balance, so keep it to yourself.':
+            'Montagens no site gastam a cota diária da sua conta VoidedX. Um link do Discord gasta aquele saldo, então não compartilhe.',
         'Raises the bar': 'Aumenta a barreira', 'Obfuscation slows static analysis, but code that runs on a client can still be captured. Vaults with no executions are removed after 10 hours.':
             'A ofuscação atrasa a análise estática, mas código que roda no cliente ainda pode ser capturado. Cofres sem execuções são removidos após 10 horas.',
         'Build options reset to the defaults.': 'Opções de montagem redefinidas para o padrão.', 'The clipboard is empty.': 'A área de transferência está vazia.',
         'Clear the source editor? The code is not saved anywhere yet.': 'Limpar o editor de código? O código ainda não foi salvo em lugar nenhum.',
-        'Clear source': 'Limpar código'
+        'Clear source': 'Limpar código',
+        'ACCOUNT REQUIRED': 'CONTA OBRIGATÓRIA', 'Sign in to VoidedX': 'Entrar no VoidedX',
+        'Every page now needs a real account. Guest vaults saved in this browser move to your account automatically when you sign in.':
+            'Agora todo o site exige uma conta real. Cofres de visitante salvos neste navegador migram para a sua conta automaticamente ao entrar.',
+        'Guest session found. Sign in or create an account to keep this browser\'s vaults.':
+            'Sessão de visitante encontrada. Entre ou crie uma conta para manter os cofres deste navegador.',
+        'Log in': 'Entrar', 'Email': 'E-mail', 'Password': 'Senha',
+        'Checking your account…': 'Verificando sua conta…',
+        'Use email, Google, or Discord. Guest mode is no longer available.':
+            'Use e-mail, Google ou Discord. O modo visitante não está mais disponível.',
+        'Working…': 'Processando…', 'Signing you in…': 'Entrando…', 'Creating your account…': 'Criando sua conta…',
+        'Opening Google…': 'Abrindo o Google…', 'Opening Discord…': 'Abrindo o Discord…', 'Signed out': 'Desconectado',
+        'Continue with Discord': 'Continuar com Discord',
+        'Forgot password?': 'Esqueceu a senha?', 'Reset your password': 'Redefinir sua senha',
+        'Enter the email on your VoidedX account and we send a reset link. Google and Discord accounts sign in with those buttons instead.':
+            'Digite o e-mail da sua conta VoidedX e enviaremos um link de redefinição. Contas Google e Discord entram com aqueles botões.',
+        'Send reset link': 'Enviar link de redefinição', 'Sending…': 'Enviando…', 'Back to log in': 'Voltar para entrar',
+        'If that email has an account, a reset link is on the way. Check the spam folder too.':
+            'Se esse e-mail tiver uma conta, o link de redefinição está a caminho. Confira também a pasta de spam.',
+        'Accounts are still loading. Try again in a second.': 'As contas ainda estão carregando. Tente de novo em um segundo.',
+        'Sign in to save and manage your script vaults.': 'Entre para salvar e gerenciar seus cofres de scripts.',
+        'Website copy · your VoidedX account': 'Cópia do site · sua conta VoidedX',
+        'That email address is not valid.': 'Esse endereço de e-mail não é válido.',
+        'Email or password is incorrect.': 'E-mail ou senha incorretos.',
+        'That email already has an account. Switch to Log in.': 'Esse e-mail já tem uma conta. Use Entrar.',
+        'Use a password with at least 6 characters.': 'Use uma senha com pelo menos 6 caracteres.',
+        'Too many attempts. Wait a little and try again.': 'Muitas tentativas. Aguarde um pouco e tente de novo.',
+        'Network error. Check your connection and retry.': 'Erro de rede. Verifique sua conexão e tente de novo.',
+        'The sign-in window closed before it finished.': 'A janela de entrada fechou antes de concluir.',
+        'Another sign-in window is already open.': 'Já existe outra janela de entrada aberta.',
+        'The browser blocked the sign-in window. Allow pop-ups and retry.': 'O navegador bloqueou a janela de entrada. Permita pop-ups e tente de novo.',
+        'That email already uses another sign-in method. Log in with that method first.':
+            'Esse e-mail já usa outro método de entrada. Entre com aquele método primeiro.',
+        'This site address is not authorized for sign-in yet.': 'Este endereço do site ainda não está autorizado para entrada.',
+        'This sign-in method is not enabled on the site yet.': 'Este método de entrada ainda não está ativado no site.',
+        'This account has been disabled.': 'Esta conta foi desativada.'
     };
 
     let language = 'en';
@@ -526,6 +561,12 @@
         if (match) return `${leading}${match[1]} caracteres colados da área de transferência.${trailing}`;
         match = key.match(/^Loaded "(.+)" into the editor\.$/);
         if (match) return `${leading}“${match[1]}” carregado no editor.${trailing}`;
+        match = key.match(/^Moved (\d+) guest vaults? to your account\.$/);
+        if (match) return `${leading}${match[1]} ${Number(match[1]) === 1 ? 'cofre de visitante movido' : 'cofres de visitante movidos'} para a sua conta.${trailing}`;
+        match = key.match(/^Signed in, but guest vaults could not be moved: (.+)\.$/);
+        if (match) return `${leading}Conectado, mas os cofres de visitante não puderam ser movidos: ${match[1]}.${trailing}`;
+        match = key.match(/^Signed in, but guest vaults could not be moved right now\.$/);
+        if (match) return `${leading}Conectado, mas os cofres de visitante não puderam ser movidos agora.${trailing}`;
         match = key.match(/^Error loading vaults: (.+)$/);
         if (match) return `${leading}Erro ao carregar cofres: ${match[1]}${trailing}`;
         return value;

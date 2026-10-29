@@ -108,7 +108,7 @@ function buildLoaderBanner() {
         '   ' + rows[3],
         '   ' + rows[4],
         '',
-        '   VoidedX Loader   //   voidedx.vercel.app',
+        '   VOIDEDX LOADER   //   voidedx.vercel.app',
         '   protected delivery build   |   do not resell',
         ']]'
     ].join('\n');

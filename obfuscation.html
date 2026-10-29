@@ -210,6 +210,7 @@
     </style>
 <script defer src="/i18n.js"></script>
 <script defer src="/app-shell.js"></script>
+<script type="module" src="/site-auth.js"></script>
 </head>
 <body class="creator-panel-page vx-app">
     <header class="top-nav">
@@ -430,7 +431,7 @@
                 <div class="obf-save-row">
                     <div class="obf-save-copy">
                         <strong>Store this build</strong>
-                        <small>Keeps the protected copy in a VoidedX vault under this browser's guest session, up to five per browser. Signed-in editors can manage the same vaults from the Creator Panel.</small>
+                        <small>Keeps the protected copy in a VoidedX vault on your account, up to five vaults. Manage them from the Creator Panel.</small>
                     </div>
                     <button id="obf-save" class="obf-save" type="button" disabled><i class="fa-solid fa-vault"></i> Save to vault</button>
                 </div>
@@ -444,7 +445,7 @@
                 </div>
                 <div class="obf-fineprint-item">
                     <i class="fa-solid fa-user-secret"></i>
-                    <div><strong>Private by default</strong><p>Website builds use this browser's guest account. A Discord link spends that balance, so keep it to yourself.</p></div>
+                    <div><strong>Private by default</strong><p>Website builds spend your VoidedX account's daily allowance. A Discord link spends that Discord balance, so keep it to yourself.</p></div>
                 </div>
                 <div class="obf-fineprint-item">
                     <i class="fa-solid fa-triangle-exclamation"></i>

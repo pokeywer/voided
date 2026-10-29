@@ -1010,8 +1010,8 @@ function buildBanner() {
         '   ' + art[3],
         '   ' + art[4],
         '',
-        '   V O I D E D X   //   V M   A R M O R   B U I L D',
-        '   voidedx.vercel.app   |   do not resell   |   all rights reserved',
+        '   VOIDEDX OBFUSCATION   //   voidedx.vercel.app',
+        '   do not resell   |   all rights reserved',
         ']]'
     ].join('\n');
 }

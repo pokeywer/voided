@@ -6,6 +6,7 @@ import adminScripts from './_route-admin-scripts.js';
 import adminOperations from './_route-admin-operations.js';
 import adminVaults from './_route-admin-vaults.js';
 import announcements from './_route-announcements.js';
+import claimGuestVaults from './_route-claim-guest-vaults.js';
 import discordAdmin from './_route-discord-admin.js';
 import discordInteractions from './_route-discord-interactions.js';
 import gatewayConfig from './_route-gateway-config.js';
@@ -32,6 +33,7 @@ const handlers = {
     'admin-operations': adminOperations,
     'admin-vaults': adminVaults,
     announcements,
+    'claim-guest-vaults': claimGuestVaults,
     'discord-admin': discordAdmin,
     'discord-interactions': discordInteractions,
     'gateway-config': gatewayConfig,

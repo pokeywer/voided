@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {
-    getAuth, onAuthStateChanged, signInAnonymously
+    getAuth, onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {
     getFirestore, collection, doc, getDocs, query, setDoc, where
@@ -300,7 +300,7 @@ function refreshButtons() {
 function renderSessionLine() {
     const parts = [];
     if (webMode) {
-        parts.push('Website copy · this browser\'s guest account');
+        parts.push('Website copy · your VoidedX account');
     } else if (session?.discordUsername) {
         parts.push(`Issued to ${session.discordUsername}`);
     }
@@ -344,10 +344,8 @@ function triggerDownload() {
 
 async function ensureUser() {
     const user = authUser || auth.currentUser;
-    if (user) return user;
-    const credential = await signInAnonymously(auth);
-    authUser = credential.user;
-    return authUser;
+    if (user && !user.isAnonymous) return user;
+    throw new Error('Sign in with a real account to use the website obfuscator.');
 }
 
 async function signedInHeaders() {
@@ -423,11 +421,23 @@ async function loadSession() {
     }
 }
 
+let sessionUid = null;
+
 onAuthStateChanged(auth, user => {
     authUser = user;
-    if (!user) {
-        signInAnonymously(auth).catch(() => {});
+    if (user && !user.isAnonymous) {
+        if (sessionUid !== user.uid) {
+            sessionUid = user.uid;
+            loadSession();
+        }
+        return;
     }
+    sessionUid = null;
+    generated = null;
+    savedVaultId = null;
+    els.app.classList.add('hidden');
+    els.error.classList.add('hidden');
+    els.loading.classList.remove('hidden');
 });
 
 els.file.addEventListener('change', async () => {
@@ -604,19 +614,27 @@ els.run.addEventListener('click', async () => {
             els.output.placeholder = `Generated copy is ${(outputBytes / (1024 * 1024)).toFixed(1)} MiB. Use the download button.`;
         }
         renderResultStats(generated, outputBytes, performance.now() - startedAt);
-        els.result.classList.remove('hidden');
-        refreshButtons();
-        if (els.autodownload.checked) triggerDownload();
 
+        // A copy only leaves the page once the server has actually spent a
+        // token, so a failed or forged spend cannot hand out a free run.
         try {
             await consumeToken();
-            setMessage(els.status, `Protected file generated at ${effectiveLevel} strength · ${formatBytes(outputBytes)}. ${credits} void token${credits === 1 ? '' : 's'} left today.`, 'success');
         } catch (error) {
+            generated = null;
+            els.result.classList.add('hidden');
+            els.output.value = '';
             if (error.status === 429) {
                 applyTokenState({ credits: 0, dailyRemaining: 0, dailyLimit, bonus, resetsAt });
+                setMessage(els.status, exhaustedMessage(), 'error');
+            } else {
+                setMessage(els.status, `The void token could not be spent, so the copy was discarded: ${error.message}`, 'error');
             }
-            setMessage(els.status, `The file was generated, but the void token could not be spent: ${error.message}`, 'error');
+            return;
         }
+
+        els.result.classList.remove('hidden');
+        if (els.autodownload.checked) triggerDownload();
+        setMessage(els.status, `Protected file generated at ${effectiveLevel} strength · ${formatBytes(outputBytes)}. ${credits} void token${credits === 1 ? '' : 's'} left today.`, 'success');
     } catch (error) {
         generated = null;
         els.result.classList.add('hidden');
@@ -730,11 +748,6 @@ els.save.addEventListener('click', async () => {
         link.rel = 'noopener';
         link.textContent = 'Open it in the script editor';
         els.vaultStatus.append(line, link);
-        if (user.isAnonymous) {
-            const note = document.createElement('div');
-            note.textContent = 'This browser is signed in as a guest. On another device, open the editor and use Recover old vault by ID with this ID.';
-            els.vaultStatus.append(note);
-        }
         els.vaultStatus.className = 'admin-status success';
         els.vaultStatus.classList.remove('hidden');
     } catch (error) {
@@ -762,4 +775,3 @@ function makeId(length) {
 
 restoreSettings();
 updateSourceMeta();
-loadSession();

@@ -2,7 +2,9 @@ import { db, getAdminAuth } from './_admin.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
 import { createVaultBackup, readVaultBackupData } from './_vaultBackups.js';
 import { createCommunityScriptBackup } from './_communityScriptBackups.js';
-import { grantTokens, readTokens, subjectFromAdminInput } from './_obfuscationTokens.js';
+import {
+    grantTokens, readTokens, resolveWebSubject, subjectFromAdminInput
+} from './_obfuscationTokens.js';
 
 const STAFF_SCOPES = new Set([
     'vaults', 'vaultSource', 'executions', 'announcements', 'announcementManage',
@@ -283,6 +285,19 @@ export default async function handler(req, res) {
                 subject = subjectFromAdminInput(body.subject || body.uid || body.discordId);
             } catch (error) {
                 return json(res, 400, { ok: false, message: error.message });
+            }
+            // Website balances live on the account's shared email ledger, so an
+            // admin grant must land on the same record the obfuscator spends.
+            if (subject.startsWith('web:')) {
+                try {
+                    const account = await getAdminAuth().getUser(subject.slice(4));
+                    subject = await resolveWebSubject({
+                        uid: account.uid,
+                        email: account.email,
+                        email_verified: account.emailVerified === true,
+                        firebase: { sign_in_provider: account.providerData?.[0]?.providerId || 'password' }
+                    });
+                } catch { /* Unknown or deleted account: keep the raw uid ledger. */ }
             }
             let current;
             try {

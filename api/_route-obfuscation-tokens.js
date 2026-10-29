@@ -1,9 +1,10 @@
 import { getAdminAuth } from './_admin.js';
 import { sameOriginRequest } from './_adminSession.js';
-import { consumeTokens, readTokens, websiteSubject } from './_obfuscationTokens.js';
+import { consumeTokens, readTokens, resolveWebSubject } from './_obfuscationTokens.js';
 
-// Website-direct obfuscation: the same daily allowance as the Discord link, but
-// keyed to the signed-in browser account instead of a Discord user.
+// Website-direct obfuscation spends the signed-in account's own ledger. The
+// subject comes from the verified ID token and is shared by every sign-in that
+// proves the same email, so a new session cannot reset the daily allowance.
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -38,8 +39,17 @@ export default async function handler(req, res) {
 
     const user = await signedInUser(req);
     if (!user) return json(res, 401, { ok: false, message: 'Sign in to use the website obfuscator.' });
+    if (String(user.firebase?.sign_in_provider || '') === 'anonymous') {
+        return json(res, 403, { ok: false, message: 'Create an account to use the website obfuscator.' });
+    }
 
-    const subject = websiteSubject(user.uid);
+    let subject;
+    try {
+        subject = await resolveWebSubject(user);
+    } catch (error) {
+        console.error('[obfuscation-tokens:identity]', error);
+        return json(res, 500, { ok: false, message: 'Could not load this account\'s void token balance.' });
+    }
 
     try {
         if (req.method === 'GET') {

@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 
 const firebaseConfig = {
     apiKey: 'AIzaSyBdAR4ARjHccTlxrmP9tzdYGJxo4MvETXw',
@@ -501,7 +501,7 @@ async function loadDashboard() {
     document.getElementById('staff-source-list').replaceChildren();
     document.getElementById('staff-community-script-detail').replaceChildren();
     resetAnnouncementForm();
-    document.getElementById('staff-account-name').textContent = currentUser.email || (currentUser.isAnonymous ? 'Guest account' : 'VoidedX account');
+    document.getElementById('staff-account-name').textContent = currentUser.email || 'VoidedX account';
     document.getElementById('staff-account-uid').textContent = `Account ID: ${uid}`;
     document.getElementById('staff-account-uid').title = 'Give this account ID to the administrator for a staff grant.';
     accountCard.classList.remove('hidden');
@@ -579,20 +579,18 @@ async function loadDashboard() {
 }
 
 async function login(action) {
-    const button = document.getElementById(action === 'guest' ? 'staff-guest-btn' : 'staff-login-btn');
+    const button = document.getElementById('staff-login-btn');
     const original = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> SIGNING IN…';
     try {
-        if (action === 'guest') await signInAnonymously(auth);
-        else await signInWithEmailAndPassword(auth, document.getElementById('staff-email').value.trim(), document.getElementById('staff-password').value);
+        await signInWithEmailAndPassword(auth, document.getElementById('staff-email').value.trim(), document.getElementById('staff-password').value);
     } catch (error) {
         message(document.getElementById('staff-auth-error'), error.message || 'Sign-in failed.', 'error');
     } finally { button.disabled = false; button.innerHTML = original; }
 }
 
 document.getElementById('staff-login-btn').addEventListener('click', () => login('email'));
-document.getElementById('staff-guest-btn').addEventListener('click', () => login('guest'));
 document.getElementById('staff-sign-out').addEventListener('click', () => signOut(auth));
 document.getElementById('staff-vault-list').addEventListener('click', event => {
     const button = event.target.closest('button[data-view-source]');

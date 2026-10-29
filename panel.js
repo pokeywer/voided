@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {
-    getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, signOut
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { getFirestore, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
@@ -281,12 +281,6 @@ async function authenticate(button, createAccount = false) {
 
 signInButton.addEventListener('click', () => authenticate(signInButton));
 signUpButton.addEventListener('click', () => authenticate(signUpButton, true));
-document.getElementById('panel-guest-btn').addEventListener('click', async event => {
-    setBusy(event.currentTarget, true, 'OPENING GUEST…');
-    try { await signInAnonymously(auth); }
-    catch (error) { setMessage(authError, error.message || 'Guest sign-in failed.', 'error'); }
-    finally { setBusy(event.currentTarget, false); }
-});
 document.getElementById('panel-password').addEventListener('keydown', event => {
     if (event.key === 'Enter') authenticate(signInButton);
 });
@@ -307,12 +301,12 @@ document.getElementById('panel-logout-btn').addEventListener('click', () => sign
 
 onAuthStateChanged(auth, user => {
     activeUser = user;
-    const isAccount = !!user;
+    const isAccount = !!user && !user.isAnonymous;
     loginView.classList.toggle('hidden', isAccount);
     dashboard.classList.toggle('hidden', !isAccount);
     document.getElementById('panel-logout-btn').classList.toggle('hidden', !isAccount);
     if (isAccount) {
-        document.getElementById('panel-user-label').textContent = user.email || `Guest account · ${user.uid}`;
+        document.getElementById('panel-user-label').textContent = user.email || user.displayName || 'VoidedX account';
         loadVaults();
         loadBackups();
     } else {
@@ -321,4 +315,8 @@ onAuthStateChanged(auth, user => {
         backupList.replaceChildren();
         restoreRequestList.replaceChildren();
     }
+});
+
+window.addEventListener('voidedx:vaults-claimed', () => {
+    if (activeUser && !activeUser.isAnonymous) loadVaults();
 });
