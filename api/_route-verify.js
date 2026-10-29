@@ -206,17 +206,24 @@ export default async function handler(req, res) {
             }
         } catch {}
 
-        const shieldFields = shield
-            ? {
-                shieldSeed: parseInt(shield.key, 16) >>> 0,
-                shieldTrace: shield.trace,
-                shieldHash,
-                shieldPayloadHash: payloadHash,
-                reportToken,
-                tamperFlags: [],
-                blocked: false
-            }
-            : { reportToken, tamperFlags: [], blocked: false };
+        // Every session now needs a shield: the payload route no longer has a
+        // plaintext fallback, so a ticket without one could never be delivered.
+        if (!shield) {
+            return json(res, 200, {
+                ok: false,
+                message: 'The protected copy of this vault could not be prepared. Save the vault again in the editor and retry.'
+            });
+        }
+
+        const shieldFields = {
+            shieldSeed: parseInt(shield.key, 16) >>> 0,
+            shieldTrace: shield.trace,
+            shieldHash,
+            shieldPayloadHash: payloadHash,
+            reportToken,
+            tamperFlags: [],
+            blocked: false
+        };
 
         const result = await db.runTransaction(async tx => {
             const freshSnap = await tx.get(vaultRef);
@@ -248,18 +255,16 @@ export default async function handler(req, res) {
                 ...shieldFields
             };
 
-            if (shield) {
-                tx.set(db.collection('loaderDeliveries').doc(shield.trace), {
-                    trace: shield.trace,
-                    vaultId: id,
-                    userId,
-                    issuedAt: now,
-                    ip: getClientIp(req),
-                    userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
-                    placeId,
-                    version: 5
-                }, { merge: true });
-            }
+            tx.set(db.collection('loaderDeliveries').doc(shield.trace), {
+                trace: shield.trace,
+                vaultId: id,
+                userId,
+                issuedAt: now,
+                ip: getClientIp(req),
+                userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+                placeId,
+                version: 5
+            }, { merge: true });
 
             if (!initiallyKeyed) {
                 tx.create(sessionRef, sessionBase);

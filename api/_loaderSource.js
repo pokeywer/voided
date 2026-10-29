@@ -215,6 +215,7 @@ ${cap(18)}=type(debug)=="table" and debug.gethook or nil
 ${cap(19)}=type(bit32)=="table" and bit32 or nil
 ${cap(20)}=type(tostring)=="function" and tostring or nil
 ${cap(21)}=type(tonumber)=="function" and tonumber or nil
+${cap(22)}=type(debug)=="table" and debug.sethook or nil
 end
 local ${n.lstr}=loadstring
 local ${n.ld}=load
@@ -231,6 +232,7 @@ if ${cap(16)} and (type(getfenv)~="function" or getfenv~=${cap(16)}) then return
 if ${cap(17)} and (type(setfenv)~="function" or setfenv~=${cap(17)}) then return false end
 if ${cap(19)} and (bit32.bxor~=${cap(19)}.bxor or bit32.lshift~=${cap(19)}.lshift or bit32.rshift~=${cap(19)}.rshift) then return false end
 if ${cap(18)} then local ok,h=${cap(7)}(${cap(18)}) if ok and h~=nil then return false end end
+if ${cap(22)} and (type(debug)~="table" or debug.sethook~=${cap(22)}) then return false end
 if ${n.dmp} and string.dump~=${n.dmp} then return false end
 local ${n.envs}={}
 local function ${n.adde}(e)
@@ -291,7 +293,8 @@ if ${n.env} then ${cap(7)}(function() if ${n.env}._vxwd==${n.wd} then ${n.env}._
 end
 ${n.wd}=function()
 ${n.ticks}=${n.ticks}+1
-if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} or table.concat~=${cap(6)} or pcall~=${cap(7)} or type~=${cap(9)} or math.floor~=${cap(10)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
+if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} or table.concat~=${cap(6)} or pcall~=${cap(7)} or type~=${cap(9)} or math.floor~=${cap(10)} or error~=${cap(8)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
+if ${cap(22)} and debug.sethook~=${cap(22)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
 local ok,h=${cap(7)}(${n.gh})
 if ok and h~=nil and h~=${n.wd} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
 if ${n.ticks}>=64 then ${n.off}() end
@@ -369,6 +372,17 @@ local vxRawEqual = rawequal
 -- Snapshot the runtime pieces a hook would have to replace. Identity is only
 -- trusted for accessors that returned the same function twice at startup, since
 -- some executors build a fresh closure on every read.
+local vxDump = string.dump
+local vxDumpStable = vxDump ~= nil and string.dump == vxDump
+local vxSetHook = type(debug) == "table" and debug.sethook or nil
+local vxSetHookStable = vxSetHook ~= nil and debug.sethook == vxSetHook
+local vxGetHook = type(debug) == "table" and debug.gethook or nil
+local vxGetHookStable = vxGetHook ~= nil and debug.gethook == vxGetHook
+local vxGetfenv = type(getfenv) == "function" and getfenv or nil
+local vxGetfenvStable = vxGetfenv ~= nil and getfenv == vxGetfenv
+local vxSetfenv = type(setfenv) == "function" and setfenv or nil
+local vxSetfenvStable = vxSetfenv ~= nil and setfenv == vxSetfenv
+local vxErrorStable = error == vxError
 local vxPrint = print
 local vxTostring = tostring
 local vxTonumber = tonumber
@@ -506,6 +520,26 @@ local function vxCollectFlags()
     if vxUrlEncodeStable and HttpService.UrlEncode ~= vxUrlEncode then add("urlencode_swapped") end
     if (vxTaskWait and task.wait ~= vxTaskWait) or (vxTaskSpawn and task.spawn ~= vxTaskSpawn) then
         add("task_swapped")
+    end
+    if vxDumpStable and string.dump ~= vxDump then add("dump_swapped") end
+    if vxErrorStable and error ~= vxError then add("error_swapped") end
+    if vxSetHookStable and (type(debug) ~= "table" or debug.sethook ~= vxSetHook) then add("hook_swapped") end
+    if vxGetHookStable and (type(debug) ~= "table" or debug.gethook ~= vxGetHook) then add("hook_swapped") end
+    if vxGetfenvStable and (type(getfenv) ~= "function" or getfenv ~= vxGetfenv) then add("fenv_swapped") end
+    if vxSetfenvStable and (type(setfenv) ~= "function" or setfenv ~= vxSetfenv) then add("fenv_swapped") end
+    -- The bootstrap marks getgenv with the watchdog it installed. If that mark
+    -- survives but gethook reports a different function, the watchdog was
+    -- replaced. Only trusted when getgenv returns the same table twice, since
+    -- some executors build a fresh environment on every call.
+    if vxGetHookStable and vxGetgenv then
+        local hookOk, hookFn = vxPcall(vxGetHook)
+        local envOk1, env1 = vxPcall(vxGetgenv)
+        local envOk2, env2 = vxPcall(vxGetgenv)
+        if hookOk and envOk1 and envOk2 and vxTypeOf(hookFn) == "function"
+            and vxTypeOf(env1) == "table" and env1 == env2 and env1._vxwd ~= nil
+            and env1._vxwd ~= hookFn then
+            add("hook_installed")
+        end
     end
     return flags
 end
@@ -674,10 +708,9 @@ local function vxRunPayload(token, userId, shield, report)
         vxProgress(90, "Invalid payload")
         return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
     end
-    local reason
-    local executionCode = vxUnshield(result, shield)
+    local executionCode, reason = vxUnshield(result, shield)
     if not executionCode then
-        vxReport(report, shield.trace, { reason })
+        vxReport(report, shield.trace, { reason or "payload_shape_invalid" })
         return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
     end
     vxProgress(95, "Integrity verified")
@@ -699,7 +732,20 @@ local function vxRunPayload(token, userId, shield, report)
             return part
         end
     end
-    local scriptChunk, compileError = vxLoad(compileArg)
+    local compileOk, scriptChunk, compileError = vxPcall(vxLoad, compileArg)
+    if compileOk and not scriptChunk and compileArg ~= executionCode then
+        -- Some executors accept chunk functions at probe time but fail on a
+        -- real body; retry with the string before giving up.
+        compileOk, scriptChunk, compileError = vxPcall(vxLoad, executionCode)
+    end
+    if (not compileOk or not scriptChunk) and vxLoadAlt and vxLoadAlt ~= vxLoad then
+        local altOk, altChunk, altError = vxPcall(vxLoadAlt, executionCode)
+        if altOk and altChunk then
+            compileOk, scriptChunk = true, altChunk
+        elseif not compileError then
+            compileError = altError
+        end
+    end
     if not scriptChunk then
         vxProgress(97, "Compilation failed")
         return error("[VoidedX] " .. tostring(compileError), 0)

@@ -13,11 +13,13 @@ export function getSourceForEditor(vaultData) {
 }
 
 export function getCodeForExecution(vaultData) {
-    if (vaultData.obfuscationEnabled === true && typeof vaultData.obfuscatedCode === 'string') {
+    if (vaultData.obfuscationEnabled === true && typeof vaultData.obfuscatedCode === 'string' && vaultData.obfuscatedCode) {
         if (vaultData.obfuscatedCodeEncoding === 'gzip-base64') {
             return gunzipSync(Buffer.from(vaultData.obfuscatedCode, 'base64'), { maxOutputLength: 8 * 1024 * 1024 }).toString('utf8');
         }
-        if (vaultData.obfuscatedCodeEncoding === 'identity') return vaultData.obfuscatedCode;
+        // Identity, and older records that carry no encoding field, store the
+        // generated copy as plain text.
+        return vaultData.obfuscatedCode;
     }
 
     return getSourceForEditor(vaultData);
