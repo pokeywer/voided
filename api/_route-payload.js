@@ -104,12 +104,6 @@ export default async function handler(req, res) {
     if (requestedPlaceId && !/^\d{1,20}$/.test(requestedPlaceId)) {
         return json(res, 400, { ok: false, message: 'Invalid place ID.' });
     }
-    const cacheRequested = req.query?.cache === '1';
-    const cacheHash = String(req.query?.cacheHash || '').toLowerCase();
-    if (cacheHash && !/^[a-f0-9]{64}$/.test(cacheHash)) {
-        return json(res, 400, { ok: false, message: 'Invalid cached payload hash.' });
-    }
-
     try {
         const sessionRef = db.collection('sessions').doc(sessionToken);
         const consumed = await db.runTransaction(async tx => {
@@ -200,16 +194,9 @@ export default async function handler(req, res) {
             });
         }
 
-        // Legacy plaintext path for tickets created before the shield deploy.
-        if (cacheRequested && vault.fastLoadCacheEnabled === true) {
-            const hash = createHash('sha256').update(executionCode, 'utf8').digest('hex');
-            if (cacheHash && cacheHash === hash) {
-                return json(res, 200, { ok: true, version: 3, cached: true, hash });
-            }
-            return json(res, 200, { ok: true, version: 3, code: executionCode, hash });
-        }
-
-        return json(res, 200, { ok: true, version: 3, code: executionCode });
+        // Only shielded deliveries exist: a plaintext body here would be the
+        // whole artifact in the clear, so an unshielded ticket is refused.
+        return json(res, 409, { ok: false, message: 'This delivery ticket has no shielded payload. Run the loader again.' });
     } catch (error) {
         console.error('Protected payload delivery failed:', error);
         return json(res, 500, { ok: false, message: 'Could not load the protected payload.' });

@@ -670,22 +670,17 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] " .. tostring(result.message or "The script could not be delivered."), 0)
     end
 
-    local executionCode
-    if result.v == 5 then
-        local reason
-        executionCode, reason = vxUnshield(result, shield)
-        if not executionCode then
-            vxReport(report, shield.trace, { reason })
-            return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
-        end
-        vxProgress(95, "Integrity verified")
-    else
-        if type(result.code) ~= "string" then
-            vxProgress(90, "Invalid payload")
-            return error("[VoidedX] The payload server returned no script.", 0)
-        end
-        executionCode = result.code
+    if result.v ~= 5 then
+        vxProgress(90, "Invalid payload")
+        return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
     end
+    local reason
+    local executionCode = vxUnshield(result, shield)
+    if not executionCode then
+        vxReport(report, shield.trace, { reason })
+        return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
+    end
+    vxProgress(95, "Integrity verified")
 
     flags = vxCollectFlags()
     if #flags > 0 and vxReport(report, shield.trace, flags) then

@@ -702,7 +702,7 @@ els.save.addEventListener('click', async () => {
             loaderVersion: 1,
             obfuscationEnabled: true,
             fastLoadCacheEnabled: false,
-            obfuscationProfileVersion: 19,
+            obfuscationProfileVersion: 20,
             obfuscationLevel: generated.requestedLevel,
             tamperCheckEnabled: generated.tamperCheck,
             vmProtectionEnabled: true,
