@@ -10,10 +10,16 @@
 // The container itself is polymorphic: every build picks its own byte mixer
 // (add / subtract / affine), its own 32-bit state chain constants, its own
 // keystream shift, its own content mix weights, its own LZSS token layout, its
-// own buffer sizes, and its own identifier style. Two builds of the same
-// script share no constant and no decode shape, so a deobfuscator or a
-// pattern-recognizing tool has to be rewritten for each file instead of
-// replaying one reusable script.
+// own checksum pair, its own buffer sizes, and its own identifier style. Two
+// builds of the same script share no constant and no decode shape, so a
+// deobfuscator or a pattern-recognizing tool has to be rewritten for each file
+// instead of replaying one reusable script.
+//
+// The token layout lives inside the masked payload header, not in the loader
+// source, and the checksum pair is chosen per build. A copy of the visible
+// loader alone therefore does not describe how to inflate the payload; the
+// parameters only exist after the segment keys and mask chain have been
+// applied, so an extraction kit cannot be assembled from static text.
 
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const WINDOW_SIZE = 65536;
@@ -27,9 +33,18 @@ const LEVEL_CONFIG = Object.freeze({
     fast: { segments: 6, passes: 1, depth: 24, dead: 1, robloxCheck: true, layers: 1 },
     low: { segments: 10, passes: 2, depth: 44, dead: 2, robloxCheck: true, layers: 2 },
     medium: { segments: 14, passes: 4, depth: 60, dead: 3, robloxCheck: true, layers: 3 },
-    high: { segments: 18, passes: 4, depth: 72, dead: 4, robloxCheck: true, layers: 3 },
-    absolute: { segments: 24, passes: 5, depth: 104, dead: 5, robloxCheck: true, layers: 4 }
+    high: { segments: 18, passes: 4, depth: 72, dead: 4, robloxCheck: true, layers: 4 },
+    absolute: { segments: 24, passes: 5, depth: 104, dead: 5, robloxCheck: true, layers: 5 }
 });
+
+// Identifiers inside the inner chunk are reserved before the build's name
+// factory starts, so a renamed internal can never collide with a name that
+// already exists in the Prometheus output.
+const FAMILY_PREFIX_BLOCKLIST = Object.freeze(new Set([
+    'string', 'table', 'math', 'os', 'io', 'debug', 'coroutine', 'utf8', 'bit32',
+    'game', 'task', 'workspace', 'shared', 'script', 'loadstring', 'pcall', 'select',
+    'rawget', 'rawset', 'rawequal', 'setmetatable', 'getmetatable', 'tostring', 'tonumber'
+]));
 
 // Each nested container re-encodes the previous one, so a layer costs roughly
 // 1.35x. Stop nesting before large scripts become impossible to store.
@@ -56,8 +71,8 @@ function randomInt(rng, maxExclusive) {
 // Identifier shapes vary per build. Every component is assigned through this
 // factory, so two copies of the same script never share a local name and the
 // `_0x` convention that most dumpers key on is only used by some builds.
-function createNameFactory(rng) {
-    const used = new Set();
+function createNameFactory(rng, reserved) {
+    const used = reserved instanceof Set ? new Set(reserved) : new Set();
     const style = randomInt(rng, 4);
     const emit = {
         0: () => `_0x${randomInt(rng, 0xffffff).toString(16).padStart(6, '0')}`,
@@ -138,12 +153,188 @@ function adler32(bytes) {
     return b * 65536 + a;
 }
 
-function weightedSum(bytes) {
+// Position-weighted sum with a per-build stride, so the delivered check value
+// cannot be reproduced by a stock implementation carrying the multiplier from
+// another build.
+function weightedSumScaled(bytes, mul) {
     let total = 0;
     for (let i = 0; i < bytes.length; i++) {
-        total = (total + bytes[i] * (i + 1)) % 4294967296;
+        total = (total + bytes[i] * (((i + 1) * mul) % 4294967296)) % 4294967296;
     }
     return total;
+}
+
+function fletcher32(bytes) {
+    let a = 65535;
+    let b = 65535;
+    for (let i = 0; i < bytes.length; i++) {
+        a = (a + bytes[i]) % 65535;
+        b = (b + a) % 65535;
+    }
+    return b * 65536 + a;
+}
+
+// Removes every comment from a Lua chunk while copying strings, long strings
+// and code byte-for-byte. Newlines inside a removed comment are re-emitted so
+// the chunk's line numbers survive for whatever the inner VM reports.
+function stripLuaComments(code) {
+    const out = [];
+    let i = 0;
+    const n = code.length;
+    while (i < n) {
+        const c = code[i];
+
+        if (c === '-' && code[i + 1] === '-') {
+            let j = i + 2;
+            if (code[j] === '[') {
+                let eqs = 0;
+                let k = j + 1;
+                while (k < n && code[k] === '=') { eqs += 1; k += 1; }
+                if (k < n && code[k] === '[') {
+                    const close = ']' + '='.repeat(eqs) + ']';
+                    const end = code.indexOf(close, k + 1);
+                    if (end !== -1) {
+                        const removed = code.slice(i, end + close.length);
+                        const breaks = removed.split('\n').length - 1;
+                        out.push('\n'.repeat(breaks));
+                        i = end + close.length;
+                        continue;
+                    }
+                }
+            }
+            const newline = code.indexOf('\n', j);
+            if (newline === -1) { i = n; break; }
+            out.push('\n');
+            i = newline + 1;
+            continue;
+        }
+
+        if (c === '[') {
+            let eqs = 0;
+            let j = i + 1;
+            while (j < n && code[j] === '=') { eqs += 1; j += 1; }
+            if (j < n && code[j] === '[') {
+                const close = ']' + '='.repeat(eqs) + ']';
+                const end = code.indexOf(close, j + 1);
+                if (end !== -1) {
+                    out.push(code.slice(i, end + close.length));
+                    i = end + close.length;
+                    continue;
+                }
+            }
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if (c === '"' || c === "'") {
+            const quote = c;
+            let j = i + 1;
+            while (j < n) {
+                if (code[j] === '\\') { j += 2; continue; }
+                if (code[j] === quote) { j += 1; break; }
+                if (code[j] === '\n' || code[j] === '\r') break;
+                j += 1;
+            }
+            out.push(code.slice(i, j));
+            i = j;
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+    return out.join('');
+}
+
+// One tokenizer pass that reports every identifier-like word in code, every
+// prefixed family (`prefix_suffix`) with all of its members, and every
+// identifier-like word that appears inside a string literal. The string-word
+// set lets the renamer skip any family that may be reached through a string
+// key, where renaming only the code side would break the binding.
+function collectLuaIdentifiers(code) {
+    const families = new Map();
+    const allNames = new Set();
+    const stringWords = new Set();
+    let i = 0;
+    const n = code.length;
+
+    const absorbString = body => {
+        const pattern = /[A-Za-z_][A-Za-z0-9_]*/g;
+        let match;
+        while ((match = pattern.exec(body)) !== null) stringWords.add(match[0]);
+    };
+
+    while (i < n) {
+        const c = code[i];
+
+        if (c === '[') {
+            let eqs = 0;
+            let j = i + 1;
+            while (j < n && code[j] === '=') { eqs += 1; j += 1; }
+            if (j < n && code[j] === '[') {
+                const close = ']' + '='.repeat(eqs) + ']';
+                const end = code.indexOf(close, j + 1);
+                if (end !== -1) {
+                    absorbString(code.slice(j + 1, end));
+                    i = end + close.length;
+                    continue;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if (c === '"' || c === "'") {
+            const quote = c;
+            let j = i + 1;
+            while (j < n) {
+                if (code[j] === '\\') { j += 2; continue; }
+                if (code[j] === quote) { j += 1; break; }
+                if (code[j] === '\n' || code[j] === '\r') break;
+                j += 1;
+            }
+            absorbString(code.slice(i + 1, Math.max(i + 1, j - 1)));
+            i = j;
+            continue;
+        }
+
+        if (c === '-' && code[i + 1] === '-') {
+            let j = i + 2;
+            if (code[j] === '[') {
+                let eqs = 0;
+                let k = j + 1;
+                while (k < n && code[k] === '=') { eqs += 1; k += 1; }
+                if (k < n && code[k] === '[') {
+                    const close = ']' + '='.repeat(eqs) + ']';
+                    const end = code.indexOf(close, k + 1);
+                    if (end !== -1) { i = end + close.length; continue; }
+                }
+            }
+            const newline = code.indexOf('\n', j);
+            i = newline === -1 ? n : newline + 1;
+            continue;
+        }
+
+        if (/[A-Za-z_]/.test(c)) {
+            let j = i + 1;
+            while (j < n && /[A-Za-z0-9_]/.test(code[j])) j += 1;
+            const word = code.slice(i, j);
+            allNames.add(word);
+            const match = /^([A-Za-z][A-Za-z0-9]*)_[A-Za-z0-9_]+$/.exec(word);
+            if (match) {
+                const family = families.get(match[1]) || new Set();
+                family.add(word);
+                families.set(match[1], family);
+            }
+            i = j;
+            continue;
+        }
+
+        i += 1;
+    }
+
+    return { families, allNames, stringWords };
 }
 
 // ---------------------------------------------------------------------------
@@ -449,88 +640,36 @@ function buildDeadLua(nextName, rng, count) {
     return out;
 }
 
-// The engine emits every internal as `<prefix>_<short>` (`eai_C`, `eai_n`, ...).
-// That prefix is the cheapest fingerprint a deobfuscator can key on, so the
-// dominant prefixed family is redrawn from this build's name factory before the
-// chunk is compressed. Redrawing is scope-blind on purpose: the whole family is
-// renamed consistently, so locals, upvalues and shadowing keep their bindings.
-function collectPrefixedIdentifiers(code) {
-    const families = new Map();
-    let i = 0;
-    const n = code.length;
-    while (i < n) {
-        const c = code[i];
-        if (c === '[') {
-            let eqs = 0;
-            let j = i + 1;
-            while (j < n && code[j] === '=') { eqs++; j++; }
-            if (j < n && code[j] === '[') {
-                const close = ']' + '='.repeat(eqs) + ']';
-                const end = code.indexOf(close, j + 1);
-                if (end !== -1) { i = end + close.length; continue; }
-            }
-            i++; continue;
-        }
-        if (c === '"' || c === "'") {
-            let j = i + 1;
-            while (j < n) {
-                if (code[j] === '\\') { j += 2; continue; }
-                if (code[j] === c) { j++; break; }
-                if (code[j] === '\n' || code[j] === '\r') break;
-                j++;
-            }
-            i = j; continue;
-        }
-        if (c === '-' && code[i + 1] === '-') {
-            let j = i + 2;
-            if (code[j] === '[') {
-                let eqs = 0;
-                let k = j + 1;
-                while (k < n && code[k] === '=') { eqs++; k++; }
-                if (k < n && code[k] === '[') {
-                    const close = ']' + '='.repeat(eqs) + ']';
-                    const end = code.indexOf(close, k + 1);
-                    if (end !== -1) { i = end + close.length; continue; }
-                }
-            }
-            const newline = code.indexOf('\n', j);
-            i = newline === -1 ? n : newline + 1;
-            continue;
-        }
-        if (/[A-Za-z_]/.test(c)) {
-            let j = i + 1;
-            while (j < n && /[A-Za-z0-9_]/.test(code[j])) j++;
-            const word = code.slice(i, j);
-            const field = i > 0 && (code[i - 1] === '.' || code[i - 1] === ':');
-            if (!field) {
-                const match = /^([A-Za-z][A-Za-z0-9]*)_[A-Za-z0-9_]+$/.exec(word);
-                if (match) {
-                    const family = families.get(match[1]) || new Set();
-                    family.add(word);
-                    families.set(match[1], family);
-                }
-            }
-            i = j; continue;
-        }
-        i++;
-    }
-    return families;
-}
-
+// The engine emits every internal as `<prefix>_<short>` (`wky_C`, `wky_n`, ...)
+// and a prefixed family is the only structural hint left once the VM has been
+// generated. Every eligible family is redrawn from this build's name factory
+// before the chunk is compressed, not just the largest one. Families whose
+// members appear inside a string literal are skipped: those may be reached
+// through a string key, where renaming the code side alone would break the
+// binding. Redrawing is scope-blind on purpose: one family is renamed
+// consistently, so locals, upvalues and shadowing keep their bindings.
 function scrubPrometheusNames(code, nextName) {
-    let best = null;
-    for (const names of collectPrefixedIdentifiers(code).values()) {
-        if (names.size < 12) continue;
-        if (!best || names.size > best.size) best = names;
-    }
-    if (!best) return code;
+    const { families, stringWords } = collectLuaIdentifiers(code);
     const mapping = {};
-    for (const name of best) mapping[name] = nextName();
+    for (const [prefix, members] of families) {
+        if (members.size < 4) continue;
+        if (FAMILY_PREFIX_BLOCKLIST.has(prefix.toLowerCase())) continue;
+        let unsafe = false;
+        for (const name of members) {
+            if (stringWords.has(name)) { unsafe = true; break; }
+        }
+        if (unsafe) continue;
+        for (const name of members) mapping[name] = nextName();
+    }
+    if (Object.keys(mapping).length === 0) return code;
     return replaceCodeIdentifiers(code, mapping);
 }
 
 function prepareInner(source, rng, nextName, deadCount) {
-    let inner = disguiseWatermark(source);
+    // Comments are the cheapest place for a reader to recover intent, and the
+    // engine's watermark comment would survive into a dump otherwise.
+    let inner = stripLuaComments(source);
+    inner = disguiseWatermark(inner);
     inner = scrubPrometheusNames(inner, nextName);
 
     const shimName = nextName();
@@ -766,7 +905,6 @@ function buildLoader(o) {
     const lines = [];
     const add = line => lines.push(line);
     const spec = o.mask;
-    const layout = o.lz;
     const shiftDivisor = 2 ** spec.shift;
     // Inert arithmetic padding. The result is always non-negative, so the
     // branch is unreachable; it exists only to make each helper body differ
@@ -843,8 +981,8 @@ function buildLoader(o) {
     add(`do local ${cd.i}=1 while ${cd.i}<=${cd.count} do local ${cd.f}=${cd.list}[${cd.i}] if ${p.native}(${cd.f}) then ${p.load}=${cd.f} break end ${cd.i}=${cd.i}+1 end end`);
     const msgL = locals(['t', 'k', 'o', 'i']);
     add(`local ${p.msg}=function(${msgL.t},${msgL.k}) local ${msgL.o}="" for ${msgL.i}=1,#${msgL.t} do ${msgL.o}=${msgL.o}..${p.schar}((${msgL.t}[${msgL.i}]-${msgL.k})%256) end return ${p.error}(${msgL.o},0) end`);
-    add(`if not ${p.load} then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`if not ${p.sconcat} or not ${p.sunpack} then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+    add(`if not ${p.load} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`if not ${p.sconcat} or not ${p.sunpack} then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
 
     // A hook is how a dumper watches a chunk being built. The bootstrap's
@@ -859,10 +997,10 @@ function buildLoader(o) {
     add(`        if ${hk.ok} and ${hk.hook}~=nil then`);
     add(`            local ${hk.expected}=nil`);
     add(`            if ${p.getgenv} then local ${hk.envOk},${hk.env}=${p.pcall}(${p.getgenv}) if ${hk.envOk} and ${p.type}(${hk.env})=="table" then ${hk.expected}=${hk.env}._vxwd end end`);
-    add(`            if ${hk.expected}~=${hk.hook} or not ${p.sethook} or not ${p.native}(${p.sethook}) then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`            if ${hk.expected}~=${hk.hook} or not ${p.sethook} or not ${p.native}(${p.sethook}) then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`            local ${hk.sok}=${p.pcall}(${p.sethook})`);
     add(`            local ${hk.vok},${hk.still}=${p.pcall}(${p.gethook})`);
-    add(`            if not ${hk.sok} or not ${hk.vok} or ${hk.still}~=nil then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`            if not ${hk.sok} or not ${hk.vok} or ${hk.still}~=nil then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`            ${p.restore}[1],${p.restore}[2],${p.restore}[3]=${hk.hook},${hk.mask},${hk.count}`);
     add(`        end`);
     add(`    end`);
@@ -898,7 +1036,7 @@ function buildLoader(o) {
         add(`    local ${rb.players}=game:GetService("Players")`);
         add(`    return ${rb.players}~=nil`);
         add(`end)`);
-        add(`if not ${p.probe} then return ${p.msg}(${o.messages.roblox.table},${o.messages.roblox.key}) end`);
+        add(`if not ${p.probe} then ${p.msg}(${o.messages.roblox.table},${o.messages.roblox.key}) end`);
         add('');
     }
 
@@ -968,12 +1106,20 @@ function buildLoader(o) {
     // accepts reader functions the chunk is never assembled; Roblox's
     // loadstring takes strings only, so there the pieces are drained into one
     // string just before compiling.
-    const f = locals(['s', 'n', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j', 'litLeft']);
-    // b1/b2 are the two offset bytes in stream order; the expression turns them
-    // back into a distance using this build's byte order and bias.
-    const offsetExpr = (layout.bigEndian ? `${f.b1}*256+${f.b2}` : `${f.b2}*256+${f.b1}`)
-        + (layout.bias ? `+${layout.bias}` : '');
+    const f = locals(['s', 'n', 'h', 'mm', 'sp', 'fl', 'be', 'sb', 'win', 'wpos', 'produced', 'buf', 'bn', 'i', 'c', 'stop', 'v', 'len', 'b1', 'b2', 'off', 'j', 'litLeft']);
+    // The stream parameters are read from the payload header, so the loader
+    // text alone never describes the token layout. Anything outside the ranges
+    // the encoder can emit means the payload was damaged or rebuilt.
     add(`local ${p.inflate}=function(${f.s})`);
+    add(`    local ${f.h}=${p.sbyte}(${f.s},1)`);
+    add(`    if not ${f.h} or ${f.h}<8 or ${f.h}>64 then return nil end`);
+    add(`    local ${f.mm}=${p.sbyte}(${f.s},2)`);
+    add(`    local ${f.sp}=${p.sbyte}(${f.s},3)`);
+    add(`    local ${f.fl}=${p.sbyte}(${f.s},4)`);
+    add(`    if not ${f.mm} or ${f.mm}<2 or ${f.mm}>9 or not ${f.sp} or ${f.sp}<32 or ${f.sp}>200 or not ${f.fl} then return nil end`);
+    add(`    local ${f.be}=${p.floor}(${f.fl}/2)%2`);
+    add(`    local ${f.sb}=${f.fl}%2`);
+    add(`    ${f.s}=${p.ssub}(${f.s},${f.h}+1)`);
     add(`    local ${f.n}=${p.slen}(${f.s})`);
     add(`    local ${f.win}={}`);
     add(`    local ${f.wpos}=0`);
@@ -1012,14 +1158,15 @@ function buildLoader(o) {
     add(`            elseif ${f.i}<=${f.n} then`);
     add(`                local ${f.c}=${p.sbyte}(${f.s},${f.i})`);
     add(`                ${f.i}=${f.i}+1`);
-    add(`                if ${f.c}<${layout.splitPoint} then`);
+    add(`                if ${f.c}<${f.sp} then`);
     add(`                    ${f.stop}=${f.i}+${f.c}+1`);
     add(`                else`);
-    add(`                    ${f.j}=${f.c}-${layout.splitPoint - layout.minMatch}`);
+    add(`                    ${f.j}=${f.c}-(${f.sp}-${f.mm})`);
     add(`                    local ${f.b1}=${p.sbyte}(${f.s},${f.i}) or 0`);
     add(`                    local ${f.b2}=${p.sbyte}(${f.s},${f.i}+1) or 0`);
     add(`                    ${f.i}=${f.i}+2`);
-    add(`                    ${f.off}=${offsetExpr}`);
+    add(`                    if ${f.be}==1 then ${f.off}=${f.b1}*256+${f.b2} else ${f.off}=${f.b2}*256+${f.b1} end`);
+    add(`                    ${f.off}=${f.off}+${f.sb}`);
     add(`                    if ${f.off}<1 or ${f.off}>${f.produced} then return nil end`);
     add(`                end`);
     add(`            elseif ${f.bn}>0 then`);
@@ -1032,19 +1179,34 @@ function buildLoader(o) {
     add(`end`);
     add('');
 
+    // The first check is one of two unrelated rolling checksums, picked per
+    // build, so a kit that assumes Adler-32 rejects a valid payload and one
+    // that assumes a Fletcher sum fails on the next build.
     const ad = locals(['s', 'n', 'a', 'b', 'i']);
     add(`local ${p.adler}=function(${ad.s})`);
     add(`    local ${ad.n}=${p.slen}(${ad.s})`);
-    add(`    local ${ad.a}=1`);
-    add(`    local ${ad.b}=0`);
-    add(`    local ${ad.i}=1`);
     decoy().forEach(line => add(line));
-    add(`    while ${ad.i}<=${ad.n} do`);
-    add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65521`);
-    add(`        ${ad.b}=(${ad.b}+${ad.a})%65521`);
-    add(`        ${ad.i}=${ad.i}+1`);
-    add(`    end`);
-    add(`    return ${ad.b}*65536+${ad.a}`);
+    if (o.checksum.kind === 'fletcher') {
+        add(`    local ${ad.a}=65535`);
+        add(`    local ${ad.b}=65535`);
+        add(`    local ${ad.i}=1`);
+        add(`    while ${ad.i}<=${ad.n} do`);
+        add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65535`);
+        add(`        ${ad.b}=(${ad.b}+${ad.a})%65535`);
+        add(`        ${ad.i}=${ad.i}+1`);
+        add(`    end`);
+        add(`    return ${ad.b}*65536+${ad.a}`);
+    } else {
+        add(`    local ${ad.a}=1`);
+        add(`    local ${ad.b}=0`);
+        add(`    local ${ad.i}=1`);
+        add(`    while ${ad.i}<=${ad.n} do`);
+        add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65521`);
+        add(`        ${ad.b}=(${ad.b}+${ad.a})%65521`);
+        add(`        ${ad.i}=${ad.i}+1`);
+        add(`    end`);
+        add(`    return ${ad.b}*65536+${ad.a}`);
+    }
     add(`end`);
     add('');
 
@@ -1055,7 +1217,7 @@ function buildLoader(o) {
     add(`    local ${sm.i}=1`);
     decoy().forEach(line => add(line));
     add(`    while ${sm.i}<=${sm.n} do`);
-    add(`        ${sm.t}=(${sm.t}+${p.sbyte}(${sm.s},${sm.i})*${sm.i})%4294967296`);
+    add(`        ${sm.t}=(${sm.t}+${p.sbyte}(${sm.s},${sm.i})*(${sm.i}*${o.checksum.mul}%4294967296))%4294967296`);
     add(`        ${sm.i}=${sm.i}+1`);
     add(`    end`);
     add(`    return ${sm.t}`);
@@ -1109,23 +1271,34 @@ function buildLoader(o) {
     add('');
 
     add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
-    add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.src}=${p.decode}()`);
-    add(`if not ${p.src} then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`if not ${p.src} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     // Roblox's loadstring/load compile strings only, so a reader is an optional
     // upgrade, never a requirement. Probing with a function chunk refused every
     // real executor while passing Lua 5.4, where load accepts readers.
     add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},"return nil")`);
-    add(`if not ${p.okProbe} or ${p.type}(${p.probeFn})~="function" then return ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+    add(`if not ${p.okProbe} or ${p.type}(${p.probeFn})~="function" then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     const rd = locals(['ok', 'fn', 'canRead']);
     add(`local ${rd.ok},${rd.fn}=${p.pcall}(${p.load},function() return nil end)`);
     add(`local ${rd.canRead}=${rd.ok} and ${p.type}(${rd.fn})=="function"`);
     add(`local ${p.arg}=${p.inflate}(${p.src})`);
-    add(`if not ${p.check}() then return ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`if not ${p.arg} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`local ${p.fn}`);
     const cp = locals(['ok', 'fn', 'parts', 'i', 'piece']);
+    // The first piece is required: load() turns an empty stream into a valid
+    // chunk that does nothing, which would let a damaged payload exit silently.
+    const pr = locals(['first', 'used', 'read']);
     add(`if ${rd.canRead} then`);
-    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${p.arg},"=${o.chunkName}")`);
+    add(`    local ${pr.first}=${p.arg}()`);
+    add(`    if ${p.type}(${pr.first})~="string" then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`    local ${pr.used}=false`);
+    add(`    local ${pr.read}=function()`);
+    add(`        if not ${pr.used} then ${pr.used}=true return ${pr.first} end`);
+    add(`        return ${p.arg}()`);
+    add(`    end`);
+    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${pr.read},"=${o.chunkName}")`);
     add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
     add(`else`);
     add(`    local ${cp.parts},${cp.i}={},0`);
@@ -1134,11 +1307,12 @@ function buildLoader(o) {
     add(`        if ${cp.piece}==nil then break end`);
     add(`        ${cp.i}=${cp.i}+1 ${cp.parts}[${cp.i}]=${cp.piece}`);
     add(`    end`);
+    add(`    if ${cp.i}==0 then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${p.sconcat}(${cp.parts}),"=${o.chunkName}")`);
     add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
     add(`end`);
     add(`if not ${p.fn} then`);
-    add(`    return ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
+    add(`    ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add(`end`);
     add(`if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`);
     add(`return ${p.fn}()`);
@@ -1284,7 +1458,10 @@ function buildJunkCode(rng, count, options = {}) {
 
 function armorOnce(source, config) {
     const rng = createRng();
-    const nextName = createNameFactory(rng);
+    // Names are reserved from the chunk itself, so a rename can never shadow an
+    // identifier that already exists in the Prometheus output.
+    const reserved = collectLuaIdentifiers(source).allNames;
+    const nextName = createNameFactory(rng, reserved);
 
     const inner = prepareInner(source, rng, nextName, config.dead);
     const innerBytes = stringToBytes(inner);
@@ -1300,8 +1477,26 @@ function armorOnce(source, config) {
     };
     const compressed = lzssCompress(innerBytes, depth, layout.minMatch, layout.splitPoint, layout);
 
+    // The token layout travels inside the payload, so the delivered loader never
+    // states how the stream was compressed. Bytes 2-4 are the parameters the
+    // inflater validates at runtime; the rest is inert padding.
+    const headerLength = 8 + randomInt(rng, 9);
+    const buffer = new Uint8Array(headerLength + compressed.length);
+    buffer[0] = headerLength;
+    buffer[1] = layout.minMatch;
+    buffer[2] = layout.splitPoint;
+    // The loader reads bigEndian from bit 1 and bias from bit 0.
+    buffer[3] = (layout.bigEndian ? 2 : 0) | (layout.bias ? 1 : 0);
+    for (let k = 4; k < headerLength; k += 1) buffer[k] = randomInt(rng, 256);
+    buffer.set(compressed, headerLength);
+
+    const checksum = {
+        kind: rng() < 0.5 ? 'adler' : 'fletcher',
+        mul: 1 + randomInt(rng, 65535)
+    };
+
     const spec = maskSpec(rng);
-    let payload = compressed;
+    let payload = buffer;
     const passKeys = [];
     const passes = Math.max(1, config.passes);
     for (let i = 0; i < passes; i++) {
@@ -1364,7 +1559,7 @@ function armorOnce(source, config) {
         chunkName,
         passKeys,
         mask: spec,
-        lz: layout,
+        checksum,
         order: orderSpec,
         flush: {
             b64: 96 + randomInt(rng, 224),
@@ -1373,9 +1568,9 @@ function armorOnce(source, config) {
         // Luau and Lua 5.4 both cap table.unpack near 7000 results, and each
         // piece reaches string.char through it.
         readPiece: 1024 + randomInt(rng, 5120),
-        compressedLength: compressed.length,
-        checksum1: adler32(compressed),
-        checksum2: weightedSum(compressed),
+        compressedLength: buffer.length,
+        checksum1: checksum.kind === 'adler' ? adler32(buffer) : fletcher32(buffer),
+        checksum2: weightedSumScaled(buffer, checksum.mul),
         dead: config.dead,
         robloxCheck: config.robloxCheck,
         opaqueA,

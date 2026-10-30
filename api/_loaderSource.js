@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { deriveBootstrapSeed } from './_loaderToken.js';
 import { xorKeystream } from './_loaderShield.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
@@ -114,12 +114,33 @@ function buildLoaderBanner() {
     ].join('\n');
 }
 
+const LOADER_NAME_SYLLABLES = [
+    'ka', 'zu', 'mo', 're', 'ti', 'vo', 'ne', 'ra', 'sh', 'ul',
+    'ix', 'om', 'ep', 'an', 'yi', 'qu', 'da', 'po', 'fi', 'xe'
+];
+
+// A fixed `_0x` prefix is itself a fingerprint, so the naming scheme is drawn
+// per build: hex, syllable pairs, or random base36. The counter keeps every
+// name unique and the leading underscore keeps them clear of globals.
 function createLoaderNames() {
     const used = new Set();
+    const draw = () => randomBytes(1)[0];
+    const style = draw() % 3;
+    let prefix;
+    if (style === 0) {
+        prefix = `_0x${randomBytes(3).toString('hex')}`;
+    } else if (style === 1) {
+        prefix = `_${LOADER_NAME_SYLLABLES[draw() % LOADER_NAME_SYLLABLES.length]}`
+            + `${LOADER_NAME_SYLLABLES[draw() % LOADER_NAME_SYLLABLES.length]}`;
+    } else {
+        prefix = `_${randomBytes(4).toString('base64url').replace(/[^A-Za-z0-9]/g, 'z')}`;
+    }
+    let counter = 0;
     return () => {
         let name;
         do {
-            name = `_0x${randomBytes(4).toString('hex')}`;
+            counter += 1;
+            name = `${prefix}${counter.toString(36)}`;
         } while (used.has(name));
         used.add(name);
         return name;
@@ -132,31 +153,86 @@ function createLoaderNames() {
 // decrypt when the runtime has been instrumented, so a dumped body cannot be
 // read or replayed with a hooked loadstring/HttpGet. The gate response releases
 // the seed, so a captured body alone still cannot be decrypted offline.
+// Fabricated loader tokens carry the same structure as issued ones (base64url
+// JSON + base64url HMAC), so a captured request log cannot separate a decoy
+// from a revoked credential. Their signature is random, so the gate answers
+// 410 before it ever touches Firestore.
+const FAKE_TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomTokenString(length) {
+    const bytes = randomBytes(length);
+    let out = '';
+    for (let index = 0; index < length; index += 1) {
+        out += FAKE_TOKEN_ALPHABET[bytes[index] % FAKE_TOKEN_ALPHABET.length];
+    }
+    return out;
+}
+
+function fakeLoaderToken(keyMaterial) {
+    const payload = {
+        version: 1,
+        vaultId: randomTokenString(20),
+        keyHash: keyMaterial ? createHash('sha256').update(String(keyMaterial)).digest('hex') : '',
+        vaultVersion: 0,
+        expiresAt: Date.now() + 10_000,
+        nonce: randomBytes(16).toString('base64url'),
+        binding: randomBytes(16).toString('hex')
+    };
+    return `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${randomBytes(32).toString('base64url')}`;
+}
+
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
     const sealed = obfuscateLoaderSource(source);
-    const cipher = xorKeystream(`${innerBanner}\n${sealed}`, seed).toString('base64url');
-    const gateUrl = new URL('/api/raw', origin);
-    gateUrl.searchParams.set('id', id);
-    gateUrl.searchParams.set('token', token);
-    gateUrl.searchParams.set('format', 'token-check');
-    if (key) gateUrl.searchParams.set('key', key);
+    // The marker only surfaces after the gate releases the seed, so a body
+    // decrypted with a stale or fabricated seed fails loudly instead of
+    // handing the executor garbage to compile.
+    const bootMark = `--[[vb:${randomBytes(6).toString('hex')}]]`;
+    const cipher = xorKeystream(`${bootMark}\n${innerBanner}\n${sealed}`, seed).toString('base64url');
 
-    // The URL never appears as a literal. It is XORed with a per-build key and
-    // stored as base64url, then rebuilt next to the gate request.
-    const urlKey = randomBytes(4).readUInt32BE(0) || 1;
-    const urlCipher = xorKeystream(gateUrl.href, urlKey).toString('base64url');
+    const buildGateUrl = ({ vaultId, token: gateToken, key: gateKey }) => {
+        const url = new URL('/api/raw', origin);
+        url.searchParams.set('id', vaultId);
+        url.searchParams.set('token', gateToken);
+        url.searchParams.set('format', 'token-check');
+        if (key) url.searchParams.set('key', gateKey || key);
+        url.searchParams.set('n', randomBytes(9).toString('hex'));
+        return url.href;
+    };
+
+    // No URL appears as a literal. Each is XORed with its own 32-bit key and
+    // stored as base64url, then rebuilt right before its request.
+    const sealUrl = href => {
+        const urlKey = randomBytes(4).readUInt32BE(0) || 1;
+        return { cipher: xorKeystream(href, urlKey).toString('base64url'), key: urlKey };
+    };
+
+    const decoyKey = randomBytes(32).toString('hex');
+    const realUrl = sealUrl(buildGateUrl({ vaultId: id, token, key }));
+    const decoyUrls = [
+        // Unknown vault + unknown key: a dead end that still looks like a load.
+        // Keyless vaults keep an empty keyHash so the shape matches the real one.
+        sealUrl(buildGateUrl({ vaultId: randomTokenString(20), token: fakeLoaderToken(key ? decoyKey : ''), key: key ? decoyKey : '' })),
+        // Real vault, real key, forged token: reads like a retry of the gate.
+        sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key })),
+        sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key }))
+    ];
+    const decoyTable = decoyUrls
+        .map(entry => `{"${entry.cipher}",0x${entry.key.toString(16)}}`)
+        .join(',');
     const chunkName = randomBytes(6).toString('hex');
 
     const name = createLoaderNames();
     const n = {
         data: name(), map: name(), alpha: name(), index: name(), b64: name(), xor: name(),
-        cap: name(), guard: name(), deny: name(), url: name(), ok: name(), res: name(),
+        cap: name(), guard: name(), deny: name(), exp: name(), mark: name(),
+        url: name(), ok: name(), res: name(), sealed: name(), dec: name(),
+        fire: name(), spawn: name(), item: name(), slot: name(),
         seed: name(), loader: name(), chunk: name(), err: name(),
         lstr: name(), ld: name(), gv: name(), gf: name(), dmp: name(), envs: name(), adde: name(),
         env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
-        code: name(), arg: name(), pos: name()
+        code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name()
     };
     const cap = i => `${n.cap}[${i}]`;
 
@@ -222,7 +298,7 @@ local ${n.ld}=load
 local ${n.gv}=type(getgenv)=="function" and getgenv or nil
 local ${n.gf}=type(getfenv)=="function" and getfenv or nil
 local ${n.dmp}=type(string.dump)=="function" and string.dump or nil
-local function ${n.guard}()
+local function ${n.guard}(${n.own})
 if ${cap(14)} and (loadstring or load)~=${cap(11)} then return false end
 if ${cap(13)} and game.HttpGet~=${cap(12)} then return false end
 if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} then return false end
@@ -231,7 +307,7 @@ if ${cap(15)} and (type(getgenv)~="function" or getgenv~=${cap(15)}) then return
 if ${cap(16)} and (type(getfenv)~="function" or getfenv~=${cap(16)}) then return false end
 if ${cap(17)} and (type(setfenv)~="function" or setfenv~=${cap(17)}) then return false end
 if ${cap(19)} and (bit32.bxor~=${cap(19)}.bxor or bit32.lshift~=${cap(19)}.lshift or bit32.rshift~=${cap(19)}.rshift) then return false end
-if ${cap(18)} then local ok,h=${cap(7)}(${cap(18)}) if ok and h~=nil then return false end end
+if ${cap(18)} then local ok,h=${cap(7)}(${cap(18)}) if ok and h~=nil and h~=${n.own} then return false end end
 if ${cap(22)} and (type(debug)~="table" or debug.sethook~=${cap(22)}) then return false end
 if ${n.dmp} and string.dump~=${n.dmp} then return false end
 local ${n.envs}={}
@@ -255,20 +331,31 @@ end
 return true
 end
 local ${n.deny}="Voided: Doing this is not allowed."
+local ${n.exp}="[VoidedX] Error: Loader expired. Get a new loader from the website and try again."
+local ${n.mark}="${bootMark}"
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
-local ${n.url}=${n.xor}(${n.b64}("${urlCipher}"),0x${urlKey.toString(16)})
-local ${n.ok},${n.res}=${cap(7)}(function() return game:HttpGet(${n.url}) end)
-if not ${n.ok} or type(${n.res})~="string" then return ${cap(8)}("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
+local ${n.sealed}={${decoyTable}}
+local ${n.dec}={}
+for ${n.slot}=1,#${n.sealed} do ${n.dec}[${n.slot}]=${n.xor}(${n.b64}(${n.sealed}[${n.slot}][1]),${n.sealed}[${n.slot}][2]) end
+local ${n.fire}=function(${n.item}) ${cap(7)}(function() return ${cap(12)}(game,${n.item}) end) end
+local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
+if ${n.spawn} then ${cap(7)}(${n.spawn},${n.fire},${n.dec}[1]) ${cap(7)}(${n.spawn},${n.fire},${n.dec}[2]) else ${n.fire}(${n.dec}[1]) end
+local ${n.url}=${n.xor}(${n.b64}("${realUrl.cipher}"),0x${realUrl.key.toString(16)})
+local ${n.ok},${n.res}=${cap(7)}(function() return ${cap(12)}(game,${n.url}) end)
+if ${n.spawn} then ${cap(7)}(${n.spawn},${n.fire},${n.dec}[3]) else ${n.fire}(${n.dec}[2]) end
+if ${cap(13)} and game.HttpGet~=${cap(12)} then return ${cap(8)}(${n.deny},0) end
+if not ${n.ok} or type(${n.res})~="string" then return ${cap(8)}(${n.exp},0) end
 local ${n.seed}=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
-if not ${n.seed} then return ${cap(8)}("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.",0) end
+if not ${n.seed} then return ${cap(8)}(${n.exp},0) end
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
 local ${n.loader}=${cap(11)}
 if ${n.ld} and ${n.ld}~=${n.loader} then local ok,f=${cap(7)}(${n.ld},"return 1") if ok and type(f)=="function" then ${n.loader}=${n.ld} end end
 if type(${n.loader})~="function" then return ${cap(8)}("[VoidedX] This executor does not support loadstring.",0) end
 local ${n.code}=${n.xor}(${n.b64}(${n.data}),${cap(21)}(${n.seed},16))
+if ${cap(3)}(${n.code},1,#${n.mark})~=${n.mark} then return ${cap(8)}(${n.exp},0) end
 local ${n.arg}=${n.code}
-local okProbe,probeFn=${cap(7)}(${n.loader},function() return nil end)
-if okProbe and type(probeFn)=="function" then
+local ${n.probeOk},${n.probeFn}=${cap(7)}(${n.loader},function() return nil end)
+if ${n.probeOk} and type(${n.probeFn})=="function" then
 local ${n.pos}=0
 ${n.arg}=function()
 if ${n.pos}>=#${n.code} then return nil end
@@ -307,6 +394,7 @@ if type(task)=="table" and type(task.delay)=="function" then ${cap(7)}(task.dela
 else ${cap(7)}(${n.sh}) end
 end
 end
+if not ${n.guard}(${n.wd}) then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
 return ${n.chunk}()`;
 }
 

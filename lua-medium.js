@@ -229,7 +229,8 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
 
     const absoluteMode = level === 'absolute';
     const fastMode = level === 'fast';
-    const tamperCheck = absoluteMode || protection.tamperCheck === true;
+    // Anti-tamper stays on unless a caller explicitly turns it off.
+    const tamperCheck = absoluteMode || protection.tamperCheck !== false;
     // Every obfuscated output now goes through the VM pipeline. The two-layer
     // ceiling limits runtime overhead and keeps larger copies vault-friendly.
     const vmProtection = true;
