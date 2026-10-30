@@ -73,7 +73,7 @@ function randomInt(rng, maxExclusive) {
 // `_0x` convention that most dumpers key on is only used by some builds.
 function createNameFactory(rng, reserved) {
     const used = reserved instanceof Set ? new Set(reserved) : new Set();
-    const style = randomInt(rng, 4);
+    const style = randomInt(rng, 6);
     const emit = {
         0: () => `_0x${randomInt(rng, 0xffffff).toString(16).padStart(6, '0')}`,
         1: () => {
@@ -100,6 +100,20 @@ function createNameFactory(rng, reserved) {
                     : vowels[randomInt(rng, vowels.length)];
             }
             return `${name}${randomInt(rng, 10)}`;
+        },
+        // The `l0li0lil0ili0` look: names made only from characters that render
+        // identically in most editors, so a dump is painful to read, retype or
+        // search for, and two builds never share an identifier.
+        4: () => {
+            let name = '_';
+            const count = 7 + randomInt(rng, 8);
+            for (let i = 0; i < count; i++) name += CONFUSABLE_TAILS[randomInt(rng, CONFUSABLE_TAILS.length)];
+            return name;
+        },
+        5: () => {
+            let name = 'l' + Array.from({ length: 3 + randomInt(rng, 4) }, () => CONFUSABLE_TAILS[randomInt(rng, CONFUSABLE_TAILS.length)]).join('');
+            name += 'I' + Array.from({ length: 3 + randomInt(rng, 5) }, () => CONFUSABLE_TAILS[randomInt(rng, CONFUSABLE_TAILS.length)]).join('');
+            return name;
         }
     }[style];
     return () => {
@@ -1077,6 +1091,21 @@ function buildLoader(o) {
     add(`        local ${ck.ok},${ck.hook}=${p.pcall}(${p.gethook})`);
     add(`        if not ${ck.ok} or ${ck.hook}~=nil then return false end`);
     add(`    end`);
+    // Debug-independent hook probe: on a host whose string.dump rejects the
+    // engine's own C functions, a dump that *succeeds* means the entry is a Lua
+    // closure, i.e. a hookfunction wrapper. The probe calibrates itself on a
+    // known builtin first, so a host that dumps anything never trips it.
+    const dp = locals(['calib']);
+    add(`    if ${p.sDump} then`);
+    add(`        local ${dp.calib}=${p.pcall}(${p.sDump},${p.sbyte})`);
+    add(`        if not ${dp.calib} then`);
+    add(`            if ${p.pcall}(${p.sDump},${p.load}) then return false end`);
+    add(`            if ${p.pcall}(${p.sDump},${p.error}) then return false end`);
+    add(`            if ${p.pcall}(${p.sDump},${p.sconcat}) then return false end`);
+    add(`            if ${p.pcall}(${p.sDump},${p.type}) then return false end`);
+    add(`            if ${p.pcall}(${p.sDump},${p.schar}) then return false end`);
+    add(`        end`);
+    add(`    end`);
     add(`    if ${p.pcall}(${p.load},nil) then return false end`);
     add(`    if ${p.pcall}(${p.schar},256) then return false end`);
     add(`    if ${p.pcall}(${p.schar},-1) then return false end`);
@@ -1346,74 +1375,209 @@ function buildLoader(o) {
     add('');
     flushBlock('decode');
 
-    add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
-    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`local ${p.src}=${p.decode}()`);
-    add(`if not ${p.src} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    // Roblox's loadstring/load compile strings only, so a reader is an optional
-    // upgrade, never a requirement. Probing with a function chunk refused every
-    // real executor while passing Lua 5.4, where load accepts readers.
-    add(`local ${p.okProbe},${p.probeFn}=${p.pcall}(${p.load},"return nil")`);
-    add(`if not ${p.okProbe} or ${p.type}(${p.probeFn})~="function" then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
-    const rd = locals(['ok', 'fn', 'canRead']);
-    add(`local ${rd.ok},${rd.fn}=${p.pcall}(${p.load},function() return nil end)`);
-    add(`local ${rd.canRead}=${rd.ok} and ${p.type}(${rd.fn})=="function"`);
-    add(`local ${p.arg}=${p.inflate}(${p.src})`);
-    add(`if not ${p.arg} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`local ${p.fn}`);
-    const cp = locals(['ok', 'fn', 'parts', 'i', 'piece']);
-    // The first piece is required: load() turns an empty stream into a valid
-    // chunk that does nothing, which would let a damaged payload exit silently.
-    const pr = locals(['first', 'used', 'read']);
-    add(`if ${rd.canRead} then`);
-    add(`    local ${pr.first}=${p.arg}()`);
-    add(`    if ${p.type}(${pr.first})~="string" then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`    local ${pr.used}=false`);
-    add(`    local ${pr.read}=function()`);
-    add(`        if not ${pr.used} then ${pr.used}=true return ${pr.first} end`);
-    add(`        return ${p.arg}()`);
-    add(`    end`);
-    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${pr.read},"=${o.chunkName}")`);
-    add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
-    add(`else`);
-    add(`    local ${cp.parts},${cp.i}={},0`);
-    add(`    while true do`);
-    add(`        local ${cp.piece}=${p.arg}()`);
-    add(`        if ${cp.piece}==nil then break end`);
-    add(`        ${cp.i}=${cp.i}+1 ${cp.parts}[${cp.i}]=${cp.piece}`);
-    add(`    end`);
-    add(`    if ${cp.i}==0 then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`    local ${cp.ok},${cp.fn}=${p.pcall}(${p.load},${p.sconcat}(${cp.parts}),"=${o.chunkName}")`);
-    add(`    if ${cp.ok} then ${p.fn}=${cp.fn} end`);
-    add(`end`);
-    add(`if not ${p.fn} then`);
-    add(`    ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
-    add(`end`);
-    // The compiler is told a per-build chunk name. A host that re-loads the
-    // decoded text under a different name (an emulator that feeds the chunk to
-    // its own load) reports an "=..." source that does not match, while any
-    // host that ignores the name reports something else entirely and is left
-    // alone. Only the exact mismatch is treated as tampering.
-    const ci = locals(['ok', 's', 'src']);
-    add(`if ${p.info} then`);
-    add(`    local ${ci.ok},${ci.s}=${p.pcall}(${p.info},${p.fn},"S")`);
-    add(`    if ${ci.ok} and ${p.type}(${ci.s})=="table" then`);
-    add(`        local ${ci.src}=${ci.s}.source or ${ci.s}.short_src`);
-    add(`        if ${p.type}(${ci.src})=="string" and ${p.ssub}(${ci.src},1,1)=="=" and ${p.slen}(${ci.src})<256 and ${ci.src}~="="..${luaString(o.chunkName)} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
-    add(`    end`);
-    add(`end`);
-    // Re-check after the chunk is compiled. Anything installed while the decode
-    // ran (a hook, a wrapped string.dump) is caught here, immediately before the
-    // payload is allowed to execute.
-    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    // The runtime sequence is data: every step is a closure in a shuffled table,
+    // the order lives in a sealed byte program, and the program is checksummed
+    // before a single step runs, so the pipeline is never visible as code.
+    const rt = locals(['state', 'ops', 'prog', 'raw', 'pc', 'step', 'res', 'h', 'k', 'b']);
+    const slotsByName = {};
+    {
+        const pool = [];
+        for (let i = 1; i <= 140; i += 1) pool.push(i);
+        for (let i = pool.length - 1; i > 0; i -= 1) {
+            const swap = randomInt(rng, i + 1);
+            const held = pool[i];
+            pool[i] = pool[swap];
+            pool[swap] = held;
+        }
+        for (const role of ['src', 'arg', 'fn', 'canRead', 'first', 'used', 'read', 'parts', 'i', 'piece']) {
+            slotsByName[role] = pool.pop();
+        }
+    }
+    const slot = role => `${rt.state}[${slotsByName[role]}]`;
+    const executorMark = Array.from({ length: 6 }, () => '0123456789abcdef'[randomInt(rng, 16)]).join('');
+
+    const hDecode = locals(['d']);
+    const hProbe = locals(['ok', 'fn']);
+    const hInflate = locals(['ok', 'fn', 'a']);
+    const hCompile = locals(['fn', 'ok', 'res', 'first', 'used', 'read', 'parts', 'i', 'piece']);
+    const hTrip = locals(['ok', 's', 'src']);
     const lateA = 19 + randomInt(rng, 300);
     const lateB = 23 + randomInt(rng, 300);
     const lateC = 13 + randomInt(rng, 900);
     const lateM = 47 + randomInt(rng, 120);
-    add(`if (${lateA}*${lateB}+${lateC})%${lateM}~=${(lateA * lateB + lateC) % lateM} then return end`);
-    add(`if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`);
-    add(`return ${p.fn}()`);
+
+    const stepBodies = new Map();
+    stepBodies.set('gate', [
+        `if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return false end`,
+        `if not ${p.check}() then return false end`,
+        `return true`
+    ]);
+    stepBodies.set('decode', [
+        `local ${hDecode.d}=${p.decode}()`,
+        `if not ${hDecode.d} then return false end`,
+        `${slot('src')}=${hDecode.d}`,
+        `return true`
+    ]);
+    stepBodies.set('probe', [
+        `local ${hProbe.ok},${hProbe.fn}=${p.pcall}(${p.load},"return nil")`,
+        `if not ${hProbe.ok} or ${p.type}(${hProbe.fn})~="function" then return "${executorMark}" end`,
+        `return true`
+    ]);
+    stepBodies.set('inflate', [
+        `local ${hInflate.ok},${hInflate.fn}=${p.pcall}(${p.load},function() return nil end)`,
+        `${slot('canRead')}=${hInflate.ok} and ${p.type}(${hInflate.fn})=="function"`,
+        `local ${hInflate.a}=${p.inflate}(${slot('src')})`,
+        `if not ${hInflate.a} then return false end`,
+        `${slot('arg')}=${hInflate.a}`,
+        `if not ${p.check}() then return false end`,
+        `return true`
+    ]);
+    stepBodies.set('compile', [
+        `local ${hCompile.fn}`,
+        `if ${slot('canRead')} then`,
+        `local ${hCompile.first}=${slot('arg')}()`,
+        `if ${p.type}(${hCompile.first})~="string" then return false end`,
+        `${slot('used')}=false`,
+        `${slot('read')}=function() if not ${slot('used')} then ${slot('used')}=true return ${hCompile.first} end return ${slot('arg')}() end`,
+        `local ${hCompile.ok},${hCompile.res}=${p.pcall}(${p.load},${slot('read')},"=${o.chunkName}")`,
+        `if ${hCompile.ok} then ${hCompile.fn}=${hCompile.res} end`,
+        `else`,
+        `${slot('parts')}={} ${slot('i')}=0`,
+        `while true do`,
+        `local ${hCompile.piece}=${slot('arg')}()`,
+        `if ${hCompile.piece}==nil then break end`,
+        `${slot('i')}=${slot('i')}+1 ${slot('parts')}[${slot('i')}]=${hCompile.piece}`,
+        `end`,
+        `if ${slot('i')}==0 then return false end`,
+        `local ${hCompile.ok},${hCompile.res}=${p.pcall}(${p.load},${p.sconcat}(${slot('parts')}),"=${o.chunkName}")`,
+        `if ${hCompile.ok} then ${hCompile.fn}=${hCompile.res} end`,
+        `end`,
+        `if not ${hCompile.fn} then return false end`,
+        `${slot('fn')}=${hCompile.fn}`,
+        `return true`
+    ]);
+    stepBodies.set('trip', [
+        `if ${p.info} then`,
+        `local ${hTrip.ok},${hTrip.s}=${p.pcall}(${p.info},${slot('fn')},"S")`,
+        `if ${hTrip.ok} and ${p.type}(${hTrip.s})=="table" then`,
+        `local ${hTrip.src}=${hTrip.s}.source or ${hTrip.s}.short_src`,
+        `if ${p.type}(${hTrip.src})=="string" and ${p.ssub}(${hTrip.src},1,1)=="=" and ${p.slen}(${hTrip.src})<256 and ${hTrip.src}~="=${o.chunkName}" then return false end`,
+        `end`,
+        `end`,
+        `return true`
+    ]);
+    stepBodies.set('recheck', [
+        `if not ${p.check}() then return false end`,
+        `if (${lateA}*${lateB}+${lateC})%${lateM}~=${(lateA * lateB + lateC) % lateM} then return false end`,
+        `return true`
+    ]);
+    stepBodies.set('restore', [
+        `if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`,
+        `return true`
+    ]);
+    stepBodies.set('noopA', [`return true`]);
+    stepBodies.set('noopB', [`return true`]);
+
+    const opcodeKeys = Array.from(stepBodies.keys());
+    const opcodePool = [];
+    for (let i = 1; i <= 180; i += 1) opcodePool.push(i);
+    for (let i = opcodePool.length - 1; i > 0; i -= 1) {
+        const swap = randomInt(rng, i + 1);
+        const held = opcodePool[i];
+        opcodePool[i] = opcodePool[swap];
+        opcodePool[swap] = held;
+    }
+    const opcode = {};
+    for (const key of opcodeKeys) opcode[key] = opcodePool.pop();
+
+    const program = ['gate', 'decode', 'probe', 'inflate', 'compile', 'trip', 'recheck', 'restore'];
+    if (rng() < 0.7) program.splice(1 + randomInt(rng, program.length - 1), 0, 'noopA');
+    if (rng() < 0.4) program.splice(1 + randomInt(rng, program.length - 1), 0, 'noopB');
+
+    // Two dispatcher shapes, chosen per build. Linear reads the program in order
+    // and relabels it as it runs. Chained stores each step with the byte index of
+    // its successor and scatters the pairs, so the order in the file is not the
+    // order that executes and no reader can list the steps without simulating.
+    const chained = rng() < 0.5;
+    let programBytes;
+    let entryPoint = 1;
+    if (chained) {
+        const cells = program.map((key, index) => index);
+        for (let index = cells.length - 1; index > 0; index -= 1) {
+            const swap = randomInt(rng, index + 1);
+            const held = cells[index];
+            cells[index] = cells[swap];
+            cells[swap] = held;
+        }
+        const placed = new Map();
+        cells.forEach((logical, cell) => placed.set(logical, cell * 2 + 1));
+        const bytes = new Uint8Array(program.length * 2);
+        program.forEach((key, index) => {
+            const at = placed.get(index);
+            bytes[at - 1] = opcode[key];
+            bytes[at] = index + 1 < program.length ? placed.get(index + 1) : 0;
+        });
+        programBytes = bytes;
+        entryPoint = placed.get(0);
+    } else {
+        programBytes = Uint8Array.from(program.map(key => opcode[key]));
+    }
+    const programKey = randomInt(rng, MASK_CAP);
+    const programText = base64Encode(applyMask(programBytes, programKey, o.mask), o.alphabet);
+    let programSum = 0;
+    for (const byte of programBytes) programSum = (programSum * 131 + byte) % 4294967296;
+
+    add(`local ${rt.state}={}`);
+    add(`local ${rt.ops}={}`);
+    for (const key of [...opcodeKeys].sort(() => rng() - 0.5)) {
+        add(`${rt.ops}[${opcode[key]}]=function()`);
+        for (const line of stepBodies.get(key)) add(line);
+        add(`end`);
+    }
+    add(`local ${rt.raw}=${p.unmask}(${p.b64}("${programText}"),${programKey})`);
+    add(`local ${rt.prog},${rt.h}={},0`);
+    add(`for ${rt.k}=1,#${rt.raw} do local ${rt.b}=${p.sbyte}(${rt.raw},${rt.k}) ${rt.h}=(${rt.h}*131+${rt.b})%4294967296 ${rt.prog}[${rt.k}]=${rt.b} end`);
+    add(`if ${rt.h}~=${programSum} then return end`);
+    // The dispatcher relabels upcoming steps while it runs: the handler table
+    // and the program bytes are swapped in pairs, so the mapping a live dump sees
+    // at step k is not the mapping at step k+1 and no static read of the table
+    // matches what executes.
+    const swapMod = 2 + randomInt(rng, 3);
+    const swapBias = randomInt(rng, 97);
+    add(`local ${rt.t0}=os.clock()`);
+    if (chained) {
+        const extra = locals(['next', 'count']);
+        add(`local ${extra.next}=${entryPoint}`);
+        add(`local ${extra.count}=0`);
+        add(`while ${extra.next}~=0 do`);
+        add(`    local ${rt.step}=${rt.ops}[${rt.prog}[${extra.next}]]`);
+        add(`    if not ${rt.step} then return end`);
+        add(`    ${extra.count}=${extra.count}+1 if ${extra.count}>${program.length * 3 + 8} then return end`);
+        add(`    local ${rt.res}=${rt.step}()`);
+        add(`    if ${rt.res}==false then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+        add(`    if ${rt.res}=="${executorMark}" then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+        add(`    ${extra.next}=${rt.prog}[${extra.next}+1]`);
+        add(`end`);
+    } else {
+        add(`for ${rt.pc}=1,#${rt.prog} do`);
+        add(`    local ${rt.step}=${rt.ops}[${rt.prog}[${rt.pc}]]`);
+        add(`    if not ${rt.step} then return end`);
+        add(`    local ${rt.res}=${rt.step}()`);
+        add(`    if ${rt.res}==false then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+        add(`    if ${rt.res}=="${executorMark}" then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
+        add(`    if (${rt.pc}*${swapBias})%${swapMod}==0 then`);
+        add(`        local ${rt.b},${rt.step}=${rt.prog}[${rt.pc}+1],${rt.prog}[${rt.pc}+2]`);
+        add(`        if ${rt.b} and ${rt.step} and ${rt.b}~=${rt.step} then`);
+        add(`            ${rt.ops}[${rt.b}],${rt.ops}[${rt.step}]=${rt.ops}[${rt.step}],${rt.ops}[${rt.b}]`);
+        add(`            ${rt.prog}[${rt.pc}+1],${rt.prog}[${rt.pc}+2]=${rt.step},${rt.b}`);
+        add(`        end`);
+        add(`    end`);
+        add(`end`);
+    }
+    // A trace that single-steps the decoder blows the budget long before a real
+    // start does, so a run that took far too long is refused.
+    add(`if os.clock()-${rt.t0}>${6 + randomInt(rng, 6)} then return end`);
+    add(`return ${slot('fn')}()`);
     flushBlock('tail');
 
     const text = new Map(parts.map(part => [part.key, part.text]));
@@ -1847,3 +2011,4 @@ export function armorVoidedxSource(source, options = {}) {
 
 export const ARMOR_LEVELS = Object.freeze(Object.keys(LEVEL_CONFIG));
 export { MAX_ARMOR_LAYERS };
+export { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk };

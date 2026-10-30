@@ -250,15 +250,21 @@ function randomBody(length) {
 // A fixed `_0x` prefix is itself a fingerprint, so the naming scheme is drawn
 // per build: hex, syllable pairs, base36, or single letters. The counter keeps
 // names unique and every style starts with an underscore.
+const CONFUSABLE = 'lI1O0oQ5S2Z8B6G9qg';
+
 function createNameFactory(used) {
-    const style = Math.floor(Math.random() * 4);
+    const style = Math.floor(Math.random() * 6);
     const prefix = style === 0
         ? `_0x${Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')}`
         : style === 1
             ? `_${pick(NAME_SYLLABLES)}${pick(NAME_SYLLABLES)}`
             : style === 2
                 ? `_${Math.random().toString(36).slice(2, 9)}`
-                : `_${'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]}`;
+            : style === 3
+                ? `_${'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]}`
+                : style === 4
+                    ? `_${Array.from({ length: 7 + Math.floor(Math.random() * 8) }, () => CONFUSABLE[Math.floor(Math.random() * CONFUSABLE.length)]).join('')}`
+                    : `l${Array.from({ length: 4 + Math.floor(Math.random() * 5) }, () => CONFUSABLE[Math.floor(Math.random() * CONFUSABLE.length)]).join('')}I${Array.from({ length: 3 + Math.floor(Math.random() * 4) }, () => CONFUSABLE[Math.floor(Math.random() * CONFUSABLE.length)]).join('')}`;
     let counter = 0;
     return () => {
         let name;

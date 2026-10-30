@@ -9,7 +9,15 @@ export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
-export const OBFUSCATION_PROFILE_VERSION = 26;
+export const OBFUSCATION_PROFILE_VERSION = 30;
+
+// The engine stamps every build with a "VoidedX:<id>" watermark. The armor
+// rewrites the statement but keeps the id, so the marker can still be read back
+// and stored with the vault: a leaked copy then identifies the save it came from.
+export function extractWatermark(source) {
+    const match = String(source || '').match(/VoidedX[^0-9]{0,10}(\d{4,20})/);
+    return match ? match[1] : '';
+}
 export const MAX_VAULT_SOURCE_BYTES = 2 * 1024 * 1024;
 export const MAX_OBFUSCATION_SOURCE_BYTES = 4 * 1024 * 1024;
 // Keep ordinary scripts directly readable in Firestore for owner audits.
