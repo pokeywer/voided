@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const LOADER_TOKEN_TTL_MS = 10_000;
 
@@ -15,8 +15,22 @@ function sign(payload) {
     return createHmac('sha256', secret()).update(payload).digest('base64url');
 }
 
+// Keep key fingerprints opaque even if a signed token is inspected. A plain
+// SHA-256 digest would let someone test guesses for short or predictable keys.
 function keyDigest(key) {
-    return key ? createHash('sha256').update(String(key)).digest('hex') : '';
+    if (!key) return '';
+    return createHmac('sha256', secret())
+        .update('loader-key-fingerprint\0')
+        .update(String(key), 'utf8')
+        .digest('hex');
+}
+
+function safeHexEqual(left, right) {
+    if (typeof left !== 'string' || typeof right !== 'string'
+        || !/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) return false;
+    const a = Buffer.from(left, 'hex');
+    const b = Buffer.from(right, 'hex');
+    return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function normalizeVaultVersion(version) {
@@ -59,7 +73,8 @@ export function traceForSession(value) {
 export function issueLoaderToken(vaultId, key = '', vaultVersion = 0, binding = '') {
     const expiresAt = Date.now() + LOADER_TOKEN_TTL_MS;
     const data = {
-        version: 1,
+        // Version 2 uses a server-keyed key fingerprint instead of a public hash.
+        version: 2,
         vaultId: String(vaultId),
         keyHash: keyDigest(key),
         vaultVersion: normalizeVaultVersion(vaultVersion),
@@ -74,7 +89,9 @@ export function issueLoaderToken(vaultId, key = '', vaultVersion = 0, binding = 
 export function verifyLoaderToken(token, vaultId, key = '', expectedVaultVersion, req = null) {
     if (typeof token !== 'string' || token.length > 2048) return false;
     const [payload, suppliedSignature, extra] = token.split('.');
-    if (!payload || !suppliedSignature || extra !== undefined) return false;
+    if (!payload || !suppliedSignature || extra !== undefined
+        || !/^[A-Za-z0-9_-]+$/.test(payload)
+        || !/^[A-Za-z0-9_-]+$/.test(suppliedSignature)) return false;
     try {
         const expected = Buffer.from(sign(payload));
         const supplied = Buffer.from(suppliedSignature);
@@ -85,15 +102,26 @@ export function verifyLoaderToken(token, vaultId, key = '', expectedVaultVersion
         const bindingMatches = !data.binding
             || !bindingEnabled()
             || !req
-            || data.binding === requestBinding(req);
-        return data.version === 1
+            || (typeof data.binding === 'string'
+                && /^[a-f0-9]{32}$/i.test(data.binding)
+                && data.binding === requestBinding(req));
+        const expectedKeyHash = keyDigest(key);
+        const keyMatches = expectedKeyHash
+            ? safeHexEqual(data.keyHash, expectedKeyHash)
+            : data.keyHash === '';
+        return data.version === 2
+            && typeof data.vaultId === 'string'
+            && data.vaultId.length > 0
             && data.vaultId === String(vaultId)
-            && data.keyHash === keyDigest(key)
+            && keyMatches
+            && Number.isSafeInteger(data.vaultVersion)
+            && data.vaultVersion >= 0
             && versionMatches
             && bindingMatches
-            && Number.isFinite(data.expiresAt)
+            && Number.isSafeInteger(data.expiresAt)
             && Date.now() < data.expiresAt
-            && typeof data.nonce === 'string';
+            && typeof data.nonce === 'string'
+            && /^[A-Za-z0-9_-]{22}$/.test(data.nonce);
     } catch {
         return false;
     }

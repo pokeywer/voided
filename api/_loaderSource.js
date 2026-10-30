@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { deriveBootstrapSeed } from './_loaderToken.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { obfuscateLoaderSource } from './_loaderObfuscator.js';
+import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk } from '../lua-voidedx-armor.js';
 
 export function luaString(str) {
     const escaped = String(str)
@@ -180,7 +181,7 @@ function randomTokenString(length) {
 
 function fakeLoaderToken(keyMaterial) {
     const payload = {
-        version: 1,
+        version: 2,
         vaultId: randomTokenString(20),
         keyHash: keyMaterial ? createHash('sha256').update(String(keyMaterial)).digest('hex') : '',
         vaultVersion: 0,
@@ -345,6 +346,8 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         .join(',');
     const probeOrder = bootShuffle(gateList.map((entry, index) => index + 1)).join(',');
     const chunkName = randomBytes(6).toString('hex');
+    const sessionId = randomBytes(8).toString('hex');
+    const fileTag = createHash('sha256').update(`${id} ${key} ${token}`).digest('hex').slice(0, 10);
     const sboxLiteral = encodeBootAlphabet(sbox, alphabet);
 
     const nx = createLoaderNames();
@@ -374,7 +377,10 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         ['bit32', 'type(bit32)=="table" and bit32 or nil'],
         ['tostring', 'type(tostring)=="function" and tostring or nil'],
         ['tonumber', 'type(tonumber)=="function" and tonumber or nil'],
-        ['sethook', 'type(debug)=="table" and debug.sethook or nil']
+        ['sethook', 'type(debug)=="table" and debug.sethook or nil'],
+        ['writefile', 'type(writefile)=="function" and writefile or nil'],
+        ['readfile', 'type(readfile)=="function" and readfile or nil'],
+        ['isfile', 'type(isfile)=="function" and isfile or nil']
     ];
     const capSlots = bootShuffle(Array.from({ length: 64 }, (_, index) => index + 1)).slice(0, capEntries.length);
     const capSlot = {};
@@ -386,7 +392,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     for (const role of [
         'data', 'sealed', 'order', 'decoded', 'seed', 'fails', 'done', 'deny', 'expired',
         'net', 'mark', 'tail', 'step', 'chain', 'spawn', 'wait', 'loader', 'code', 'arg',
-        'chunk', 'wd', 'off', 'env'
+        'chunk', 'wd', 'off', 'env', 'session', 'beacon'
     ]) {
         sl[role] = slotPool.pop();
     }
@@ -499,6 +505,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`local ${n.dmp}=type(string.dump)=="function" and string.dump or nil`);
 
     const G = loc('own', 'envs', 'add');
+    const DP = loc('calib');
     add(`local ${n.guard}=function(${G.own})`);
     add(`if ${cap('loadStable')} and (loadstring or load)~=${cap('load')} then return false end`);
     add(`if ${cap('httpStable')} and game.HttpGet~=${cap('http')} then return false end`);
@@ -511,6 +518,16 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`if ${cap('gethook')} then local ok,h=pcall(${cap('gethook')}) if ok and h~=nil and h~=${G.own} then return false end end`);
     add(`if ${cap('sethook')} and (type(debug)~="table" or debug.sethook~=${cap('sethook')}) then return false end`);
     add(`if ${n.dmp} and string.dump~=${n.dmp} then return false end`);
+    add(`if ${n.dmp} then`);
+    add(`local ${DP.calib}=${cap('pcall')}(${n.dmp},${cap('byte')})`);
+    add(`if not ${DP.calib} then`);
+    add(`if ${cap('pcall')}(${n.dmp},${cap('load')}) then return false end`);
+    add(`if ${cap('pcall')}(${n.dmp},${cap('error')}) then return false end`);
+    add(`if ${cap('pcall')}(${n.dmp},${cap('concat')}) then return false end`);
+    add(`if ${cap('pcall')}(${n.dmp},${cap('type')}) then return false end`);
+    add(`if ${cap('pcall')}(${n.dmp},${cap('char')}) then return false end`);
+    add(`end`);
+    add(`end`);
     add(`local ${G.envs}={}`);
     add(`local function ${G.add}(e)`);
     add(`if type(e)~="table" then return end`);
@@ -548,6 +565,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`${st('chain')}=${chainSeed}`);
     add(`${st('spawn')}=type(task)=="table" and task.spawn or nil`);
     add(`${st('wait')}=type(task)=="table" and task.wait or nil`);
+    add(`${st('session')}=${luaString(sessionId)}`);
 
     const P = loc('i', 'ok', 'res', 'hit');
     add(`local ${n.probeOne}=function(${P.i})`);
@@ -667,13 +685,27 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     H.set('run', [
         `return ${st('chunk')}()`
     ]);
+    // Executor file APIs, when they exist, are used only to leave a per-run
+    // marker: nothing about the payload, the key or the session is stored, so a
+    // file on disk can never be turned into a dump.
+    const BS = loc('path', 'old', 'ok');
+    H.set('beacon', [
+        `if ${cap('writefile')} and ${cap('readfile')} and ${cap('isfile')} then`,
+        `pcall(function()`,
+        `local ${BS.path}="voidedx_${fileTag}.mx"`,
+        `local ${BS.old}=${cap('isfile')}(${BS.path}) and ${cap('readfile')}(${BS.path}) or nil`,
+        `if type(${BS.old})=="string" and ${cap('sub')}(${BS.old},1,32)==${st('session')} then return end`,
+        `${cap('writefile')}(${BS.path},${st('session')})`,
+        `end)`,
+        `end`
+    ]);
     H.set('noop', []);
 
     const order = ['guardA', 'openUrls', ...bootShuffle(['probe', 'select']), 'guardB', 'decode', 'assemble', 'compile', 'hook', 'guardC'];
     if (randomBytes(1)[0] % 2 === 0) {
         order.splice(1 + (randomBytes(1)[0] % (order.length - 1)), 0, 'noop');
     }
-    order.push('run');
+    order.push('beacon', 'run');
 
     const opcodeNames = bootShuffle(Array.from(H.keys()));
     const opcodePool = bootShuffle(Array.from({ length: 120 }, (_, index) => index + 1)).slice(0, opcodeNames.length);
@@ -681,7 +713,14 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     opcodeNames.forEach((name, index) => { opcode[name] = opcodePool[index]; });
 
     add(`local ${n.handlerTable}={}`);
+    const junkFactory = createConfusableFactory(() => randomBytes(4).readUInt32BE(0) / 4294967296);
+    const junkRng = () => randomBytes(4).readUInt32BE(0) / 4294967296;
     for (const name of bootShuffle(Array.from(H.keys()))) {
+        if (randomBytes(1)[0] % 3 === 0) {
+            add(randomBytes(1)[0] % 2 === 0
+                ? buildStateMachineJunk(junkRng, junkFactory)
+                : buildRegisterMachineJunk(junkRng, junkFactory));
+        }
         add(`${n.handlerTable}[${opcode[name]}]=function()`);
         for (const line of H.get(name)) add(line);
         add(`end`);
@@ -692,18 +731,28 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const seqLiteral = sealBlob(seqBuffer, seqKey);
     const seqSum = bootChainSum(seqBuffer);
 
-    const Q = loc('raw', 'i', 'f', 'v');
+    const Q = loc('raw', 'i', 'f', 'v', 'a', 'b', 't0');
     add(`local ${Q.raw}=${n.dec}("${seqLiteral}",${seqKey})`);
     add(`if ${n.sum}(${Q.raw})~=${seqSum} then error(${st('deny')},0) end`);
     add(`local ${n.seq}={}`);
     add(`for ${Q.i}=1,#${Q.raw} do ${n.seq}[${Q.i}]=string.byte(${Q.raw},${Q.i}) end`);
+    const swapMod = 2 + randomBytes(1)[0] % 3;
     add(`local ${n.main}=function()`);
+    add(`local ${Q.t0}=os.clock()`);
     add(`for ${Q.i}=1,#${n.seq} do`);
     add(`local ${Q.f}=${n.handlerTable}[${n.seq}[${Q.i}]]`);
     add(`if not ${Q.f} then return error(${st('deny')},0) end`);
     add(`local ${Q.v}=${Q.f}()`);
     add(`if ${Q.v}~=nil then return ${Q.v} end`);
+    add(`if ${Q.i}%${swapMod}==0 then`);
+    add(`local ${Q.a},${Q.b}=${n.seq}[${Q.i}+1],${n.seq}[${Q.i}+2]`);
+    add(`if ${Q.a} and ${Q.b} and ${Q.a}~=${Q.b} then`);
+    add(`${n.handlerTable}[${Q.a}],${n.handlerTable}[${Q.b}]=${n.handlerTable}[${Q.b}],${n.handlerTable}[${Q.a}]`);
+    add(`${n.seq}[${Q.i}+1],${n.seq}[${Q.i}+2]=${Q.b},${Q.a}`);
     add(`end`);
+    add(`end`);
+    add(`end`);
+    add(`if os.clock()-${Q.t0}>${6 + randomBytes(1)[0] % 6} then return error(${st('deny')},0) end`);
     add(`end`);
     add(`return ${n.main}()`);
 

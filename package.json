@@ -6,5 +6,8 @@
   "dependencies": {
     "firebase": "^10.13.0",
     "firebase-admin": "^12.6.0"
+  },
+  "scripts": {
+    "test:loader-token": "node --test tests/loader-token.test.js"
   }
 }
