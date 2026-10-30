@@ -447,7 +447,7 @@
         'Constants rewritten every build.': 'Constantes reescritas a cada build.',
         'Watermark tied to the build seed.': 'Marca d\'água ligada à semente do build.',
         'Payload split and nested in shells.': 'Payload dividido e aninhado em camadas.',
-        'Source': 'Código', 'Build': 'Montagem', 'Result': 'Resultado', 'PROFILE 25': 'PERFIL 25', 'THIS BUILD': 'ESTE BUILD',
+        'Source': 'Código', 'Build': 'Montagem', 'Result': 'Resultado', 'PROFILE 26': 'PERFIL 26', 'THIS BUILD': 'ESTE BUILD',
         'Choose file': 'Escolher arquivo', 'Drop a .lua or .txt here, or paste below': 'Solte um .lua ou .txt aqui ou cole abaixo',
         'Paste': 'Colar', 'Clear': 'Limpar', 'Reset': 'Redefinir', 'Reset the build options': 'Redefinir as opções de montagem',
         'Paste the clipboard into the editor': 'Colar a área de transferência no editor', 'Clear the source editor': 'Limpar o editor de código',

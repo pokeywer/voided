@@ -1077,6 +1077,9 @@ function buildLoader(o) {
     add(`        local ${ck.ok},${ck.hook}=${p.pcall}(${p.gethook})`);
     add(`        if not ${ck.ok} or ${ck.hook}~=nil then return false end`);
     add(`    end`);
+    add(`    if ${p.pcall}(${p.load},nil) then return false end`);
+    add(`    if ${p.pcall}(${p.schar},256) then return false end`);
+    add(`    if ${p.pcall}(${p.schar},-1) then return false end`);
     add(`    return true`);
     add(`end`);
     add('');
@@ -1434,8 +1437,21 @@ function buildLoader(o) {
     }
     const middle = rng() < 0.5 ? free.concat(chain) : chain.concat(free);
     const order = ['builtins', ...middle, 'data', 'order', 'decode', 'tail'];
-    return order
-        .map(key => text.get(key) || '')
+    // Confusing filler wedged between real blocks: one to three state or
+    // register machines after a block, so the decode pipeline is never a run of
+    // neighbouring definitions a reader can skim top to bottom.
+    const fillerFactory = createConfusableFactory(rng);
+    const interleaved = [];
+    for (const key of order) {
+        interleaved.push({ block: key });
+        if (key === 'builtins' || key === 'decode' || key === 'tail') continue;
+        const extra = rng() < 0.35 ? 1 + randomInt(rng, 3) : 0;
+        for (let i = 0; i < extra; i += 1) {
+            interleaved.push({ junk: rng() < 0.6 ? buildStateMachineJunk(rng, fillerFactory) : buildRegisterMachineJunk(rng, fillerFactory) });
+        }
+    }
+    return interleaved
+        .map(entry => (entry.junk !== undefined ? entry.junk : text.get(entry.block) || ''))
         .filter(Boolean)
         .join('\n');
 }
@@ -1817,12 +1833,12 @@ export function armorVoidedxSource(source, options = {}) {
     const bannerRng = createRng();
     // Filler scales with strength as well as the junk setting: heavier copies
     // carry state machines and register machines, not just one-line literals.
-    const junkBoost = { fast: 0.7, low: 0.9, medium: 1.2, high: 1.5, absolute: 1.8 }[level] || 1.2;
+    const junkBoost = { fast: 0.8, low: 0.9, medium: 1.1, high: 1.3, absolute: 1.5 }[level] || 1.1;
     const junkBase = options.junk === 'off'
         ? 0
         : options.junk === 'heavy'
-            ? 48 + randomInt(bannerRng, 26)
-            : 22 + randomInt(bannerRng, 14);
+            ? 26 + randomInt(bannerRng, 13)
+            : 12 + randomInt(bannerRng, 9);
     const junkCount = junkBase ? Math.max(1, Math.round(junkBase * junkBoost)) : 0;
     return buildBanner() + '\n'
         + (junkCount ? buildJunkCode(bannerRng, junkCount, { comments: options.comments !== false }) + '\n' : '')
