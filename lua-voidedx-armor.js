@@ -910,8 +910,18 @@ function buildLoader(o) {
         for (const key of keys) out[key] = nextName();
         return out;
     };
-    const lines = [];
+    // The emitted loader is assembled from independent blocks and then placed
+    // in a per-build order, so two copies of the same payload do not share a
+    // statement layout. Only blocks with no dependency on each other may move;
+    // the chain msg -> native -> load -> hook -> check stays in that order
+    // because each step consumes the previous one.
+    const parts = [];
+    let lines = [];
     const add = line => lines.push(line);
+    const flushBlock = key => {
+        parts.push({ key, text: lines.join('\n') });
+        lines = [];
+    };
     const spec = o.mask;
     const shiftDivisor = 2 ** spec.shift;
     // Inert arithmetic padding. The result is always non-negative, so the
@@ -948,6 +958,7 @@ function buildLoader(o) {
     // Keeping the builtin means a replacement is caught the same way as a
     // hooked load, and the capture path is closed even when load was missed.
     add(`local ${p.sDump}=string.dump`);
+    flushBlock('builtins');
 
     // A loader is only trusted while it is still the engine's own C function.
     // Every dump starts with hookfunction(loadstring) or hookfunction(load),
@@ -969,6 +980,7 @@ function buildLoader(o) {
     add(`    if ${nv.ok2} and ${p.type}(${nv.s})=="string" then return ${nv.s}=="[C]" end`);
     add(`    return true`);
     add(`end`);
+    flushBlock('native');
 
     // Loaders from every environment the executor exposes: a dumper often hooks
     // the executor global_env but leaves getrenv()/_G pristine, so the first
@@ -992,11 +1004,13 @@ function buildLoader(o) {
     add(`end`);
     add(`local ${p.load}=nil`);
     add(`do local ${cd.i}=1 while ${cd.i}<=${cd.count} do local ${cd.f}=${cd.list}[${cd.i}] if ${p.native}(${cd.f}) then ${p.load}=${cd.f} break end ${cd.i}=${cd.i}+1 end end`);
+    flushBlock('load');
     const msgL = locals(['t', 'k', 'o', 'i']);
     add(`local ${p.msg}=function(${msgL.t},${msgL.k}) local ${msgL.o}="" for ${msgL.i}=1,#${msgL.t} do ${msgL.o}=${msgL.o}..${p.schar}((${msgL.t}[${msgL.i}]-${msgL.k})%256) end return ${p.error}(${msgL.o},0) end`);
     add(`if not ${p.load} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
     add(`if not ${p.sconcat} or not ${p.sunpack} then ${p.msg}(${o.messages.executor.table},${o.messages.executor.key}) end`);
     add('');
+    flushBlock('msg');
 
     // A hook is how a dumper watches a chunk being built. The bootstrap's
     // watchdog is the only acceptable one, and it is removed for the decode and
@@ -1018,15 +1032,35 @@ function buildLoader(o) {
     add(`        end`);
     add(`    end`);
     add(`end`);
+    flushBlock('hook');
 
     add(buildDeadLua(nextName, rng, o.dead));
     add('');
+    flushBlock('dead');
 
     const ck = locals(['ok', 'hook']);
+    const cc = locals(['ok', 'env', 's', 't', 'm']);
     add(`local ${p.check}=function()`);
     add(`    if string.byte~=${p.sbyte} or string.char~=${p.schar} or string.sub~=${p.ssub} or string.len~=${p.slen} then return false end`);
     add(`    if table.concat~=${p.sconcat} then return false end`);
     add(`    if rawequal~=${p.rawequal} then return false end`);
+    // Same primitives, reached through a second channel. A wrapper installed
+    // only on the chunk's own environment leaves the other one intact, so the
+    // two views disagree and the run stops before any payload is built.
+    for (const channel of ['getfenv', 'getgenv']) {
+        add(`    if ${p.type}(${channel})=="function" then`);
+        add(`        local ${cc.ok},${cc.env}=${p.pcall}(${channel}${channel === 'getfenv' ? ',0' : ''})`);
+        add(`        if ${cc.ok} and ${p.type}(${cc.env})=="table" then`);
+        add(`            local ${cc.s}=${cc.env}.string`);
+        add(`            if ${p.type}(${cc.s})=="table" and (${cc.s}.byte~=${p.sbyte} or ${cc.s}.char~=${p.schar} or ${cc.s}.sub~=${p.ssub} or ${cc.s}.len~=${p.slen}) then return false end`);
+        add(`            local ${cc.t}=${cc.env}.table`);
+        add(`            if ${p.type}(${cc.t})=="table" and ${cc.t}.concat~=nil and ${cc.t}.concat~=${p.sconcat} then return false end`);
+        add(`            if ${p.type}(${cc.t})=="table" and ${cc.t}.unpack~=nil and ${cc.t}.unpack~=${p.sunpack} then return false end`);
+        add(`            local ${cc.m}=${cc.env}.math`);
+        add(`            if ${p.type}(${cc.m})=="table" and ${cc.m}.floor~=nil and ${cc.m}.floor~=${p.floor} then return false end`);
+        add(`        end`);
+        add(`    end`);
+    }
     add(`    if not ${p.native}(${p.pcall}) or not ${p.native}(${p.error}) or not ${p.native}(${p.rawequal}) or not ${p.native}(${p.load}) then return false end`);
     // Decoding primitives are checked too: hooking table.concat or string.char
     // captures the decoded chunk just as easily as hooking the loader itself.
@@ -1046,6 +1080,7 @@ function buildLoader(o) {
     add(`    return true`);
     add(`end`);
     add('');
+    flushBlock('check');
 
     if (o.robloxCheck) {
         const rb = locals(['players']);
@@ -1056,23 +1091,29 @@ function buildLoader(o) {
         add(`if not ${p.probe} then ${p.msg}(${o.messages.roblox.table},${o.messages.roblox.key}) end`);
         add('');
     }
+    flushBlock('roblox');
 
     const mapL = locals(['i']);
     add(`local ${p.alpha}=${splitAlphabetLiteral(o.alphabet, o.rng)}`);
     add(`local ${p.map}={}`);
     add(`do local ${mapL.i}=1 while ${mapL.i}<=64 do ${p.map}[${p.sbyte}(${p.alpha},${mapL.i})]=${mapL.i}-1 ${mapL.i}=${mapL.i}+1 end end`);
     add('');
+    flushBlock('map');
 
     const b = locals(['s', 'n', 'out', 'on', 'buf', 'bn', 'i', 'c1', 'c2', 'c3', 'c4', 'v']);
+    // Two equivalent loop shapes per build. Both walk the string in four-byte
+    // steps; a tool that pattern-matches the `while i<=n` decode loop from a
+    // previous build does not match this one.
+    const b64For = rng() < 0.5;
     add(`local ${p.b64}=function(${b.s})`);
     add(`    local ${b.n}=${p.slen}(${b.s})`);
     add(`    local ${b.out}={}`);
     add(`    local ${b.on}=0`);
     add(`    local ${b.buf}={}`);
     add(`    local ${b.bn}=0`);
-    add(`    local ${b.i}=1`);
+    if (!b64For) add(`    local ${b.i}=1`);
     decoy().forEach(line => add(line));
-    add(`    while ${b.i}<=${b.n} do`);
+    add(b64For ? `    for ${b.i}=1,${b.n},4 do` : `    while ${b.i}<=${b.n} do`);
     add(`        local ${b.c1}=${p.map}[${p.sbyte}(${b.s},${b.i})] or 0`);
     add(`        local ${b.c2}=${p.map}[${p.sbyte}(${b.s},${b.i}+1)] or 0`);
     add(`        local ${b.c3}=${p.map}[${p.sbyte}(${b.s},${b.i}+2)] or 0`);
@@ -1082,12 +1123,13 @@ function buildLoader(o) {
     add(`        if ${b.i}+2<=${b.n} then ${b.bn}=${b.bn}+1 ${b.buf}[${b.bn}]=${p.floor}(${b.v}/256)%256 end`);
     add(`        if ${b.i}+3<=${b.n} then ${b.bn}=${b.bn}+1 ${b.buf}[${b.bn}]=${b.v}%256 end`);
     add(`        if ${b.bn}>=${o.flush.b64} then ${b.on}=${b.on}+1 ${b.out}[${b.on}]=${p.schar}(${p.sunpack}(${b.buf},1,${b.bn})) ${b.buf}={} ${b.bn}=0 end`);
-    add(`        ${b.i}=${b.i}+4`);
+    if (!b64For) add(`        ${b.i}=${b.i}+4`);
     add(`    end`);
     add(`    if ${b.bn}>0 then ${b.on}=${b.on}+1 ${b.out}[${b.on}]=${p.schar}(${p.sunpack}(${b.buf},1,${b.bn})) end`);
     add(`    return ${p.sconcat}(${b.out})`);
     add(`end`);
     add('');
+    flushBlock('b64');
 
     const u = locals(['s', 'key', 'n', 'out', 'on', 'buf', 'bn', 'st', 'i', 'ch', 'k']);
     const decodeExpr = spec.kind === 1
@@ -1102,20 +1144,22 @@ function buildLoader(o) {
     add(`    local ${u.buf}={}`);
     add(`    local ${u.bn}=0`);
     add(`    local ${u.st}=${u.key}%4294967296`);
-    add(`    local ${u.i}=1`);
+    const unmaskFor = rng() < 0.5;
+    if (!unmaskFor) add(`    local ${u.i}=1`);
     decoy().forEach(line => add(line));
-    add(`    while ${u.i}<=${u.n} do`);
+    add(unmaskFor ? `    for ${u.i}=1,${u.n} do` : `    while ${u.i}<=${u.n} do`);
     add(`        local ${u.ch}=${p.sbyte}(${u.s},${u.i})`);
     add(`        local ${u.k}=${p.floor}(${u.st}/${shiftDivisor})%256`);
     add(`        ${u.bn}=${u.bn}+1 ${u.buf}[${u.bn}]=${decodeExpr}`);
     add(`        ${u.st}=(${u.st}*${spec.mul}+${spec.inc}+${u.ch}*${spec.pMul}+${u.i}*${spec.qMul})%4294967296`);
     add(`        if ${u.bn}>=${o.flush.unmask} then ${u.on}=${u.on}+1 ${u.out}[${u.on}]=${p.schar}(${p.sunpack}(${u.buf},1,${u.bn})) ${u.buf}={} ${u.bn}=0 end`);
-    add(`        ${u.i}=${u.i}+1`);
+    if (!unmaskFor) add(`        ${u.i}=${u.i}+1`);
     add(`    end`);
     add(`    if ${u.bn}>0 then ${u.on}=${u.on}+1 ${u.out}[${u.on}]=${p.schar}(${p.sunpack}(${u.buf},1,${u.bn})) end`);
     add(`    return ${p.sconcat}(${u.out})`);
     add(`end`);
     add('');
+    flushBlock('unmask');
 
     // The inflater is a pull iterator: it keeps the window and the token
     // position, emits at most one piece per call, and resumes mid-run when a
@@ -1195,51 +1239,56 @@ function buildLoader(o) {
     add(`    end`);
     add(`end`);
     add('');
+    flushBlock('inflate');
 
     // The first check is one of two unrelated rolling checksums, picked per
     // build, so a kit that assumes Adler-32 rejects a valid payload and one
     // that assumes a Fletcher sum fails on the next build.
     const ad = locals(['s', 'n', 'a', 'b', 'i']);
+    const adFor = rng() < 0.5;
     add(`local ${p.adler}=function(${ad.s})`);
     add(`    local ${ad.n}=${p.slen}(${ad.s})`);
     decoy().forEach(line => add(line));
     if (o.checksum.kind === 'fletcher') {
         add(`    local ${ad.a}=65535`);
         add(`    local ${ad.b}=65535`);
-        add(`    local ${ad.i}=1`);
-        add(`    while ${ad.i}<=${ad.n} do`);
+        if (!adFor) add(`    local ${ad.i}=1`);
+        add(adFor ? `    for ${ad.i}=1,${ad.n} do` : `    while ${ad.i}<=${ad.n} do`);
         add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65535`);
         add(`        ${ad.b}=(${ad.b}+${ad.a})%65535`);
-        add(`        ${ad.i}=${ad.i}+1`);
+        if (!adFor) add(`        ${ad.i}=${ad.i}+1`);
         add(`    end`);
         add(`    return ${ad.b}*65536+${ad.a}`);
     } else {
         add(`    local ${ad.a}=1`);
         add(`    local ${ad.b}=0`);
-        add(`    local ${ad.i}=1`);
-        add(`    while ${ad.i}<=${ad.n} do`);
+        if (!adFor) add(`    local ${ad.i}=1`);
+        add(adFor ? `    for ${ad.i}=1,${ad.n} do` : `    while ${ad.i}<=${ad.n} do`);
         add(`        ${ad.a}=(${ad.a}+${p.sbyte}(${ad.s},${ad.i}))%65521`);
         add(`        ${ad.b}=(${ad.b}+${ad.a})%65521`);
-        add(`        ${ad.i}=${ad.i}+1`);
+        if (!adFor) add(`        ${ad.i}=${ad.i}+1`);
         add(`    end`);
         add(`    return ${ad.b}*65536+${ad.a}`);
     }
     add(`end`);
     add('');
+    flushBlock('adler');
 
     const sm = locals(['s', 'n', 't', 'i']);
+    const smFor = rng() < 0.5;
     add(`local ${p.sum2}=function(${sm.s})`);
     add(`    local ${sm.n}=${p.slen}(${sm.s})`);
     add(`    local ${sm.t}=0`);
-    add(`    local ${sm.i}=1`);
+    if (!smFor) add(`    local ${sm.i}=1`);
     decoy().forEach(line => add(line));
-    add(`    while ${sm.i}<=${sm.n} do`);
+    add(smFor ? `    for ${sm.i}=1,${sm.n} do` : `    while ${sm.i}<=${sm.n} do`);
     add(`        ${sm.t}=(${sm.t}+${p.sbyte}(${sm.s},${sm.i})*(${sm.i}*${o.checksum.mul}%4294967296))%4294967296`);
-    add(`        ${sm.i}=${sm.i}+1`);
+    if (!smFor) add(`        ${sm.i}=${sm.i}+1`);
     add(`    end`);
     add(`    return ${sm.t}`);
     add(`end`);
     add('');
+    flushBlock('sum2');
 
     add(`local ${p.segs}={`);
     for (const segment of o.segments) add(`    ${luaString(segment.b64)},`);
@@ -1250,6 +1299,7 @@ function buildLoader(o) {
     add(`local ${p.sum1}=${numericExpr(o.checksum1, o.rng)}`);
     add(`local ${p.sum3}=${numericExpr(o.checksum2, o.rng)}`);
     add('');
+    flushBlock('data');
 
     // Segment order is rebuilt at runtime from a seed, so the file carries no
     // readable permutation table and the seed alone is useless without the
@@ -1267,6 +1317,7 @@ function buildLoader(o) {
     add(`    end`);
     add(`end`);
     add('');
+    flushBlock('order');
 
     const d = locals(['parts', 'i', 'data', 'k']);
     add(`local ${p.decode}=function()`);
@@ -1283,9 +1334,14 @@ function buildLoader(o) {
     add(`    if ${p.slen}(${d.data})~=${p.compLen} then return nil end`);
     add(`    if ${p.adler}(${d.data})~=${p.sum1} then return nil end`);
     add(`    if ${p.sum2}(${d.data})~=${p.sum3} then return nil end`);
+    // One byte from a random offset, compared to the value the encoder saw.
+    // A patched copy that skips the length and checksum branches still lands on
+    // this constraint, and the position changes on every build.
+    add(`    if ${p.sbyte}(${d.data},${o.canary.pos})~=${o.canary.value} then return nil end`);
     add(`    return ${d.data}`);
     add(`end`);
     add('');
+    flushBlock('decode');
 
     add(`if (${o.opaqueA}*${o.opaqueB}+${o.opaqueC})%${o.opaqueM}~=${o.opaqueExpected} then return end`);
     add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
@@ -1331,6 +1387,19 @@ function buildLoader(o) {
     add(`if not ${p.fn} then`);
     add(`    ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add(`end`);
+    // The compiler is told a per-build chunk name. A host that re-loads the
+    // decoded text under a different name (an emulator that feeds the chunk to
+    // its own load) reports an "=..." source that does not match, while any
+    // host that ignores the name reports something else entirely and is left
+    // alone. Only the exact mismatch is treated as tampering.
+    const ci = locals(['ok', 's', 'src']);
+    add(`if ${p.info} then`);
+    add(`    local ${ci.ok},${ci.s}=${p.pcall}(${p.info},${p.fn},"S")`);
+    add(`    if ${ci.ok} and ${p.type}(${ci.s})=="table" then`);
+    add(`        local ${ci.src}=${ci.s}.source or ${ci.s}.short_src`);
+    add(`        if ${p.type}(${ci.src})=="string" and ${p.ssub}(${ci.src},1,1)=="=" and ${p.slen}(${ci.src})<256 and ${ci.src}~="="..${luaString(o.chunkName)} then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    add(`    end`);
+    add(`end`);
     // Re-check after the chunk is compiled. Anything installed while the decode
     // ran (a hook, a wrapped string.dump) is caught here, immediately before the
     // payload is allowed to execute.
@@ -1342,8 +1411,33 @@ function buildLoader(o) {
     add(`if (${lateA}*${lateB}+${lateC})%${lateM}~=${(lateA * lateB + lateC) % lateM} then return end`);
     add(`if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`);
     add(`return ${p.fn}()`);
+    flushBlock('tail');
 
-    return lines.join('\n');
+    const text = new Map(parts.map(part => [part.key, part.text]));
+    // load must be selected before the start check inside the message block runs,
+    // and the message helper must exist before the hook block can use it.
+    const chain = ['native', 'load', 'msg', 'hook', 'check'];
+    const free = ['dead', 'roblox', 'map', 'b64', 'unmask', 'inflate', 'adler', 'sum2'];
+    for (let i = free.length - 1; i > 0; i -= 1) {
+        const j = randomInt(rng, i + 1);
+        const tmp = free[i];
+        free[i] = free[j];
+        free[j] = tmp;
+    }
+    // b64 reads the byte-keyed alphabet map, so it can move anywhere except
+    // ahead of the block that builds that map.
+    const b64At = free.indexOf('b64');
+    const mapAt = free.indexOf('map');
+    if (b64At !== -1 && mapAt !== -1 && b64At < mapAt) {
+        free.splice(b64At, 1);
+        free.splice(free.indexOf('map') + 1, 0, 'b64');
+    }
+    const middle = rng() < 0.5 ? free.concat(chain) : chain.concat(free);
+    const order = ['builtins', ...middle, 'data', 'order', 'decode', 'tail'];
+    return order
+        .map(key => text.get(key) || '')
+        .filter(Boolean)
+        .join('\n');
 }
 
 // Five-row block letters keep the banner aligned without multi-byte glyphs, so
@@ -1563,6 +1657,11 @@ function armorOnce(source, config) {
     const opaqueC = 11 + randomInt(rng, 700);
     const opaqueM = 37 + randomInt(rng, 80);
 
+    // The canary lives in the compressed stream, so a build that fails every
+    // other check still has to reproduce this exact byte at this exact offset.
+    const canaryPos = 1 + randomInt(rng, buffer.length);
+    const canary = { pos: canaryPos, value: buffer[canaryPos - 1] };
+
     const loader = buildLoader({
         names: {
             nextName,
@@ -1572,6 +1671,7 @@ function armorOnce(source, config) {
             info: nextName(), infoAlt: nextName(), native: nextName(), arg: nextName(),
             okProbe: nextName(), probeFn: nextName(), restore: nextName(), sethook: nextName(),
             debug: nextName(), gethook: nextName(), getgenv: nextName(), msg: nextName(), check: nextName(), probe: nextName(),
+            sDump: nextName(),
             alpha: nextName(), map: nextName(), b64: nextName(), unmask: nextName(),
             inflate: nextName(), adler: nextName(), sum2: nextName(), segs: nextName(),
             keys: nextName(), order: nextName(), passKeys: nextName(), compLen: nextName(),
@@ -1595,6 +1695,7 @@ function armorOnce(source, config) {
         // piece reaches string.char through it.
         readPiece: 1024 + randomInt(rng, 5120),
         compressedLength: buffer.length,
+        canary,
         checksum1: checksum.kind === 'adler' ? adler32(buffer) : fletcher32(buffer),
         checksum2: weightedSumScaled(buffer, checksum.mul),
         dead: config.dead,

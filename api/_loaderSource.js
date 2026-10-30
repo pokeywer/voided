@@ -255,29 +255,57 @@ function encodeBootAlphabet(buffer, alphabet) {
     return out;
 }
 
+function bootSbox() {
+    const perm = [];
+    for (let index = 0; index < 256; index += 1) perm.push(index);
+    for (let index = 255; index > 0; index -= 1) {
+        const swap = randomBytes(1)[0] % (index + 1);
+        const value = perm[index];
+        perm[index] = perm[swap];
+        perm[swap] = value;
+    }
+    return Buffer.from(perm);
+}
+
+function bootChainSum(buffer) {
+    let hash = 0;
+    for (let index = 0; index < buffer.length; index += 1) {
+        hash = (hash * 131 + buffer[index]) % 4294967296;
+    }
+    return hash;
+}
+
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
     const sealed = obfuscateLoaderSource(source);
-    // The marker only surfaces after the gate releases the seed, so a body
-    // decrypted with a stale or fabricated seed fails loudly instead of
-    // handing the executor garbage to compile.
+    // The marks bracket the sealed body: the head proves the seed, the tail
+    // proves the body was not truncated.
     const bootMark = `--[[vb:${randomBytes(6).toString('hex')}]]`;
-    // Every fetch rotates the outer codec, the base64 alphabet, how many parts
-    // the ciphertext is split into, and the per-part key schedule. Two copies of
-    // the same vault therefore never share a body, and a captured body is only
-    // useful for the 10-second token it was minted for.
+    const tailMark = `--[[vt:${randomBytes(6).toString('hex')}]]`;
     const codec = bootCodec();
     const alphabet = bootAlphabet();
+    const sbox = bootSbox();
+    const sealBlob = (buffer, blobKey) => {
+        const mixed = bootXor(buffer, blobKey, codec);
+        const substituted = Buffer.allocUnsafe(mixed.length);
+        for (let index = 0; index < mixed.length; index += 1) substituted[index] = sbox[mixed[index]];
+        return encodeBootAlphabet(substituted, alphabet);
+    };
+    // Part keys chain: each key mixes the previous decoded part, so the pieces
+    // only open in order and a single captured part decrypts to noise.
     const partCount = 1 + (randomBytes(1)[0] % 3);
     const partStep = randomBytes(4).readUInt32BE(0) || 0x9E3779B9;
-    const codeBytes = Buffer.from(`${bootMark}\n${innerBanner}\n${sealed}`, 'utf8');
+    const chainSeed = randomBytes(4).readUInt32BE(0) || 0x85EBCA6B;
+    const codeBytes = Buffer.from(`${bootMark}\n${innerBanner}\n${sealed}\n${tailMark}`, 'utf8');
     const partSize = Math.ceil(codeBytes.length / partCount) || 1;
     const dataParts = [];
+    let chain = chainSeed;
     for (let part = 0; part < partCount; part += 1) {
         const slice = codeBytes.subarray(part * partSize, Math.min((part + 1) * partSize, codeBytes.length));
-        const partKey = (seed + part * partStep) >>> 0;
-        dataParts.push(encodeBootAlphabet(bootXor(slice, partKey, codec), alphabet));
+        const partKey = (((seed + part * partStep) % 4294967296) ^ chain) >>> 0;
+        dataParts.push(sealBlob(slice, partKey));
+        chain = bootChainSum(slice);
     }
     const dataLiteral = dataParts.map(part => `"${part}"`).join(',');
 
@@ -291,11 +319,9 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         return url.href;
     };
 
-    // No URL appears as a literal. Each is XORed with its own 32-bit key and
-    // stored with the build's alphabet, then rebuilt right before its request.
     const sealUrl = href => {
         const urlKey = randomBytes(4).readUInt32BE(0) || 1;
-        return { cipher: encodeBootAlphabet(bootXor(href, urlKey, codec), alphabet), key: urlKey };
+        return { cipher: sealBlob(Buffer.from(href, 'utf8'), urlKey), key: urlKey };
     };
 
     const decoyKey = randomBytes(32).toString('hex');
@@ -304,276 +330,384 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const decoys = [];
     for (let index = 0; index < decoyCount; index += 1) {
         if (index === 0) {
-            // Unknown vault + unknown key: a dead end that still looks like a load.
-            // Keyless vaults keep an empty keyHash so the shape matches the real one.
             decoys.push(sealUrl(buildGateUrl({
                 vaultId: randomTokenString(20),
                 token: fakeLoaderToken(key ? decoyKey : ''),
                 key: key ? decoyKey : ''
             })));
         } else {
-            // Real vault with a forged token: reads like a retry of the gate.
             decoys.push(sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key })));
         }
     }
-    // The real gate is shuffled into the decoys, so neither the table order nor
-    // the fetch order says which URL answers with the seed.
     const gateList = bootShuffle([realUrl].concat(decoys));
     const gateTable = gateList
         .map(entry => `{"${entry.cipher}",0x${entry.key.toString(16)}}`)
         .join(',');
     const probeOrder = bootShuffle(gateList.map((entry, index) => index + 1)).join(',');
     const chunkName = randomBytes(6).toString('hex');
+    const sboxLiteral = encodeBootAlphabet(sbox, alphabet);
 
-    const name = createLoaderNames();
-    const n = {
-        data: name(), map: name(), alpha: name(), index: name(), b64: name(), xor: name(),
-        cap: name(), guard: name(), deny: name(), exp: name(), net: name(), fails: name(), mark: name(),
-        url: name(), ok: name(), res: name(), sealed: name(), dec: name(),
-        fire: name(), spawn: name(), item: name(), slot: name(),
-        seed: name(), loader: name(), chunk: name(), err: name(),
-        lstr: name(), ld: name(), gv: name(), gf: name(), dmp: name(), envs: name(), adde: name(),
-        env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
-        code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name(),
-        shifts: name(), order: name(), probe: name(), seedNum: name(), buf: name(), keyv: name(),
-        stop: name(), rbx: name(), envOk: name(), envSvc: name(), wait: name(), done: name(), budget: name()
+    const nx = createLoaderNames();
+    const loc = (...roles) => {
+        const out = {};
+        for (const role of roles) out[role] = nx();
+        return out;
     };
-    const cap = i => `${n.cap}[${i}]`;
+    const n = {
+        rbx: nx(), map: nx(), alpha: nx(), b64: nx(), isb: nx(), dec: nx(), sum: nx(),
+        cap: nx(), guard: nx(), lstr: nx(), ld: nx(), gv: nx(), gf: nx(), dmp: nx(),
+        state: nx(), handlerTable: nx(), probeOne: nx(), seq: nx(), main: nx()
+    };
+    const S = n.state;
 
-    return `${buildLoaderBanner()}
-local ${n.rbx}=function()
-if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return false end
-local ${n.envOk},${n.envSvc}=pcall(function() return game:GetService("Players") end)
-if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Players" then return false end
-${n.envOk},${n.envSvc}=pcall(function() return game:GetService("Workspace") end)
-if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Workspace" then return false end
-${n.envOk},${n.envSvc}=pcall(function() return Instance.new("Folder") end)
-if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Folder" then return false end
-pcall(function() ${n.envSvc}:Destroy() end)
-return true
-end
-if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end
-local ${n.data}={${dataLiteral}}
-local ${n.map}={}
-do local ${n.alpha}="${alphabet}"
-for ${n.index}=1,#${n.alpha} do ${n.map}[string.byte(${n.alpha},${n.index})]=${n.index}-1 end end
--- Fast paths: the alphabet is keyed by byte value, four characters are read at
--- once, and the decoded bytes leave in one string.char call per group. The
--- keystream advances once per 32-bit word, so each word is masked and emitted
--- in a single step as well. Same output as the one-byte-per-iteration version,
--- minus the per-character string.sub and string.char churn.
-local function ${n.b64}(v)
-local r=#v%4
-if r==2 then v=v.."==" elseif r==3 then v=v.."=" end
-local n=#v
-local o={}
-local t={}
-local k,tk=0,0
-local i=1
-while i<=n do
-local c1,c2,c3,c4=string.byte(v,i,i+3)
-local q1,q2=${n.map}[c1],${n.map}[c2]
-local q3,q4=${n.map}[c3],${n.map}[c4]
-local x=(q1 or 0)*262144+(q2 or 0)*4096+(q3 or 0)*64+(q4 or 0)
-local b1=bit32.rshift(x,16)
-local b2=bit32.band(bit32.rshift(x,8),255)
-local b3=bit32.band(x,255)
-if q4 then tk=tk+1 t[tk]=string.char(b1,b2,b3)
-elseif q3 then tk=tk+1 t[tk]=string.char(b1,b2)
-else tk=tk+1 t[tk]=string.char(b1) end
-if tk>=2048 then k=k+1 o[k]=table.concat(t) t={} tk=0 end
-i=i+4
-end
-if tk>0 then k=k+1 o[k]=table.concat(t) end
-return table.concat(o)
-end
-local function ${n.xor}(v,s)
-local n=#v
-local o={}
-local t={}
-local k,tk=0,0
-s=s%4294967296
-if s==0 then s=2654435769 end
-local i=1
-while i<=n do
-s=bit32.bxor(s,bit32.lshift(s,${codec.a}))
-s=bit32.bxor(s,bit32.rshift(s,${codec.b}))
-s=bit32.bxor(s,bit32.lshift(s,${codec.c}))
-local m1=bit32.band(bit32.rshift(s,${codec.shifts[0]}),255)
-local m2=bit32.band(bit32.rshift(s,${codec.shifts[1]}),255)
-local m3=bit32.band(bit32.rshift(s,${codec.shifts[2]}),255)
-local m4=bit32.band(bit32.rshift(s,${codec.shifts[3]}),255)
-local b1,b2,b3,b4=string.byte(v,i,i+3)
-if b4 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2),bit32.bxor(b3,m3),bit32.bxor(b4,m4))
-elseif b3 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2),bit32.bxor(b3,m3))
-elseif b2 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2))
-else tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1)) end
-if tk>=2048 then k=k+1 o[k]=table.concat(t) t={} tk=0 end
-i=i+4
-end
-if tk>0 then k=k+1 o[k]=table.concat(t) end
-return table.concat(o)
-end
-local ${n.cap}={}
-do
-${cap(1)}=string.byte ${cap(2)}=string.char ${cap(3)}=string.sub ${cap(4)}=string.gsub ${cap(5)}=string.match
-${cap(6)}=table.concat ${cap(7)}=pcall ${cap(8)}=error ${cap(9)}=type ${cap(10)}=math.floor
-${cap(11)}=loadstring or load
-${cap(12)}=game.HttpGet
-${cap(13)}=game.HttpGet==game.HttpGet
-${cap(14)}=(loadstring or load)==(loadstring or load)
-${cap(15)}=type(getgenv)=="function" and getgenv or nil
-${cap(16)}=type(getfenv)=="function" and getfenv or nil
-${cap(17)}=type(setfenv)=="function" and setfenv or nil
-${cap(18)}=type(debug)=="table" and debug.gethook or nil
-${cap(19)}=type(bit32)=="table" and bit32 or nil
-${cap(20)}=type(tostring)=="function" and tostring or nil
-${cap(21)}=type(tonumber)=="function" and tonumber or nil
-${cap(22)}=type(debug)=="table" and debug.sethook or nil
-end
-local ${n.lstr}=loadstring
-local ${n.ld}=load
-local ${n.gv}=type(getgenv)=="function" and getgenv or nil
-local ${n.gf}=type(getfenv)=="function" and getfenv or nil
-local ${n.dmp}=type(string.dump)=="function" and string.dump or nil
-local function ${n.guard}(${n.own})
-if ${cap(14)} and (loadstring or load)~=${cap(11)} then return false end
-if ${cap(13)} and game.HttpGet~=${cap(12)} then return false end
-if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} then return false end
-if table.concat~=${cap(6)} or pcall~=${cap(7)} or error~=${cap(8)} or type~=${cap(9)} or math.floor~=${cap(10)} then return false end
-if ${cap(15)} and (type(getgenv)~="function" or getgenv~=${cap(15)}) then return false end
-if ${cap(16)} and (type(getfenv)~="function" or getfenv~=${cap(16)}) then return false end
-if ${cap(17)} and (type(setfenv)~="function" or setfenv~=${cap(17)}) then return false end
-if ${cap(19)} and (bit32.bxor~=${cap(19)}.bxor or bit32.lshift~=${cap(19)}.lshift or bit32.rshift~=${cap(19)}.rshift) then return false end
-if ${cap(18)} then local ok,h=${cap(7)}(${cap(18)}) if ok and h~=nil and h~=${n.own} then return false end end
-if ${cap(22)} and (type(debug)~="table" or debug.sethook~=${cap(22)}) then return false end
-if ${n.dmp} and string.dump~=${n.dmp} then return false end
-local ${n.envs}={}
-local function ${n.adde}(e)
-if type(e)~="table" then return end
-for i=1,#${n.envs} do if ${n.envs}[i]==e then return end end
-${n.envs}[#${n.envs}+1]=e
-end
-if ${n.gf} then local ok,e=${cap(7)}(${n.gf},0) if ok then ${n.adde}(e) end end
-if ${n.gv} then local ok,e=${cap(7)}(${n.gv}) if ok then ${n.adde}(e) end end
-for i=1,#${n.envs} do
-local ls=${n.envs}[i].loadstring
-local ld=${n.envs}[i].load
-if ${n.lstr} and type(ls)=="function" and ls~=${n.lstr} then return false end
-if ${n.ld} and type(ld)=="function" and ld~=${n.ld} then return false end
-end
-if ${n.dmp} then
-if ${n.lstr} and ${cap(7)}(${n.dmp},${n.lstr}) and ${n.ld} and type(${n.ld})=="function" and not ${cap(7)}(${n.dmp},${n.ld}) then return false end
-if ${n.ld} and ${cap(7)}(${n.dmp},${n.ld}) and ${n.lstr} and type(${n.lstr})=="function" and not ${cap(7)}(${n.dmp},${n.lstr}) then return false end
-end
-return true
-end
-local ${n.deny}="Voided: Doing this is not allowed."
-local ${n.exp}="[VoidedX] Error: Loader expired. Get a new loader from the website and try again."
-local ${n.net}="[VoidedX] Could not reach the loader server. Your network or DNS blocked the request. Set DNS to 1.1.1.1 or turn off your VPN, then run the loader again."
-local ${n.mark}="${bootMark}"
-if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
-local ${n.sealed}={${gateTable}}
-local ${n.order}={${probeOrder}}
-local ${n.dec}={}
-for ${n.slot}=1,#${n.sealed} do ${n.dec}[${n.slot}]=${n.xor}(${n.b64}(${n.sealed}[${n.slot}][1]),${n.sealed}[${n.slot}][2]) end
--- One probe per candidate. The reply has to be the exact ticket shape the gate
--- issues, so a stray body that merely starts with vx1| cannot steer the seed.
-local ${n.seed},${n.fails},${n.done}=nil,0,0
-local ${n.probe}=function(${n.slot})
-local ok,res=${cap(7)}(function() return ${cap(12)}(game,${n.dec}[${n.order}[${n.slot}]]) end)
-if ok and type(res)=="string" then
-local hit=${cap(5)}(res,"^vx1|(%x%x%x%x%x%x%x%x)|%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")
-if hit and not ${n.seed} then ${n.seed}=hit end
-elseif not ok then ${n.fails}=${n.fails}+1 end
-${n.done}=${n.done}+1
-end
-local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
-local ${n.wait}=${cap(9)}(task)=="table" and task.wait or nil
--- When the executor can spawn, every candidate is launched at once and the run
--- resumes as soon as one reply parses, so a yielding HttpGet overlaps all the
--- requests. A blocking HttpGet simply runs them in order, which is what the
--- plain loop does anyway, and the unprobed candidates are still requested once
--- each so a request log shows every table entry exactly one time.
-if ${n.spawn} and ${n.wait} then
-for ${n.slot}=1,#${n.order} do ${cap(7)}(${n.spawn},${n.probe},${n.slot}) end
-local ${n.budget}=0
-while ${n.done}<#${n.order} and not ${n.seed} and ${n.budget}<600 do
-${n.budget}=${n.budget}+1
-${cap(7)}(${n.wait},0.01)
-end
-else
-local ${n.stop}=#${n.order}
-for ${n.slot}=1,#${n.order} do
-${n.probe}(${n.slot})
-if ${n.seed} then ${n.stop}=${n.slot} break end
-end
-if ${n.stop}<#${n.order} then
-for ${n.slot}=${n.stop}+1,#${n.order} do ${n.probe}(${n.slot}) end
-end
-end
-if ${cap(13)} and game.HttpGet~=${cap(12)} then return ${cap(8)}(${n.deny},0) end
-if not ${n.seed} then
-if ${n.fails}>=#${n.order} then return ${cap(8)}(${n.net},0) end
-return ${cap(8)}(${n.exp},0)
-end
-if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
-local ${n.loader}=${cap(11)}
-if ${n.ld} and ${n.ld}~=${n.loader} then local ok,f=${cap(7)}(${n.ld},"return 1") if ok and type(f)=="function" then ${n.loader}=${n.ld} end end
-if type(${n.loader})~="function" then return ${cap(8)}("[VoidedX] This executor does not support loadstring.",0) end
-local ${n.buf}={}
-local ${n.seedNum}
-for ${n.slot}=1,#${n.data} do
-${n.seedNum}=(${cap(21)}(${n.seed},16)+(${n.slot}-1)*${partStep})%4294967296
-${n.buf}[${n.slot}]=${n.xor}(${n.b64}(${n.data}[${n.slot}]),${n.seedNum})
--- The boot mark sits at the start of the first part, so a stale or fabricated
--- seed is rejected before the remaining parts are decoded.
-if ${n.slot}==1 and ${cap(3)}(${n.buf}[1],1,#${n.mark})~=${n.mark} then return ${cap(8)}(${n.exp},0) end
-end
-local ${n.code}=${cap(6)}(${n.buf})
-local ${n.arg}=${n.code}
-local ${n.probeOk},${n.probeFn}=${cap(7)}(${n.loader},function() return nil end)
-if ${n.probeOk} and type(${n.probeFn})=="function" then
-local ${n.pos}=0
-${n.arg}=function()
-if ${n.pos}>=#${n.code} then return nil end
-local part=${cap(3)}(${n.code},${n.pos}+1,${n.pos}+4096)
-${n.pos}=${n.pos}+4096
-return part
-end
-end
-local ${n.chunk},${n.err}=${n.loader}(${n.arg},"=${chunkName}")
-if not ${n.chunk} then return ${cap(8)}(${cap(20)}(${n.err}),0) end
-local ${n.sh}=type(debug)=="table" and debug.sethook or nil
-local ${n.gh}=type(debug)=="table" and debug.gethook or nil
-local ${n.env}=nil
-if ${n.gv} then local ok,e=${cap(7)}(${n.gv}) if ok and type(e)=="table" then ${n.env}=e end end
-local ${n.wd},${n.off}
-if ${n.sh} and ${n.gh} then
-local ${n.ticks}=0
-${n.off}=function()
-local ok,h=${cap(7)}(${n.gh})
-if ok and h==${n.wd} then ${cap(7)}(${n.sh}) end
-if ${n.env} then ${cap(7)}(function() if ${n.env}._vxwd==${n.wd} then ${n.env}._vxwd=nil end end) end
-end
-${n.wd}=function()
-${n.ticks}=${n.ticks}+1
-if string.byte~=${cap(1)} or string.char~=${cap(2)} or string.sub~=${cap(3)} or string.gsub~=${cap(4)} or string.match~=${cap(5)} or table.concat~=${cap(6)} or pcall~=${cap(7)} or type~=${cap(9)} or math.floor~=${cap(10)} or error~=${cap(8)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
-if ${cap(22)} and debug.sethook~=${cap(22)} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
-local ok,h=${cap(7)}(${n.gh})
-if ok and h~=nil and h~=${n.wd} then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
-if ${n.ticks}>=64 then ${n.off}() end
-end
-if ${cap(7)}(${n.sh},${n.wd},"",250000) then
-local ok,h=${cap(7)}(${n.gh})
-if ok and h==${n.wd} then
-if ${n.env} then ${cap(7)}(function() ${n.env}._vxwd=${n.wd} end) end
-if type(task)=="table" and type(task.delay)=="function" then ${cap(7)}(task.delay,10,${n.off}) end
-else ${cap(7)}(${n.sh}) end
-end
-end
-if not ${n.guard}(${n.wd}) then ${cap(7)}(${n.sh}) return ${cap(8)}(${n.deny},0) end
-return ${n.chunk}()`;
+    const capEntries = [
+        ['byte', 'string.byte'], ['char', 'string.char'], ['sub', 'string.sub'],
+        ['gsub', 'string.gsub'], ['match', 'string.match'], ['concat', 'table.concat'],
+        ['pcall', 'pcall'], ['error', 'error'], ['type', 'type'], ['floor', 'math.floor'],
+        ['load', 'loadstring or load'], ['http', 'game.HttpGet'],
+        ['httpStable', 'game.HttpGet==game.HttpGet'],
+        ['loadStable', '(loadstring or load)==(loadstring or load)'],
+        ['getgenv', 'type(getgenv)=="function" and getgenv or nil'],
+        ['getfenv', 'type(getfenv)=="function" and getfenv or nil'],
+        ['setfenv', 'type(setfenv)=="function" and setfenv or nil'],
+        ['gethook', 'type(debug)=="table" and debug.gethook or nil'],
+        ['bit32', 'type(bit32)=="table" and bit32 or nil'],
+        ['tostring', 'type(tostring)=="function" and tostring or nil'],
+        ['tonumber', 'type(tonumber)=="function" and tonumber or nil'],
+        ['sethook', 'type(debug)=="table" and debug.sethook or nil']
+    ];
+    const capSlots = bootShuffle(Array.from({ length: 64 }, (_, index) => index + 1)).slice(0, capEntries.length);
+    const capSlot = {};
+    capEntries.forEach((entry, index) => { capSlot[entry[0]] = capSlots[index]; });
+    const cap = name => `${n.cap}[${capSlot[name]}]`;
+
+    const slotPool = bootShuffle(Array.from({ length: 72 }, (_, index) => index + 1));
+    const sl = {};
+    for (const role of [
+        'data', 'sealed', 'order', 'decoded', 'seed', 'fails', 'done', 'deny', 'expired',
+        'net', 'mark', 'tail', 'step', 'chain', 'spawn', 'wait', 'loader', 'code', 'arg',
+        'chunk', 'wd', 'off', 'env'
+    ]) {
+        sl[role] = slotPool.pop();
+    }
+    const st = role => `${S}[${sl[role]}]`;
+
+    const lines = [];
+    const add = line => lines.push(line);
+
+    add(buildLoaderBanner());
+
+    const R = loc('ok', 'svc');
+    add(`local ${n.rbx}=function()`);
+    add(`if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return false end`);
+    add(`local ${R.ok},${R.svc}=pcall(function() return game:GetService("Players") end)`);
+    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Players" then return false end`);
+    add(`${R.ok},${R.svc}=pcall(function() return game:GetService("Workspace") end)`);
+    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Workspace" then return false end`);
+    add(`${R.ok},${R.svc}=pcall(function() return Instance.new("Folder") end)`);
+    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Folder" then return false end`);
+    add(`pcall(function() ${R.svc}:Destroy() end)`);
+    add(`return true`);
+    add(`end`);
+    add(`if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`);
+
+    const A = loc('alpha', 'i');
+    add(`local ${n.map}={}`);
+    add(`do local ${A.alpha}="${alphabet}"`);
+    add(`for ${A.i}=1,#${A.alpha} do ${n.map}[string.byte(${A.alpha},${A.i})]=${A.i}-1 end end`);
+
+    const B = loc('v', 'r', 'n', 'o', 't', 'k', 'tk', 'i', 'c1', 'c2', 'c3', 'c4', 'q1', 'q2', 'q3', 'q4', 'x', 'b1', 'b2', 'b3');
+    add(`local ${n.b64}=function(${B.v})`);
+    add(`local ${B.r}=#${B.v}%4`);
+    add(`if ${B.r}==2 then ${B.v}=${B.v}.."==" elseif ${B.r}==3 then ${B.v}=${B.v}.."=" end`);
+    add(`local ${B.n}=#${B.v}`);
+    add(`local ${B.o}={}`);
+    add(`local ${B.t}={}`);
+    add(`local ${B.k},${B.tk}=0,0`);
+    add(`local ${B.i}=1`);
+    add(`while ${B.i}<=${B.n} do`);
+    add(`local ${B.c1},${B.c2},${B.c3},${B.c4}=string.byte(${B.v},${B.i},${B.i}+3)`);
+    add(`local ${B.q1},${B.q2}=${n.map}[${B.c1}],${n.map}[${B.c2}]`);
+    add(`local ${B.q3},${B.q4}=${n.map}[${B.c3}],${n.map}[${B.c4}]`);
+    add(`local ${B.x}=(${B.q1} or 0)*262144+(${B.q2} or 0)*4096+(${B.q3} or 0)*64+(${B.q4} or 0)`);
+    add(`local ${B.b1}=bit32.rshift(${B.x},16)`);
+    add(`local ${B.b2}=bit32.band(bit32.rshift(${B.x},8),255)`);
+    add(`local ${B.b3}=bit32.band(${B.x},255)`);
+    add(`if ${B.q4} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2},${B.b3})`);
+    add(`elseif ${B.q3} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2})`);
+    add(`else ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1}) end`);
+    add(`if ${B.tk}>=2048 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) ${B.t}={} ${B.tk}=0 end`);
+    add(`${B.i}=${B.i}+4`);
+    add(`end`);
+    add(`if ${B.tk}>0 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) end`);
+    add(`return table.concat(${B.o})`);
+    add(`end`);
+
+    const I = loc('t', 'i');
+    add(`local ${n.isb}={}`);
+    add(`do local ${I.t}=${n.b64}("${sboxLiteral}")`);
+    add(`for ${I.i}=1,#${I.t} do ${n.isb}[string.byte(${I.t},${I.i})]=${I.i}-1 end end`);
+
+    const D = loc('v', 's', 'n', 'o', 't', 'k', 'tk', 'i', 'm1', 'm2', 'm3', 'm4', 'b1', 'b2', 'b3', 'b4');
+    add(`local ${n.dec}=function(${D.v},${D.s})`);
+    add(`${D.v}=${n.b64}(${D.v})`);
+    add(`local ${D.n}=#${D.v}`);
+    add(`local ${D.o}={}`);
+    add(`local ${D.t}={}`);
+    add(`local ${D.k},${D.tk}=0,0`);
+    add(`${D.s}=${D.s}%4294967296`);
+    add(`if ${D.s}==0 then ${D.s}=2654435769 end`);
+    add(`local ${D.i}=1`);
+    add(`while ${D.i}<=${D.n} do`);
+    add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.a}))`);
+    add(`${D.s}=bit32.bxor(${D.s},bit32.rshift(${D.s},${codec.b}))`);
+    add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.c}))`);
+    add(`local ${D.m1}=bit32.band(bit32.rshift(${D.s},${codec.shifts[0]}),255)`);
+    add(`local ${D.m2}=bit32.band(bit32.rshift(${D.s},${codec.shifts[1]}),255)`);
+    add(`local ${D.m3}=bit32.band(bit32.rshift(${D.s},${codec.shifts[2]}),255)`);
+    add(`local ${D.m4}=bit32.band(bit32.rshift(${D.s},${codec.shifts[3]}),255)`);
+    add(`local ${D.b1},${D.b2},${D.b3},${D.b4}=string.byte(${D.v},${D.i},${D.i}+3)`);
+    add(`if ${D.b4} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}),bit32.bxor(${n.isb}[${D.b4}],${D.m4}))`);
+    add(`elseif ${D.b3} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}))`);
+    add(`elseif ${D.b2} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}))`);
+    add(`else ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1})) end`);
+    add(`if ${D.tk}>=2048 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) ${D.t}={} ${D.tk}=0 end`);
+    add(`${D.i}=${D.i}+4`);
+    add(`end`);
+    add(`if ${D.tk}>0 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) end`);
+    add(`return table.concat(${D.o})`);
+    add(`end`);
+
+    const M = loc('h', 'i');
+    add(`local ${n.sum}=function(v)`);
+    add(`local ${M.h}=0`);
+    add(`for ${M.i}=1,#v do ${M.h}=(${M.h}*131+string.byte(v,${M.i}))%4294967296 end`);
+    add(`return ${M.h}`);
+    add(`end`);
+
+    add(`local ${n.cap}={}`);
+    add(`do`);
+    for (const entry of bootShuffle(capEntries.slice())) {
+        add(`${n.cap}[${capSlot[entry[0]]}]=${entry[1]}`);
+    }
+    add(`end`);
+
+    add(`local ${n.lstr}=loadstring`);
+    add(`local ${n.ld}=load`);
+    add(`local ${n.gv}=type(getgenv)=="function" and getgenv or nil`);
+    add(`local ${n.gf}=type(getfenv)=="function" and getfenv or nil`);
+    add(`local ${n.dmp}=type(string.dump)=="function" and string.dump or nil`);
+
+    const G = loc('own', 'envs', 'add');
+    add(`local ${n.guard}=function(${G.own})`);
+    add(`if ${cap('loadStable')} and (loadstring or load)~=${cap('load')} then return false end`);
+    add(`if ${cap('httpStable')} and game.HttpGet~=${cap('http')} then return false end`);
+    add(`if string.byte~=${cap('byte')} or string.char~=${cap('char')} or string.sub~=${cap('sub')} or string.gsub~=${cap('gsub')} or string.match~=${cap('match')} then return false end`);
+    add(`if table.concat~=${cap('concat')} or pcall~=${cap('pcall')} or error~=${cap('error')} or type~=${cap('type')} or math.floor~=${cap('floor')} then return false end`);
+    add(`if ${cap('getgenv')} and (type(getgenv)~="function" or getgenv~=${cap('getgenv')}) then return false end`);
+    add(`if ${cap('getfenv')} and (type(getfenv)~="function" or getfenv~=${cap('getfenv')}) then return false end`);
+    add(`if ${cap('setfenv')} and (type(setfenv)~="function" or setfenv~=${cap('setfenv')}) then return false end`);
+    add(`if ${cap('bit32')} and (bit32.bxor~=${cap('bit32')}.bxor or bit32.lshift~=${cap('bit32')}.lshift or bit32.rshift~=${cap('bit32')}.rshift) then return false end`);
+    add(`if ${cap('gethook')} then local ok,h=pcall(${cap('gethook')}) if ok and h~=nil and h~=${G.own} then return false end end`);
+    add(`if ${cap('sethook')} and (type(debug)~="table" or debug.sethook~=${cap('sethook')}) then return false end`);
+    add(`if ${n.dmp} and string.dump~=${n.dmp} then return false end`);
+    add(`local ${G.envs}={}`);
+    add(`local function ${G.add}(e)`);
+    add(`if type(e)~="table" then return end`);
+    add(`for i=1,#${G.envs} do if ${G.envs}[i]==e then return end end`);
+    add(`${G.envs}[#${G.envs}+1]=e`);
+    add(`end`);
+    add(`if ${n.gf} then local ok,e=pcall(${n.gf},0) if ok then ${G.add}(e) end end`);
+    add(`if ${n.gv} then local ok,e=pcall(${n.gv}) if ok then ${G.add}(e) end end`);
+    add(`for i=1,#${G.envs} do`);
+    add(`local ls=${G.envs}[i].loadstring`);
+    add(`local ld=${G.envs}[i].load`);
+    add(`if ${n.lstr} and type(ls)=="function" and ls~=${n.lstr} then return false end`);
+    add(`if ${n.ld} and type(ld)=="function" and ld~=${n.ld} then return false end`);
+    add(`end`);
+    add(`if ${n.dmp} then`);
+    add(`if ${n.lstr} and pcall(${n.dmp},${n.lstr}) and ${n.ld} and type(${n.ld})=="function" and not pcall(${n.dmp},${n.ld}) then return false end`);
+    add(`if ${n.ld} and pcall(${n.dmp},${n.ld}) and ${n.lstr} and type(${n.lstr})=="function" and not pcall(${n.dmp},${n.lstr}) then return false end`);
+    add(`end`);
+    add(`return true`);
+    add(`end`);
+
+    add(`local ${S}={}`);
+    add(`${st('data')}={${dataLiteral}}`);
+    add(`${st('sealed')}={${gateTable}}`);
+    add(`${st('order')}={${probeOrder}}`);
+    add(`${st('decoded')}={}`);
+    add(`${st('fails')}=0`);
+    add(`${st('done')}=0`);
+    add(`${st('deny')}=${luaString('Voided: Doing this is not allowed.')}`);
+    add(`${st('expired')}=${luaString('[VoidedX] Error: Loader expired. Get a new loader from the website and try again.')}`);
+    add(`${st('net')}=${luaString('[VoidedX] Could not reach the loader server. Your network or DNS blocked the request. Set DNS to 1.1.1.1 or turn off your VPN, then run the loader again.')}`);
+    add(`${st('mark')}=${luaString(bootMark)}`);
+    add(`${st('tail')}=${luaString(tailMark)}`);
+    add(`${st('step')}=${partStep}`);
+    add(`${st('chain')}=${chainSeed}`);
+    add(`${st('spawn')}=type(task)=="table" and task.spawn or nil`);
+    add(`${st('wait')}=type(task)=="table" and task.wait or nil`);
+
+    const P = loc('i', 'ok', 'res', 'hit');
+    add(`local ${n.probeOne}=function(${P.i})`);
+    add(`local ${P.ok},${P.res}=pcall(function() return ${cap('http')}(game,${st('decoded')}[${st('order')}[${P.i}]]) end)`);
+    add(`if ${P.ok} and type(${P.res})=="string" then`);
+    add(`local ${P.hit}=${cap('match')}(${P.res},"^vx1|(%x%x%x%x%x%x%x%x)|%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")`);
+    add(`if ${P.hit} and not ${st('seed')} then ${st('seed')}=${P.hit} end`);
+    add(`elseif not ${P.ok} then ${st('fails')}=${st('fails')}+1 end`);
+    add(`${st('done')}=${st('done')}+1`);
+    add(`end`);
+
+    const H = new Map();
+    const O = loc('i', 'e', 'ok', 'f', 'l', 'v');
+    H.set('guardA', [
+        `if not ${n.guard}() then error(${st('deny')},0) end`
+    ]);
+    H.set('openUrls', [
+        `for ${O.i}=1,#${st('sealed')} do local ${O.e}=${st('sealed')}[${O.i}] ${st('decoded')}[${O.i}]=${n.dec}(${O.e}[1],${O.e}[2]) end`
+    ]);
+    H.set('probe', [
+        `if ${st('spawn')} and ${st('wait')} then`,
+        `for ${O.i}=1,#${st('order')} do pcall(${st('spawn')},${n.probeOne},${O.i}) end`,
+        `local ${O.v}=0`,
+        `while ${st('done')}<#${st('order')} and not ${st('seed')} and ${O.v}<600 do ${O.v}=${O.v}+1 pcall(${st('wait')},0.01) end`,
+        `else`,
+        `local ${O.i}=1`,
+        `while ${O.i}<=#${st('order')} and not ${st('seed')} do ${n.probeOne}(${O.i}) ${O.i}=${O.i}+1 end`,
+        `while ${O.i}<=#${st('order')} do ${n.probeOne}(${O.i}) ${O.i}=${O.i}+1 end`,
+        `end`,
+        `if not ${st('seed')} then`,
+        `if ${st('fails')}>=#${st('order')} then error(${st('net')},0) end`,
+        `error(${st('expired')},0)`,
+        `end`
+    ]);
+    H.set('guardB', [
+        `if ${cap('httpStable')} and game.HttpGet~=${cap('http')} then error(${st('deny')},0) end`,
+        `if not ${n.guard}() then error(${st('deny')},0) end`
+    ]);
+    H.set('select', [
+        `local ${O.l}=${cap('load')}`,
+        `if ${n.ld} and ${n.ld}~=${O.l} then local ${O.ok},${O.f}=pcall(${n.ld},"return 1") if ${O.ok} and type(${O.f})=="function" then ${O.l}=${n.ld} end end`,
+        `if type(${O.l})~="function" then error("[VoidedX] This executor does not support loadstring.",0) end`,
+        `${st('loader')}=${O.l}`
+    ]);
+    H.set('decode', [
+        `local ${O.v}=tonumber(${st('seed')},16)`,
+        `local ${O.f}=${st('chain')}`,
+        `local ${O.e}={}`,
+        `for ${O.i}=1,#${st('data')} do`,
+        `local ${O.ok}=(${O.v}+(${O.i}-1)*${st('step')})%4294967296`,
+        `${O.ok}=bit32.bxor(${O.ok},${O.f})`,
+        `local ${O.l}=${n.dec}(${st('data')}[${O.i}],${O.ok})`,
+        `if ${O.i}==1 and ${cap('sub')}(${O.l},1,#${st('mark')})~=${st('mark')} then error(${st('expired')},0) end`,
+        `${O.e}[${O.i}]=${O.l}`,
+        `${O.f}=${n.sum}(${O.l})`,
+        `end`,
+        `local ${O.l}=${cap('concat')}(${O.e})`,
+        `if ${cap('sub')}(${O.l},-#${st('tail')})~=${st('tail')} then error(${st('expired')},0) end`,
+        `${st('code')}=${O.l}`
+    ]);
+    const AS = loc('c', 'a', 'ok', 'f', 'pos', 'p');
+    H.set('assemble', [
+        `local ${AS.c}=${st('code')}`,
+        `local ${AS.a}=${AS.c}`,
+        `local ${AS.ok},${AS.f}=pcall(${st('loader')},function() return nil end)`,
+        `if ${AS.ok} and type(${AS.f})=="function" then`,
+        `local ${AS.pos}=0`,
+        `${AS.a}=function()`,
+        `if ${AS.pos}>=#${AS.c} then return nil end`,
+        `local ${AS.p}=${cap('sub')}(${AS.c},${AS.pos}+1,${AS.pos}+4096)`,
+        `${AS.pos}=${AS.pos}+4096`,
+        `return ${AS.p}`,
+        `end`,
+        `end`,
+        `${st('arg')}=${AS.a}`
+    ]);
+    const C = loc('f', 'e');
+    H.set('compile', [
+        `local ${C.f},${C.e}=${st('loader')}(${st('arg')},"=${chunkName}")`,
+        `if not ${C.f} then error(${cap('tostring')}(${C.e}),0) end`,
+        `${st('chunk')}=${C.f}`
+    ]);
+    const HK = loc('env', 'ok', 'e', 'ticks', 'off', 'wd', 'h');
+    H.set('hook', [
+        `local ${HK.env}=nil`,
+        `if ${n.gv} then local ${HK.ok},${HK.e}=pcall(${n.gv}) if ${HK.ok} and type(${HK.e})=="table" then ${HK.env}=${HK.e} end end`,
+        `${st('env')}=${HK.env}`,
+        `if ${cap('sethook')} and ${cap('gethook')} then`,
+        `local ${HK.ticks}=0`,
+        `local ${HK.off}=function()`,
+        `local ${HK.ok},${HK.h}=pcall(${cap('gethook')})`,
+        `if ${HK.ok} and ${HK.h}==${st('wd')} then pcall(${cap('sethook')}) end`,
+        `if ${st('env')} then pcall(function() if ${st('env')}._vxwd==${st('wd')} then ${st('env')}._vxwd=nil end end) end`,
+        `end`,
+        `local ${HK.wd}=function()`,
+        `${HK.ticks}=${HK.ticks}+1`,
+        `if string.byte~=${cap('byte')} or string.char~=${cap('char')} or string.sub~=${cap('sub')} or string.gsub~=${cap('gsub')} or string.match~=${cap('match')} or table.concat~=${cap('concat')} or pcall~=${cap('pcall')} or type~=${cap('type')} or math.floor~=${cap('floor')} or error~=${cap('error')} then pcall(${cap('sethook')}) error(${st('deny')},0) end`,
+        `if ${cap('sethook')} and debug.sethook~=${cap('sethook')} then pcall(${cap('sethook')}) error(${st('deny')},0) end`,
+        `local ${HK.ok},${HK.h}=pcall(${cap('gethook')})`,
+        `if ${HK.ok} and ${HK.h}~=nil and ${HK.h}~=${HK.wd} then pcall(${cap('sethook')}) error(${st('deny')},0) end`,
+        `if ${HK.ticks}>=64 then ${HK.off}() end`,
+        `end`,
+        `if pcall(${cap('sethook')},${HK.wd},"",250000) then`,
+        `local ${HK.ok},${HK.h}=pcall(${cap('gethook')})`,
+        `if ${HK.ok} and ${HK.h}==${HK.wd} then`,
+        `if ${st('env')} then pcall(function() ${st('env')}._vxwd=${HK.wd} end) end`,
+        `if type(task)=="table" and type(task.delay)=="function" then pcall(task.delay,10,${HK.off}) end`,
+        `else pcall(${cap('sethook')}) end`,
+        `end`,
+        `${st('wd')}=${HK.wd}`,
+        `${st('off')}=${HK.off}`,
+        `end`
+    ]);
+    H.set('guardC', [
+        `if not ${n.guard}(${st('wd')}) then if ${cap('sethook')} then pcall(${cap('sethook')}) end error(${st('deny')},0) end`
+    ]);
+    H.set('run', [
+        `return ${st('chunk')}()`
+    ]);
+    H.set('noop', []);
+
+    const order = ['guardA', 'openUrls', ...bootShuffle(['probe', 'select']), 'guardB', 'decode', 'assemble', 'compile', 'hook', 'guardC'];
+    if (randomBytes(1)[0] % 2 === 0) {
+        order.splice(1 + (randomBytes(1)[0] % (order.length - 1)), 0, 'noop');
+    }
+    order.push('run');
+
+    const opcodeNames = bootShuffle(Array.from(H.keys()));
+    const opcodePool = bootShuffle(Array.from({ length: 120 }, (_, index) => index + 1)).slice(0, opcodeNames.length);
+    const opcode = {};
+    opcodeNames.forEach((name, index) => { opcode[name] = opcodePool[index]; });
+
+    add(`local ${n.handlerTable}={}`);
+    for (const name of bootShuffle(Array.from(H.keys()))) {
+        add(`${n.handlerTable}[${opcode[name]}]=function()`);
+        for (const line of H.get(name)) add(line);
+        add(`end`);
+    }
+
+    const seqBuffer = Buffer.from(order.map(name => opcode[name] & 0xFF));
+    const seqKey = randomBytes(4).readUInt32BE(0) || 1;
+    const seqLiteral = sealBlob(seqBuffer, seqKey);
+    const seqSum = bootChainSum(seqBuffer);
+
+    const Q = loc('raw', 'i', 'f', 'v');
+    add(`local ${Q.raw}=${n.dec}("${seqLiteral}",${seqKey})`);
+    add(`if ${n.sum}(${Q.raw})~=${seqSum} then error(${st('deny')},0) end`);
+    add(`local ${n.seq}={}`);
+    add(`for ${Q.i}=1,#${Q.raw} do ${n.seq}[${Q.i}]=string.byte(${Q.raw},${Q.i}) end`);
+    add(`local ${n.main}=function()`);
+    add(`for ${Q.i}=1,#${n.seq} do`);
+    add(`local ${Q.f}=${n.handlerTable}[${n.seq}[${Q.i}]]`);
+    add(`if not ${Q.f} then return error(${st('deny')},0) end`);
+    add(`local ${Q.v}=${Q.f}()`);
+    add(`if ${Q.v}~=nil then return ${Q.v} end`);
+    add(`end`);
+    add(`end`);
+    add(`return ${n.main}()`);
+
+    return lines.join('\n');
 }
 
 export function buildPayloadRuntime(origin, options = {}) {
