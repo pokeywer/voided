@@ -1783,6 +1783,11 @@ function buildJunkCode(rng, count, options = {}) {
     const next = createConfusableFactory(rng);
     const hex = value => '0x' + value.toString(16);
     const small = () => 1 + randomInt(rng, 9);
+    // The digest variable has to be reachable from the real chunk that follows,
+    // so it cannot be a name that chunk already uses at the same level.
+    const avoid = String(options.avoid || '');
+    let accumulator = next();
+    for (let attempt = 0; attempt < 24 && avoid.includes(accumulator); attempt += 1) accumulator = next();
     const blocks = [];
     for (let i = 0; i < count; i += 1) {
         const a = next();
@@ -1838,7 +1843,22 @@ function buildJunkCode(rng, count, options = {}) {
         }
         if (comments && rng() < 0.45) blocks.push('-- ' + noiseComment(rng));
     }
-    return blocks.join('\n');
+    // Every filler block is followed by a step that folds one of its constants
+    // into a running digest, and the chunk refuses to run if the total is wrong.
+    // A tool that recognises the blocks as "inert junk" and deletes them now
+    // breaks the script instead of cleaning it.
+    const modulus = 65521;
+    const factor = 137 + randomInt(rng, 300);
+    let digest = 0;
+    const parts = [`local ${accumulator}=0`];
+    for (const block of blocks) {
+        parts.push(block);
+        const salt = 1 + randomInt(rng, 0xffff);
+        parts.push(`do local ${next()}=${hex(salt)};${accumulator}=(${accumulator}*${factor}+${salt})%${modulus} end`);
+        digest = (digest * factor + salt) % modulus;
+    }
+    parts.push(`if ${accumulator}~=${digest} then error("Voided: Doing this is not allowed.",0) end`);
+    return parts.join('\n');
 }
 
 function armorOnce(source, config) {

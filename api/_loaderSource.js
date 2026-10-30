@@ -42,7 +42,7 @@ export const LOADER_BUILD = 8;
 const bootstrapLayerSetting = Number(process.env.BOOTSTRAP_ARMOR_LAYERS);
 export const BOOTSTRAP_ARMOR_LAYERS = Number.isFinite(bootstrapLayerSetting)
     ? Math.max(0, Math.min(6, Math.round(bootstrapLayerSetting)))
-    : 0;
+    : 6;
 
 function armorBootstrap(text) {
     if (!BOOTSTRAP_ARMOR_LAYERS) return text;
