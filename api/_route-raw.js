@@ -63,6 +63,21 @@ export default async function handler(req, res) {
         return res.status(410).send('error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.", 0)');
     }
 
+    // The gate only has to prove the ticket it was handed is intact. That ticket
+    // was minted against a live vault seconds earlier, and the payload request
+    // re-checks the vault, pauses and bans. Answering from the HMAC keeps every
+    // gate probe (real and decoy) off the database, so a loader starts without
+    // waiting on a Firestore round trip per candidate URL. The seed is derived
+    // from the ticket, so a captured bootstrap body still cannot be decrypted
+    // without a live, IP-bound gate request.
+    if (req.query.format === 'token-check') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        const seedHex = deriveBootstrapSeed(loaderToken).toString(16).padStart(8, '0');
+        const nonce = randomBytes(8).toString('hex');
+        return res.status(200).send(`vx1|${seedHex}|${nonce}`);
+    }
+
     try {
         const docSnap = await db.collection("vaults").doc(id).get();
 
@@ -100,20 +115,6 @@ export default async function handler(req, res) {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             return res.status(423).send('error("[VoidedX] This vault is temporarily paused by its owner.", 0)');
-        }
-
-        // The short-lived loader credential is also packed into the returned
-        // bootstrap. A copied response body must revalidate it when run,
-        // so copying the decoded bootstrap does not bypass its 10-second expiry.
-        // The gate returns the token-derived bootstrap seed. The seed is never
-        // derivable from the token alone, so a captured bootstrap body cannot be
-        // decrypted offline without a live, IP-bound gate request.
-        if (req.query.format === 'token-check') {
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            const seedHex = deriveBootstrapSeed(activeLoaderToken).toString(16).padStart(8, '0');
-            const nonce = randomBytes(8).toString('hex');
-            return res.status(200).send(`vx1|${seedHex}|${nonce}`);
         }
 
         // GUI Mode: no key in the URL at all — send an in-game popup instead that

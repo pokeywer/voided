@@ -21,16 +21,21 @@ export const MAX_INLINE_OBFUSCATED_PREVIEW_BYTES = 1024 * 1024;
 // budget below that hard limit so field/index overhead has room.
 export const MAX_VAULT_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
 
-// Low and Medium no longer use the Weak preset: after the Prometheus pass the
-// copy is repacked by the VoidedX armor, so the smallest preset is reserved for
-// Fast only. Every level stays at a single VM layer: the bundled VM corrupts a
-// fraction of programs once a second Vmify wraps the first VM's own bytecode
-// (wrong string slots, nil index, silent early return), and every interpreter
-// we test disagrees about which programs break. Extra depth comes from nested
-// VoidedX containers inside the armor module, which are independent copies of
-// the same decode-then-load path. High and Absolute also use the Strong preset
-// and the heavier armor settings.
-const PRESETS = Object.freeze({ fast: 'Weak', low: 'Medium', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
+// Every level now takes the full Prometheus VM + string/number transform path:
+// the Weak preset is gone from the map entirely, so no strength can produce the
+// readable rename-only output a dumper recovers in one step. Fast still passes
+// fastMode, which is what keeps it the lightest tier (no SplitStrings pass and
+// no junk functions); the tiers differ by preset and by armor depth, not by
+// whether the code is VM-compiled at all.
+//
+// Every level stays at a single VM layer: the bundled VM corrupts a fraction of
+// programs once a second Vmify wraps the first VM's own bytecode (wrong string
+// slots, nil index, silent early return), and every interpreter we test
+// disagrees about which programs break. Extra depth comes from nested VoidedX
+// containers inside the armor module, which are independent copies of the same
+// decode-then-load path. High and Absolute use the Strong preset and the
+// heaviest armor settings.
+const PRESETS = Object.freeze({ fast: 'Medium', low: 'Medium', medium: 'Medium', high: 'Strong', absolute: 'Strong' });
 const VM_LAYER_COUNTS = Object.freeze({ fast: 1, low: 1, medium: 1, high: 1, absolute: 1 });
 const MIN_JOB_TIMEOUT_MS = 120_000;
 const MAX_JOB_TIMEOUT_MS = 900_000;

@@ -4,7 +4,7 @@ This project keeps the product name VoidedX Obfuscator. The site language contro
 
 Obfuscation and vault size
 - Vault protection uses the bundled Prometheus fork, which compiles the script to VM bytecode in a module worker, then repacks the result in the VoidedX armor container (lua-voidedx-armor.js): disguised watermark, renamed internals, decoys, LZSS compression, layered masks, shuffled segments, and a randomized loader with integrity checks.
-- Fast uses the Weak preset; Low and Medium use Medium; High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting. Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
+- Fast, Low, and Medium use the Medium preset; High and Absolute use Strong. No level uses the readable Weak preset, so every copy is VM-compiled. Every level keeps one VM layer, and Absolute adds tamper checking and extra string splitting. Fast, Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
 - Auto uses High for scripts under 16 KiB and Low for larger scripts.
 - The page patches bare `#` length operators in the generated decoder so executors that return userdata objects do not crash.
 - Vault saves use a 920 KiB serialized-document budget. If an output does not fit, the save is stopped and the generated copy remains downloadable.

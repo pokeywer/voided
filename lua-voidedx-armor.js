@@ -30,11 +30,11 @@ const NAME_SYLLABLES = Object.freeze([
 ]);
 
 const LEVEL_CONFIG = Object.freeze({
-    fast: { segments: 8, passes: 2, depth: 28, dead: 2, robloxCheck: true, layers: 1 },
-    low: { segments: 12, passes: 3, depth: 52, dead: 3, robloxCheck: true, layers: 2 },
-    medium: { segments: 18, passes: 5, depth: 72, dead: 4, robloxCheck: true, layers: 4 },
-    high: { segments: 24, passes: 6, depth: 88, dead: 5, robloxCheck: true, layers: 5 },
-    absolute: { segments: 32, passes: 7, depth: 128, dead: 6, robloxCheck: true, layers: 6 }
+    fast: { segments: 14, passes: 3, depth: 44, dead: 3, robloxCheck: true, layers: 2 },
+    low: { segments: 18, passes: 4, depth: 68, dead: 4, robloxCheck: true, layers: 3 },
+    medium: { segments: 26, passes: 6, depth: 92, dead: 5, robloxCheck: true, layers: 5 },
+    high: { segments: 32, passes: 7, depth: 108, dead: 6, robloxCheck: true, layers: 6 },
+    absolute: { segments: 40, passes: 9, depth: 152, dead: 7, robloxCheck: true, layers: 6 }
 });
 
 // Identifiers inside the inner chunk are reserved before the build's name
@@ -686,30 +686,38 @@ function prepareInner(source, rng, nextName, deadCount) {
     });
 
     const chunkName = nextName();
-    const dead = buildDeadLua(nextName, rng, Math.max(1, deadCount));
+    const dead = buildDeadLua(nextName, rng, Math.max(2, deadCount));
     const wrapperCheck = nextName();
     const opaqueA = 17 + randomInt(rng, 240);
     const opaqueB = 19 + randomInt(rng, 240);
     const opaqueC = 7 + randomInt(rng, 500);
     const opaqueM = 31 + randomInt(rng, 60);
     const opaqueExpected = (opaqueA * opaqueB + opaqueC) % opaqueM;
-    let secondGuard = '';
-    if (deadCount >= 3) {
-        const check2 = nextName();
-        const a2 = 13 + randomInt(rng, 220);
-        const b2 = 11 + randomInt(rng, 210);
-        const c2 = 5 + randomInt(rng, 640);
-        const m2 = 41 + randomInt(rng, 70);
-        secondGuard = `local ${check2}=(${a2}*${b2}+${c2})%${m2}\n`
-            + `if ${check2}~=${(a2 * b2 + c2) % m2} then return end\n`;
-    }
-    const guarded = `local function ${chunkName}(...)\n`
+    // Two unrelated opaque guards on every build, with independent constants, so
+    // patching one predicate still leaves the chunk inert.
+    const check2 = nextName();
+    const a2 = 13 + randomInt(rng, 220);
+    const b2 = 11 + randomInt(rng, 210);
+    const c2 = 5 + randomInt(rng, 640);
+    const m2 = 41 + randomInt(rng, 70);
+    const secondGuard = `local ${check2}=(${a2}*${b2}+${c2})%${m2}\n`
+        + `if ${check2}~=${(a2 * b2 + c2) % m2} then return end\n`;
+    let guarded = `local function ${chunkName}(...)\n`
         + dead
         + `local ${wrapperCheck}=(${opaqueA}*${opaqueB}+${opaqueC})%${opaqueM}\n`
         + `if ${wrapperCheck}~=${opaqueExpected} then return end\n`
         + secondGuard
         + inner
         + `\nend\nreturn ${chunkName}(...)\n`;
+    // Nested trampolines: the delivered chunk's first function is a stub that
+    // only forwards its arguments. A dumper that dumps "the outer function" or
+    // greps the first local function gets one frame, not the payload, and each
+    // frame is a fresh name so no build shares a shape.
+    const frames = 1 + randomInt(rng, 3);
+    for (let frame = 0; frame < frames; frame += 1) {
+        const outer = nextName();
+        guarded = `local function ${outer}(...)\n` + guarded + `end\nreturn ${outer}(...)\n`;
+    }
     return guarded;
 }
 
@@ -935,6 +943,11 @@ function buildLoader(o) {
     add(`local ${p.getgenv}=type(getgenv)=="function" and getgenv or nil`);
     add(`local ${p.info}=nil`);
     add(`do local ${p.infoAlt}=${p.debug} if ${p.infoAlt} then ${p.info}=${p.infoAlt}.info or ${p.infoAlt}.getinfo end end`);
+    // string.dump is the second half of every dump: a dumper hooks loadstring to
+    // capture the chunk, then calls string.dump on the function to serialize it.
+    // Keeping the builtin means a replacement is caught the same way as a
+    // hooked load, and the capture path is closed even when load was missed.
+    add(`local ${p.sDump}=string.dump`);
 
     // A loader is only trusted while it is still the engine's own C function.
     // Every dump starts with hookfunction(loadstring) or hookfunction(load),
@@ -1020,6 +1033,10 @@ function buildLoader(o) {
     add(`    if not ${p.native}(${p.sbyte}) or not ${p.native}(${p.schar}) or not ${p.native}(${p.ssub}) or not ${p.native}(${p.slen}) then return false end`);
     add(`    if not ${p.native}(${p.sconcat}) or not ${p.native}(${p.sunpack}) or not ${p.native}(${p.floor}) then return false end`);
     add(`    if ${p.pcall}(${p.error}) then return false end`);
+    // Both halves of the capture pair are checked: a wrapper around either one
+    // can record the payload after the environment checks above were satisfied.
+    add(`    if ${p.type}(${p.sDump})=="function" and not ${p.native}(${p.sDump}) then return false end`);
+    add(`    if ${p.info} and not ${p.native}(${p.info}) then return false end`);
     // The hook is cleared before decoding, so anything visible here was
     // installed after that point.
     add(`    if ${p.gethook} then`);
@@ -1314,6 +1331,15 @@ function buildLoader(o) {
     add(`if not ${p.fn} then`);
     add(`    ${p.msg}(${o.messages.start.table},${o.messages.start.key})`);
     add(`end`);
+    // Re-check after the chunk is compiled. Anything installed while the decode
+    // ran (a hook, a wrapped string.dump) is caught here, immediately before the
+    // payload is allowed to execute.
+    add(`if not ${p.check}() then ${p.msg}(${o.messages.start.table},${o.messages.start.key}) end`);
+    const lateA = 19 + randomInt(rng, 300);
+    const lateB = 23 + randomInt(rng, 300);
+    const lateC = 13 + randomInt(rng, 900);
+    const lateM = 47 + randomInt(rng, 120);
+    add(`if (${lateA}*${lateB}+${lateC})%${lateM}~=${(lateA * lateB + lateC) % lateM} then return end`);
     add(`if ${p.restore}[1]~=nil then ${p.pcall}(${p.sethook},${p.restore}[1],${p.restore}[2],${p.restore}[3]) end`);
     add(`return ${p.fn}()`);
 

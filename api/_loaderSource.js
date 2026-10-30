@@ -194,11 +194,12 @@ function fakeLoaderToken(keyMaterial) {
 const BOOT_B64_STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 // Each codec is a different xorshift shape and byte schedule. The Lua side is
 // emitted with the same constants, so every fetch can pick a different decoder
-// without the two ever drifting apart.
+// without the two ever drifting apart. Every codec carries four shifts so the
+// emitted decoder can consume a whole 32-bit word per keystream step.
 const BOOT_CODECS = Object.freeze([
     { a: 13, b: 17, c: 5, shifts: [24, 16, 8, 0] },
-    { a: 7, b: 9, c: 13, shifts: [24, 8] },
-    { a: 5, b: 11, c: 29, shifts: [16] }
+    { a: 7, b: 9, c: 13, shifts: [16, 24, 0, 8] },
+    { a: 5, b: 11, c: 29, shifts: [24, 0, 16, 8] }
 ]);
 
 function bootPick(list) {
@@ -335,7 +336,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
         code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name(),
         shifts: name(), order: name(), probe: name(), seedNum: name(), buf: name(), keyv: name(),
-        stop: name(), rbx: name(), envOk: name(), envSvc: name()
+        stop: name(), rbx: name(), envOk: name(), envSvc: name(), wait: name(), done: name(), budget: name()
     };
     const cap = i => `${n.cap}[${i}]`;
 
@@ -355,43 +356,62 @@ if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end
 local ${n.data}={${dataLiteral}}
 local ${n.map}={}
 do local ${n.alpha}="${alphabet}"
-for ${n.index}=1,#${n.alpha} do ${n.map}[string.sub(${n.alpha},${n.index},${n.index})]=${n.index}-1 end end
+for ${n.index}=1,#${n.alpha} do ${n.map}[string.byte(${n.alpha},${n.index})]=${n.index}-1 end end
+-- Fast paths: the alphabet is keyed by byte value, four characters are read at
+-- once, and the decoded bytes leave in one string.char call per group. The
+-- keystream advances once per 32-bit word, so each word is masked and emitted
+-- in a single step as well. Same output as the one-byte-per-iteration version,
+-- minus the per-character string.sub and string.char churn.
 local function ${n.b64}(v)
 local r=#v%4
 if r==2 then v=v.."==" elseif r==3 then v=v.."=" end
+local n=#v
 local o={}
+local t={}
+local k,tk=0,0
 local i=1
-while i<=#v do
-local c1=${n.map}[string.sub(v,i,i)] or 0
-local c2=${n.map}[string.sub(v,i+1,i+1)] or 0
-local c3=${n.map}[string.sub(v,i+2,i+2)]
-local c4=${n.map}[string.sub(v,i+3,i+3)]
-local x=c1*262144+c2*4096+(c3 or 0)*64+(c4 or 0)
-o[#o+1]=string.char(math.floor(x/65536)%256)
-if c3 then o[#o+1]=string.char(math.floor(x/256)%256) end
-if c4 then o[#o+1]=string.char(x%256) end
+while i<=n do
+local c1,c2,c3,c4=string.byte(v,i,i+3)
+local q1,q2=${n.map}[c1],${n.map}[c2]
+local q3,q4=${n.map}[c3],${n.map}[c4]
+local x=(q1 or 0)*262144+(q2 or 0)*4096+(q3 or 0)*64+(q4 or 0)
+local b1=bit32.rshift(x,16)
+local b2=bit32.band(bit32.rshift(x,8),255)
+local b3=bit32.band(x,255)
+if q4 then tk=tk+1 t[tk]=string.char(b1,b2,b3)
+elseif q3 then tk=tk+1 t[tk]=string.char(b1,b2)
+else tk=tk+1 t[tk]=string.char(b1) end
+if tk>=2048 then k=k+1 o[k]=table.concat(t) t={} tk=0 end
 i=i+4
 end
+if tk>0 then k=k+1 o[k]=table.concat(t) end
 return table.concat(o)
 end
-local ${n.shifts}={${codec.shifts.join(',')}}
 local function ${n.xor}(v,s)
+local n=#v
 local o={}
-local i=1
-local w=#${n.shifts}
+local t={}
+local k,tk=0,0
 s=s%4294967296
 if s==0 then s=2654435769 end
-while i<=#v do
-local j=(i-1)%w
-if j==0 then
+local i=1
+while i<=n do
 s=bit32.bxor(s,bit32.lshift(s,${codec.a}))
 s=bit32.bxor(s,bit32.rshift(s,${codec.b}))
 s=bit32.bxor(s,bit32.lshift(s,${codec.c}))
-s=s%4294967296
+local m1=bit32.band(bit32.rshift(s,${codec.shifts[0]}),255)
+local m2=bit32.band(bit32.rshift(s,${codec.shifts[1]}),255)
+local m3=bit32.band(bit32.rshift(s,${codec.shifts[2]}),255)
+local m4=bit32.band(bit32.rshift(s,${codec.shifts[3]}),255)
+local b1,b2,b3,b4=string.byte(v,i,i+3)
+if b4 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2),bit32.bxor(b3,m3),bit32.bxor(b4,m4))
+elseif b3 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2),bit32.bxor(b3,m3))
+elseif b2 then tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1),bit32.bxor(b2,m2))
+else tk=tk+1 t[tk]=string.char(bit32.bxor(b1,m1)) end
+if tk>=2048 then k=k+1 o[k]=table.concat(t) t={} tk=0 end
+i=i+4
 end
-o[#o+1]=string.char(bit32.bxor(string.byte(v,i),bit32.rshift(s,${n.shifts}[j+1])%256))
-i=i+1
-end
+if tk>0 then k=k+1 o[k]=table.concat(t) end
 return table.concat(o)
 end
 local ${n.cap}={}
@@ -457,25 +477,39 @@ local ${n.sealed}={${gateTable}}
 local ${n.order}={${probeOrder}}
 local ${n.dec}={}
 for ${n.slot}=1,#${n.sealed} do ${n.dec}[${n.slot}]=${n.xor}(${n.b64}(${n.sealed}[${n.slot}][1]),${n.sealed}[${n.slot}][2]) end
-local ${n.fire}=function(${n.item}) ${cap(7)}(function() return ${cap(12)}(game,${n.item}) end) end
-local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
-local ${n.seed},${n.ok},${n.res},${n.stop},${n.fails}=nil,nil,nil,#${n.order},0
-for ${n.probe}=1,#${n.order} do
-${n.ok},${n.res}=${cap(7)}(function() return ${cap(12)}(game,${n.dec}[${n.order}[${n.probe}]]) end)
-if ${n.ok} and type(${n.res})=="string" then
-local hit=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
-if hit then ${n.seed}=hit end
-elseif not ${n.ok} then ${n.fails}=${n.fails}+1 end
-if ${n.seed} then ${n.stop}=${n.probe} break end
+-- One probe per candidate. The reply has to be the exact ticket shape the gate
+-- issues, so a stray body that merely starts with vx1| cannot steer the seed.
+local ${n.seed},${n.fails},${n.done}=nil,0,0
+local ${n.probe}=function(${n.slot})
+local ok,res=${cap(7)}(function() return ${cap(12)}(game,${n.dec}[${n.order}[${n.slot}]]) end)
+if ok and type(res)=="string" then
+local hit=${cap(5)}(res,"^vx1|(%x%x%x%x%x%x%x%x)|%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")
+if hit and not ${n.seed} then ${n.seed}=hit end
+elseif not ok then ${n.fails}=${n.fails}+1 end
+${n.done}=${n.done}+1
 end
--- The unprobed candidates are still requested once each, so a request log
--- shows every table entry exactly one time and no URL stands out as the one
--- that answered with the seed.
-if ${n.stop}<#${n.order} then
-if ${n.spawn} then
-for ${n.slot}=${n.stop}+1,#${n.order} do ${cap(7)}(${n.spawn},${n.fire},${n.dec}[${n.order}[${n.slot}]]) end
+local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
+local ${n.wait}=${cap(9)}(task)=="table" and task.wait or nil
+-- When the executor can spawn, every candidate is launched at once and the run
+-- resumes as soon as one reply parses, so a yielding HttpGet overlaps all the
+-- requests. A blocking HttpGet simply runs them in order, which is what the
+-- plain loop does anyway, and the unprobed candidates are still requested once
+-- each so a request log shows every table entry exactly one time.
+if ${n.spawn} and ${n.wait} then
+for ${n.slot}=1,#${n.order} do ${cap(7)}(${n.spawn},${n.probe},${n.slot}) end
+local ${n.budget}=0
+while ${n.done}<#${n.order} and not ${n.seed} and ${n.budget}<600 do
+${n.budget}=${n.budget}+1
+${cap(7)}(${n.wait},0.01)
+end
 else
-for ${n.slot}=${n.stop}+1,#${n.order} do ${n.fire}(${n.dec}[${n.order}[${n.slot}]]) end
+local ${n.stop}=#${n.order}
+for ${n.slot}=1,#${n.order} do
+${n.probe}(${n.slot})
+if ${n.seed} then ${n.stop}=${n.slot} break end
+end
+if ${n.stop}<#${n.order} then
+for ${n.slot}=${n.stop}+1,#${n.order} do ${n.probe}(${n.slot}) end
 end
 end
 if ${cap(13)} and game.HttpGet~=${cap(12)} then return ${cap(8)}(${n.deny},0) end
@@ -492,9 +526,11 @@ local ${n.seedNum}
 for ${n.slot}=1,#${n.data} do
 ${n.seedNum}=(${cap(21)}(${n.seed},16)+(${n.slot}-1)*${partStep})%4294967296
 ${n.buf}[${n.slot}]=${n.xor}(${n.b64}(${n.data}[${n.slot}]),${n.seedNum})
+-- The boot mark sits at the start of the first part, so a stale or fabricated
+-- seed is rejected before the remaining parts are decoded.
+if ${n.slot}==1 and ${cap(3)}(${n.buf}[1],1,#${n.mark})~=${n.mark} then return ${cap(8)}(${n.exp},0) end
 end
 local ${n.code}=${cap(6)}(${n.buf})
-if ${cap(3)}(${n.code},1,#${n.mark})~=${n.mark} then return ${cap(8)}(${n.exp},0) end
 local ${n.arg}=${n.code}
 local ${n.probeOk},${n.probeFn}=${cap(7)}(${n.loader},function() return nil end)
 if ${n.probeOk} and type(${n.probeFn})=="function" then
@@ -595,6 +631,7 @@ local vxRep = string.rep
 local vxConcat = table.concat
 local vxGsub = string.gsub
 local vxMatch = string.match
+local vxLower = string.lower
 local vxPcall = pcall
 local vxInfo = type(debug) == "table" and debug.info or nil
 local vxInfoStable = vxInfo ~= nil and debug.info == vxInfo
@@ -710,7 +747,11 @@ local vxInstant = ${instant ? 'true' : 'false'}
 local vxB64Map = {}
 do
     local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    for index = 1, #alphabet do vxB64Map[vxSub(alphabet, index, index)] = index - 1 end
+    for index = 1, #alphabet do vxB64Map[vxByte(alphabet, index)] = index - 1 end
+    -- base64url: fold - and _ into the same byte-keyed map instead of rewriting
+    -- the whole payload twice with gsub before decoding.
+    vxB64Map[45] = 62
+    vxB64Map[95] = 63
 end
 
 local function vxNextState(state)
@@ -719,69 +760,97 @@ local function vxNextState(state)
     return vxBxor(state, vxLshift(state, 5))
 end
 
-local function vxBase64Decode(value)
-    value = vxGsub(value, "%-", "+")
-    value = vxGsub(value, "_", "/")
-    local remainder = #value % 4
-    if remainder == 2 then value = value .. "=="
-    elseif remainder == 3 then value = value .. "=" end
-    local out = {}
-    local block = {}
-    local index = 1
-    while index <= #value do
-        local c1 = vxB64Map[vxSub(value, index, index)] or 0
-        local c2 = vxB64Map[vxSub(value, index + 1, index + 1)] or 0
-        local c3 = vxB64Map[vxSub(value, index + 2, index + 2)]
-        local c4 = vxB64Map[vxSub(value, index + 3, index + 3)]
-        local packed = c1 * 262144 + c2 * 4096 + (c3 or 0) * 64 + (c4 or 0)
-        block[#block + 1] = vxChar(math.floor(packed / 65536) % 256)
-        if c3 then block[#block + 1] = vxChar(math.floor(packed / 256) % 256) end
-        if c4 then block[#block + 1] = vxChar(packed % 256) end
-        if #block >= 8192 then
-            out[#out + 1] = vxConcat(block)
-            block = {}
-        end
-        index = index + 4
-    end
-    if #block > 0 then out[#out + 1] = vxConcat(block) end
-    return vxConcat(out)
-end
-
-local function vxXor(value, state)
-    local out = {}
-    local block = {}
-    for index = 1, #value do
-        local slot = (index - 1) % 4
-        if slot == 0 then state = vxNextState(state) end
-        block[#block + 1] = vxChar(vxBxor(vxByte(value, index), vxRshift(state, 24 - slot * 8) % 256))
-        if #block >= 8192 then
-            out[#out + 1] = vxConcat(block)
-            block = {}
-        end
-    end
-    if #block > 0 then out[#out + 1] = vxConcat(block) end
-    return vxConcat(out)
-end
-
 local vxCrcTable
-local function vxCrc32(value)
-    if not vxCrcTable then
-        vxCrcTable = {}
-        for index = 0, 255 do
-            local current = index
-            for _ = 1, 8 do
-                if current % 2 == 1 then current = vxBxor(vxRshift(current, 1), 0xEDB88320)
-                else current = vxRshift(current, 1) end
-            end
-            vxCrcTable[index] = current
+local function vxCrcInit()
+    if vxCrcTable then return end
+    vxCrcTable = {}
+    for index = 0, 255 do
+        local current = index
+        for _ = 1, 8 do
+            if current % 2 == 1 then current = vxBxor(vxRshift(current, 1), 0xEDB88320)
+            else current = vxRshift(current, 1) end
         end
+        vxCrcTable[index] = current
     end
+end
+
+-- Decodes every part and folds the CRC32 into the same pass, so the integrity
+-- check never re-reads the payload. The checksum still covers the ciphertext as
+-- received, and it is compared before anything is decrypted.
+local function vxDecodeParts(parts, count)
+    vxCrcInit()
     local crc = 0xFFFFFFFF
-    for index = 1, #value do
-        local slot = vxBxor(vxBand(crc, 0xFF), vxByte(value, index))
-        crc = vxBxor(vxCrcTable[slot], vxRshift(crc, 8))
+    local out = {}
+    local o = 0
+    for part = 1, count do
+        local value = parts[part]
+        local remainder = #value % 4
+        if remainder == 2 then value = value .. "=="
+        elseif remainder == 3 then value = value .. "=" end
+        local length = #value
+        local block = {}
+        local k = 0
+        local pos = 1
+        while pos <= length do
+            local c1, c2, c3, c4 = vxByte(value, pos, pos + 3)
+            local q1, q2 = vxB64Map[c1], vxB64Map[c2]
+            local q3, q4 = vxB64Map[c3], vxB64Map[c4]
+            local packed = (q1 or 0) * 262144 + (q2 or 0) * 4096 + (q3 or 0) * 64 + (q4 or 0)
+            local b1 = vxRshift(packed, 16)
+            local b2 = vxBand(vxRshift(packed, 8), 255)
+            local b3 = vxBand(packed, 255)
+            crc = vxBxor(vxCrcTable[vxBxor(vxBand(crc, 255), b1)], vxRshift(crc, 8))
+            if q3 then
+                crc = vxBxor(vxCrcTable[vxBxor(vxBand(crc, 255), b2)], vxRshift(crc, 8))
+                if q4 then
+                    crc = vxBxor(vxCrcTable[vxBxor(vxBand(crc, 255), b3)], vxRshift(crc, 8))
+                    k = k + 1 block[k] = vxChar(b1, b2, b3)
+                else
+                    k = k + 1 block[k] = vxChar(b1, b2)
+                end
+            else
+                k = k + 1 block[k] = vxChar(b1)
+            end
+            if k >= 2048 then
+                o = o + 1 out[o] = vxConcat(block)
+                block = {}
+                k = 0
+            end
+            pos = pos + 4
+        end
+        if k > 0 then o = o + 1 out[o] = vxConcat(block) end
     end
-    return vxFormat("%08x", vxBxor(crc, 0xFFFFFFFF))
+    return vxConcat(out), vxFormat("%08x", vxBxor(crc, 0xFFFFFFFF))
+end
+
+-- One keystream step per 32-bit word, one string.char call per word.
+local function vxXor(value, state)
+    local length = #value
+    local out = {}
+    local o = 0
+    local block = {}
+    local k = 0
+    local pos = 1
+    while pos <= length do
+        state = vxNextState(state)
+        local m1 = vxBand(vxRshift(state, 24), 255)
+        local m2 = vxBand(vxRshift(state, 16), 255)
+        local m3 = vxBand(vxRshift(state, 8), 255)
+        local m4 = vxBand(state, 255)
+        local b1, b2, b3, b4 = vxByte(value, pos, pos + 3)
+        if b4 then k = k + 1 block[k] = vxChar(vxBxor(b1, m1), vxBxor(b2, m2), vxBxor(b3, m3), vxBxor(b4, m4))
+        elseif b3 then k = k + 1 block[k] = vxChar(vxBxor(b1, m1), vxBxor(b2, m2), vxBxor(b3, m3))
+        elseif b2 then k = k + 1 block[k] = vxChar(vxBxor(b1, m1), vxBxor(b2, m2))
+        else k = k + 1 block[k] = vxChar(vxBxor(b1, m1)) end
+        if k >= 2048 then
+            o = o + 1 out[o] = vxConcat(block)
+            block = {}
+            k = 0
+        end
+        pos = pos + 4
+    end
+    if k > 0 then o = o + 1 out[o] = vxConcat(block) end
+    return vxConcat(out)
 end
 
 local function vxCollectFlags()
@@ -868,15 +937,15 @@ local function vxUnshield(result, shield)
     local chunks = {}
     for index = 1, count do
         if type(result.parts[index]) ~= "string" then return nil, "payload_shape_invalid" end
-        chunks[index] = vxBase64Decode(result.parts[index])
+        chunks[index] = result.parts[index]
     end
-    local cipher = vxConcat(chunks)
     -- The checksum covers the ciphertext as received. It proves the transfer was
     -- intact without publishing a checksum of the plaintext to calibrate against.
-    if vxCrc32(cipher) ~= string.lower(tostring(result.tag or "")) then
+    local cipher, crc = vxDecodeParts(chunks, count)
+    if crc ~= vxLower(vxTostring(result.tag or "")) then
         return nil, "payload_crc_mismatch"
     end
-    local seed = tonumber(shield.key, 16)
+    local seed = vxTonumber(shield.key, 16)
     if not seed then return nil, "payload_shape_invalid" end
     local code = vxXor(cipher, seed)
     local prefix = "--[[vx:" .. shield.trace .. "]]"

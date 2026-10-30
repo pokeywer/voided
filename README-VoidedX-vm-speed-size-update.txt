@@ -5,7 +5,7 @@ This is the complete VoidedX project with the existing vault recovery and staff 
 Changes in this update
 - Vault protection uses the bundled Prometheus fork again; the custom VoidedX bytecode VM has been removed.
 - Fork output is repacked in the VoidedX armor container (lua-voidedx-armor.js): disguised watermark, renamed internals, decoys, LZSS compression, layered masks, shuffled segments, and a randomized loader with integrity checks.
-- Fast uses the Weak preset; Low and Medium use Medium; High and Absolute use Strong. Fast, Low, and Medium use one VM layer; High and Absolute use two, and Absolute adds tamper checking and extra string splitting. Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
+- Fast, Low, and Medium use the Medium preset; High and Absolute use Strong. No level uses the readable Weak preset, so every copy is VM-compiled. Every level keeps one VM layer, and Absolute adds tamper checking and extra string splitting. Fast, Low, Medium, High, and Absolute each apply a progressively heavier armor pass.
 - Auto uses High only for scripts under 16 KiB; larger scripts use Low.
 - The page rewrites bare `#` length operators in the generated decoder to a safe helper so executors that return userdata objects do not crash.
 - Browser and admin vault saves use a 920 KiB serialized-document budget, leaving headroom below Firestore's 1 MiB document limit.
