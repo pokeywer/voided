@@ -271,86 +271,182 @@ function createNameFactory(used) {
     };
 }
 
-function collectDeclarations(tokens, used) {
-    const declared = new Set();
+// Positions that must never be treated as variable references: a field after
+// `.`/`:`, and a `name = value` key inside a table constructor (that is a string
+// key, not a variable, and renaming it changes the data).
+function collectSkipPositions(tokens) {
+    const skip = new Set();
+    const stack = [];
+    let previous = null;
+    for (let index = 0; index < tokens.length; index++) {
+        const token = tokens[index];
+        if (token.type === 'op') {
+            if (token.value === '{' || token.value === '(' || token.value === '[') stack.push(token.value);
+            else if (token.value === '}' || token.value === ')' || token.value === ']') stack.pop();
+        } else if (token.type === 'ident') {
+            if (previous && previous.type === 'op' && (previous.value === '.' || previous.value === ':')) skip.add(index);
+            const next = tokens[index + 1];
+            if (next && next.type === 'op' && next.value === '=' && stack[stack.length - 1] === '{') skip.add(index);
+        }
+        previous = token;
+    }
+    return skip;
+}
 
-    const declare = name => {
-        if (!name || RESERVED.has(name)) return;
-        declared.add(name);
-        used.add(name);
+const SCOPE_KEYWORDS = new Set(['and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function',
+    'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while']);
+const STATEMENT_STARTS = new Set(['local', 'if', 'for', 'while', 'repeat', 'function', 'return',
+    'end', 'else', 'elseif', 'until', 'then', 'do']);
+
+// Scope-aware renaming: every `local`, loop variable and parameter is bound in
+// the block that actually owns it, and each reference resolves to the innermost
+// visible binding. A flat name table would merge a shadowed local with the outer
+// variable of the same spelling and silently change what the script does.
+function valueEnd(token) {
+    if (!token) return false;
+    if (token.type === 'number' || token.type === 'string') return true;
+    if (token.type === 'ident') return !SCOPE_KEYWORDS.has(token.value) || token.value === 'end'
+        || token.value === 'nil' || token.value === 'true' || token.value === 'false';
+    return token.type === 'op' && (token.value === ')' || token.value === ']' || token.value === '}' || token.value === '...');
+}
+
+function valueStart(token) {
+    if (!token) return false;
+    if (token.type === 'number' || token.type === 'string') return true;
+    if (token.type === 'ident') return !SCOPE_KEYWORDS.has(token.value) || token.value === 'function'
+        || token.value === 'nil' || token.value === 'true' || token.value === 'false';
+    return token.type === 'op' && (token.value === '(' || token.value === '{' || token.value === '-'
+        || token.value === '#' || token.value === '~' || token.value === '...');
+}
+
+function scopedRenames(tokens, nameFactory) {
+    const skip = collectSkipPositions(tokens);
+    const map = new Map();
+    const scopes = [new Map()];
+    let depth = 0;
+    let skipNextDo = false;
+    let skipNextThen = false;
+    let pending = null;
+    let headMode = false;
+    let paramMode = false;
+    let paramStop = 0;
+
+    const top = () => scopes[scopes.length - 1];
+    const pushFrame = () => scopes.push(new Map());
+    const popFrame = () => { if (scopes.length > 1) scopes.pop(); };
+    const commit = (index, name) => {
+        if (!name || RESERVED.has(name) || skip.has(index)) return;
+        if (top().has(name)) return;
+        const fresh = nameFactory();
+        top().set(name, fresh);
+        map.set(index, fresh);
+    };
+    const resolve = name => {
+        for (let index = scopes.length - 1; index >= 0; index--) {
+            const found = scopes[index].get(name);
+            if (found) return found;
+        }
+        return null;
+    };
+    const flushPending = () => {
+        if (!pending) return;
+        for (const entry of pending) commit(entry.index, entry.name);
+        pending = null;
+    };
+    const nameList = startIndex => {
+        const names = [];
+        let cursor = startIndex;
+        while (cursor < tokens.length) {
+            const token = tokens[cursor];
+            if (token.type !== 'ident' || RESERVED.has(token.value)) break;
+            names.push({ index: cursor, name: token.value });
+            cursor++;
+            if (tokens[cursor]?.type === 'op' && tokens[cursor].value === ',') { cursor++; continue; }
+            break;
+        }
+        return { names, cursor };
     };
 
     for (let index = 0; index < tokens.length; index++) {
         const token = tokens[index];
-        if (token.type !== 'ident') continue;
+        const previous = tokens[index - 1];
 
-        if (token.value === 'local') {
-            let cursor = index + 1;
-            if (tokens[cursor]?.type === 'ident' && tokens[cursor].value === 'function') {
-                cursor++;
-                if (tokens[cursor]?.type === 'ident') declare(tokens[cursor].value);
-                continue;
-            }
-            while (cursor < tokens.length) {
-                const name = tokens[cursor];
-                if (name.type !== 'ident' || RESERVED.has(name.value)) break;
-                declare(name.value);
-                cursor++;
-                if (tokens[cursor]?.type === 'op' && tokens[cursor].value === ',') { cursor++; continue; }
-                break;
-            }
-        } else if (token.value === 'for') {
-            let cursor = index + 1;
-            while (cursor < tokens.length) {
-                const name = tokens[cursor];
-                if (name.type !== 'ident') break;
-                declare(name.value);
-                cursor++;
-                if (tokens[cursor]?.type === 'op' && tokens[cursor].value === ',') { cursor++; continue; }
-                break;
-            }
-        } else if (token.value === 'function') {
-            let cursor = index + 1;
-            while (cursor < tokens.length) {
-                const part = tokens[cursor];
-                if (part.type === 'op' && part.value === '(') break;
-                if (part.type === 'ident') { cursor++; continue; }
-                if (part.type === 'op' && (part.value === '.' || part.value === ':')) { cursor++; continue; }
-                break;
-            }
-            if (tokens[cursor]?.type !== 'op' || tokens[cursor].value !== '(') continue;
-            cursor++;
-            while (cursor < tokens.length) {
-                const part = tokens[cursor];
-                if (part.type === 'op' && part.value === ')') break;
-                if (part.type === 'ident') declare(part.value);
-                cursor++;
-            }
-        }
-    }
-
-    return declared;
-}
-
-function collectProtectedTableKeys(tokens) {
-    const protectedNames = new Set();
-    const delimiters = [];
-
-    for (let index = 0; index < tokens.length; index++) {
-        const token = tokens[index];
         if (token.type === 'op') {
-            if (token.value === '{' || token.value === '(' || token.value === '[') delimiters.push(token.value);
-            else if (token.value === '}' || token.value === ')' || token.value === ']') delimiters.pop();
+            // The parameter list is matched before the depth change, so its own
+            // parentheses are compared at the depth they opened at.
+            if (headMode && token.value === '(') { headMode = false; paramMode = true; paramStop = depth + 1; }
+            else if (paramMode && token.value === ')' && depth === paramStop) paramMode = false;
+            if (token.value === '(' || token.value === '[' || token.value === '{') depth++;
+            else if (token.value === ')' || token.value === ']' || token.value === '}') depth = Math.max(0, depth - 1);
+            if (depth === 0 && pending && (token.value === ';' || valueEnd(previous) && valueStart(token))) flushPending();
             continue;
         }
-        if (token.type !== 'ident') continue;
-        const next = tokens[index + 1];
-        if (next?.type === 'op' && next.value === '=' && delimiters[delimiters.length - 1] === '{') {
-            protectedNames.add(token.value);
+        if (token.type !== 'ident') {
+            if (depth === 0 && pending && valueEnd(previous) && valueStart(token)) flushPending();
+            continue;
         }
-    }
 
-    return protectedNames;
+        const word = token.value;
+        if (depth === 0 && pending && (STATEMENT_STARTS.has(word) || (valueEnd(previous) && valueStart(token)))) flushPending();
+
+        if (paramMode) {
+            commit(index, word);
+            continue;
+        }
+        if (SCOPE_KEYWORDS.has(word)) {
+            if (word === 'function') {
+                flushPending();
+                pushFrame();
+                headMode = true;
+            } else if (word === 'local') {
+                let cursor = index + 1;
+                if (tokens[cursor]?.type === 'ident' && tokens[cursor].value === 'function') {
+                    const nameToken = tokens[cursor + 1];
+                    if (nameToken?.type === 'ident') commit(cursor + 1, nameToken.value);
+                    // Leave the `function` token for the next pass so its frame
+                    // and parameter list are still handled.
+                    index = cursor - 1;
+                    continue;
+                }
+                const list = nameList(cursor);
+                if (tokens[list.cursor]?.type === 'op' && tokens[list.cursor].value === '=') pending = list.names;
+                else for (const entry of list.names) commit(entry.index, entry.name);
+                index = list.cursor - 1;
+            } else if (word === 'for' || word === 'while') {
+                flushPending();
+                pushFrame();
+                if (word === 'for') for (const entry of nameList(index + 1).names) commit(entry.index, entry.name);
+                skipNextDo = true;
+            } else if (word === 'do') {
+                if (skipNextDo) skipNextDo = false;
+                else { flushPending(); pushFrame(); }
+            } else if (word === 'repeat') {
+                flushPending();
+                pushFrame();
+            } else if (word === 'until') {
+                flushPending();
+                popFrame();
+            } else if (word === 'then') {
+                if (skipNextThen) skipNextThen = false;
+                else { flushPending(); pushFrame(); }
+            } else if (word === 'elseif' || word === 'else') {
+                flushPending();
+                popFrame();
+                pushFrame();
+                if (word === 'elseif') skipNextThen = true;
+            } else if (word === 'end') {
+                flushPending();
+                popFrame();
+            }
+            continue;
+        }
+
+        if (skip.has(index)) continue;
+        const bound = resolve(word);
+        if (bound) map.set(index, bound);
+    }
+    flushPending();
+    return map;
 }
 
 function needsSpace(previous, next) {
@@ -366,21 +462,17 @@ function needsSpace(previous, next) {
     return false;
 }
 
-function emit(tokens, rename) {
+function emit(tokens, renameAt) {
     let output = '';
     let previous = '';
-    let previousToken = null;
     let sinceBreak = 0;
 
-    for (const token of tokens) {
+    for (let index = 0; index < tokens.length; index++) {
+        const token = tokens[index];
         let text;
 
         if (token.type === 'ident') {
-            let name = token.value;
-            const isField = previousToken?.type === 'op'
-                && (previousToken.value === '.' || previousToken.value === ':');
-            if (!isField && rename.has(name)) name = rename.get(name);
-            text = name;
+            text = renameAt.get(index) || token.value;
         } else if (token.type === 'string') {
             text = `${token.refName}[${token.refIndex}]`;
         } else {
@@ -399,7 +491,6 @@ function emit(tokens, rename) {
         }
         output += text;
         previous = text;
-        previousToken = token;
     }
 
     return output;
@@ -467,15 +558,8 @@ function obfuscate(source) {
         if (token.type === 'ident') used.add(token.value);
     }
 
-    const declared = collectDeclarations(tokens, used);
-    const protectedKeys = collectProtectedTableKeys(tokens);
     const nameFactory = createNameFactory(used);
-
-    const rename = new Map();
-    for (const name of declared) {
-        if (protectedKeys.has(name)) continue;
-        rename.set(name, nameFactory());
-    }
+    const renameAt = scopedRenames(tokens, nameFactory);
 
     const stringIndex = new Map();
     const unique = [];
@@ -515,7 +599,7 @@ function obfuscate(source) {
         token.refIndex = ref.refIndex;
     }
 
-    const body = emit(tokens, rename);
+    const body = emit(tokens, renameAt);
     const seedName = nameFactory();
     const seed = 10000 + Math.floor(Math.random() * 90000);
     const container = `local ${tableNames.join(',')}
