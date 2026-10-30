@@ -1,5 +1,5 @@
 import { deliveryAttestation } from './_loaderToken.js';
-import { buildPayloadRuntime, compactGeneratedLoader, luaString, packGeneratedLoader, robloxOnlyGuard } from './_loaderSource.js';
+import { buildPayloadRuntime, compactGeneratedLoader, loaderBootQuery, luaString, packGeneratedLoader, robloxOnlyGuard } from './_loaderSource.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 
 export function sanitizeGuiAppearance(raw = {}) {
@@ -50,9 +50,7 @@ export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = ''
     // The in-game card only reaches /api/verify when it was served inside a real
     // bootstrap, so the attestation is added when a loader token exists; the
     // website preview builds the same card without one.
-    const verifyBase = loaderToken
-        ? `${origin}/api/verify?boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`
-        : `${origin}/api/verify`;
+    const verifyBase = `${origin}/api/verify?id=${encodeURIComponent(id)}${loaderBootQuery(loaderToken, id)}`;
     const keyPageUrl = `${origin}/key.html?id=${id}`;
     const appearance = sanitizeGuiAppearance(rawAppearance);
     const vaultName = typeof rawVaultName === 'string'
@@ -1511,7 +1509,7 @@ local function attemptVerify(fromSavedKey)
     local ok, response = vxPcall(function()
         return vxHttpGet(
             game,
-            "${verifyBase}?id=${encodeURIComponent(id)}" ..
+            "${verifyBase}" ..
             "&key=" .. HttpService:UrlEncode(typedKey) ..
             vxClientParams(player)
         )

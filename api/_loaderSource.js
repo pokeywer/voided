@@ -1,8 +1,23 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { deriveBootstrapSeed, keyFingerprint, deliveryAttestation } from './_loaderToken.js';
+import * as loaderTokenModule from './_loaderToken.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { obfuscateLoaderSource } from './_loaderObfuscator.js';
 import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk, OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
+
+const { deriveBootstrapSeed, keyFingerprint } = loaderTokenModule;
+
+// Namespace import on purpose: the API deploys as one catch-all function, so a
+// single named export missing from a stale sibling file would stop every route
+// from loading. Without the helper the loader just omits ?boot= and /api/verify
+// answers with its own readable message instead of the whole site going dark.
+const deliveryAttestation = typeof loaderTokenModule.deliveryAttestation === 'function'
+    ? loaderTokenModule.deliveryAttestation
+    : null;
+
+export function loaderBootQuery(loaderToken, id) {
+    if (!loaderToken || !deliveryAttestation) return '';
+    return `&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
+}
 
 export function luaString(str) {
     const escaped = String(str)
@@ -1382,7 +1397,7 @@ end
 `.trim();
 }
 export function buildKeyLoader(id, key, origin, loaderToken, options = {}) {
-    const verifyBase = `${origin}/api/verify?boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
+    const verifyBase = `${origin}/api/verify?id=${encodeURIComponent(id)}${loaderBootQuery(loaderToken, id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 ${robloxOnlyGuard()}
 local Players = game:GetService("Players")
@@ -1393,7 +1408,7 @@ ${buildPayloadRuntime(origin, options, id)}
 local ok, response = vxPcall(function()
     return vxHttpGet(
         game,
-        "${verifyBase}?id=${encodeURIComponent(id)}" ..
+        "${verifyBase}" ..
         "&key=" .. HttpService:UrlEncode(${luaString(key)}) ..
         vxClientParams(player)
     )
@@ -1421,7 +1436,7 @@ return vxRunPayload(result.token, player and player.UserId or nil, result.shield
 }
 
 export function buildTrackedScript(id, origin, loaderToken, key = '', options = {}) {
-    const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
+    const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}${loaderBootQuery(loaderToken, id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 ${robloxOnlyGuard()}
 local Players = game:GetService("Players")

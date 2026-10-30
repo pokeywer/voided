@@ -3,8 +3,16 @@ import { db } from './_admin.js';
 import { recordExecution } from './_executionStats.js';
 import { getCodeForExecution } from './_deliveryCode.js';
 import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
-import { traceForSession, verifyDeliveryAttestation } from './_loaderToken.js';
+import * as loaderTokenModule from './_loaderToken.js';
 import { publicKeyDisabled } from './_keyAccess.js';
+
+const { traceForSession } = loaderTokenModule;
+// Namespace import so a stale sibling file cannot stop the whole catch-all
+// function from loading; the gate below then names the file to upload instead
+// of silently accepting an unattested request.
+const verifyDeliveryAttestation = typeof loaderTokenModule.verifyDeliveryAttestation === 'function'
+    ? loaderTokenModule.verifyDeliveryAttestation
+    : null;
 
 const VERIFY_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const VERIFY_LIMIT_ATTEMPTS = 30;
@@ -139,6 +147,9 @@ export default async function handler(req, res) {
     if (key.length > 256) return json(res, 400, { ok: false, message: 'Invalid key.' });
     // First of two gates: the request has to carry the attestation that only a
     // bootstrap served by /api/raw for this vault knows.
+    if (!verifyDeliveryAttestation) {
+        return json(res, 501, { ok: false, message: 'The loader attestation module is out of date. Upload api/_loaderToken.js from the current patch.' });
+    }
     const attestedToken = verifyDeliveryAttestation(req.query?.boot, id);
     if (!attestedToken) {
         return json(res, 403, { ok: false, message: 'This loader is not valid. Copy it again from the website.' });

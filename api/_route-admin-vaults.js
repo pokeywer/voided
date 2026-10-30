@@ -6,7 +6,11 @@ import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
 import { createVaultBackup } from './_vaultBackups.js';
 
 import { OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
-import { LOADER_BUILD } from './_loaderSource.js';
+import * as loaderSourceModule from './_loaderSource.js';
+
+// Only used to label the admin button, so a missing export degrades the label
+// rather than the whole API function.
+const LOADER_BUILD = Number(loaderSourceModule.LOADER_BUILD) || 0;
 
 const PAGE_SIZE = 100;
 const REVOKE_PAGE_SIZE = 120;
