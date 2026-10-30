@@ -124,7 +124,7 @@
         <div class="vx-rail-scroll"></div>
         <div class="vx-rail-footer">
             <button type="button" class="vx-rail-share" id="vx-share-btn"><i class="fa-solid fa-arrow-up-from-bracket"></i> <span>Share VoidedX</span></button>
-            <div class="vx-rail-meta"><span>FREE VAULT</span><span>PROFILE 24</span></div>
+            <div class="vx-rail-meta"><span>FREE VAULT</span><span>PROFILE 25</span></div>
         </div>
     `;
     const railScroll = rail.querySelector('.vx-rail-scroll');

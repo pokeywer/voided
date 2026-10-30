@@ -1415,9 +1415,9 @@ function buildLoader(o) {
 
     const text = new Map(parts.map(part => [part.key, part.text]));
     // load must be selected before the start check inside the message block runs,
-    // and the message helper must exist before the hook block can use it.
-    const chain = ['native', 'load', 'msg', 'hook', 'check'];
-    const free = ['dead', 'roblox', 'map', 'b64', 'unmask', 'inflate', 'adler', 'sum2'];
+    // and the message helper must exist before the roblox and hook blocks use it.
+    const chain = ['native', 'load', 'msg', 'roblox', 'hook', 'check'];
+    const free = ['dead', 'map', 'b64', 'unmask', 'inflate', 'adler', 'sum2'];
     for (let i = free.length - 1; i > 0; i -= 1) {
         const j = randomInt(rng, i + 1);
         const tmp = free[i];
@@ -1462,8 +1462,7 @@ function renderBannerWord(word) {
     return rows;
 }
 
-function buildBanner() {
-    const art = renderBannerWord('VOIDEDX');
+function buildBanner() {    const art = renderBannerWord('VOIDEDX');
     return [
         '--[[',
         '   ' + art[0],
@@ -1518,6 +1517,82 @@ function noiseComment(rng) {
 // its own `do ... end` locals, and leaves no globals behind. Two portability
 // rules hold for every shape: no empty statement (LuaJIT rejects `;;`) and no
 // bare-variable table keys (those would read a global instead of a name).
+function junkValueExpr(rng) {
+    const a = 1 + randomInt(rng, 9999);
+    const b = 1 + randomInt(rng, 999);
+    const strong = 1 + randomInt(rng, 9999);
+    const mod = 2 + randomInt(rng, 511);
+    const pick = randomInt(rng, 6);
+    if (pick === 0) return `math.floor(${a}/2^${1 + randomInt(rng, 12)})`;
+    if (pick === 1) return `(${a}*${b}+${strong})%${mod}`;
+    if (pick === 2) return `(${a}%${b}+${strong}%${mod})%${mod}`;
+    if (pick === 3) return `math.max(${1 + randomInt(rng, 90)},math.min(${1 + randomInt(rng, 200)},${a}))`;
+    if (pick === 4) return `(${a}*2^${randomInt(rng, 8)})%${mod}`;
+    return `(${a}-${b})*${1 + randomInt(rng, 40)}%${mod}`;
+}
+
+// A whole state machine that computes nothing: a numeric state id, an
+// accumulator, a fixed trip count, and a branch per state that is sometimes
+// unreachable, so the flow cannot be folded to a single value. Every local is
+// scoped to the block and cleared before it ends.
+function buildStateMachineJunk(rng, next) {
+    const state = next();
+    const acc = next();
+    const loop = next();
+    const states = 4 + randomInt(rng, 4);
+    const ids = [];
+    for (let i = 0; i < states; i += 1) ids.push(String(10000 + randomInt(rng, 89999)));
+    const lines = ['do', `local ${state}=${ids[0]}`, `local ${acc}=0`, `for ${loop}=1,${3 + randomInt(rng, 9)} do`];
+    for (let i = 0; i < states; i += 1) {
+        const keyword = i === 0 ? 'if' : 'elseif';
+        const onTrue = ids[randomInt(rng, states)];
+        const onFalse = ids[randomInt(rng, states)];
+        lines.push(`${keyword} ${state}==${ids[i]} then ${acc}=${junkValueExpr(rng)}`);
+        lines.push(`if ${acc}>${randomInt(rng, 520)} then ${state}=${onTrue} else ${state}=${onFalse} end`);
+    }
+    lines.push('end', 'end', `${state}=nil;${acc}=nil`, 'end');
+    return lines.join('\n');
+}
+
+// A four-register byte machine driven by an embedded instruction list of
+// multiply-add style arithmetic, with the register file zeroed and dropped at
+// the end of the block.
+function buildRegisterMachineJunk(rng, next) {
+    const program = next();
+    const registers = next();
+    const counter = next();
+    const opSlot = next();
+    const r1 = next();
+    const r2 = next();
+    const step = next();
+    const index = next();
+    const instructions = 6 + randomInt(rng, 9);
+    const code = [];
+    for (let i = 0; i < instructions; i += 1) {
+        code.push((randomInt(rng, 4) * 16) + (randomInt(rng, 4) * 4) + randomInt(rng, 4));
+    }
+    const values = [];
+    for (let i = 0; i < 4; i += 1) values.push(1 + randomInt(rng, 240));
+    return [
+        'do',
+        `local ${program}={${code.join(',')}}`,
+        `local ${registers}={${values.join(',')}}`,
+        `local ${counter}=1`,
+        `while ${counter}<=#${program} do`,
+        `local ${step}=${program}[${counter}];${counter}=${counter}+1`,
+        `local ${r1}=(${step}%4)+1;local ${r2}=(math.floor(${step}/4)%4)+1;local ${opSlot}=math.floor(${step}/16)`,
+        `if ${opSlot}==0 then ${registers}[${r1}]=(${registers}[${r1}]+${registers}[${r2}]*3)%256`,
+        `elseif ${opSlot}==1 then ${registers}[${r1}]=(${registers}[${r1}]*3+${registers}[${r2}])%256`,
+        `elseif ${opSlot}==2 then ${registers}[${r1}]=(${registers}[${r1}]*${registers}[${r2}]+1)%256`,
+        `elseif ${opSlot}==3 then ${registers}[${r1}]=(${registers}[${r1}]-${registers}[${r2}]*7)%256`,
+        'end',
+        'end',
+        `local ${index}=1;while ${index}<=4 do ${registers}[${index}]=0;${index}=${index}+1 end`,
+        `${program}=nil;${registers}=nil`,
+        'end'
+    ].join('\n');
+}
+
 function buildJunkCode(rng, count, options = {}) {
     const comments = options.comments !== false;
     const next = createConfusableFactory(rng);
@@ -1529,7 +1604,8 @@ function buildJunkCode(rng, count, options = {}) {
         const b = next();
         const c = next();
         const mod = 2 + randomInt(rng, 251);
-        const shape = randomInt(rng, 14);
+        const roll = randomInt(rng, 100);
+        const shape = roll < 32 ? 13 : roll < 48 ? 14 : randomInt(rng, 14);
         if (shape === 0) {
             blocks.push(`do local ${a}=${hex(1 + randomInt(rng, 0xffff))};local ${b}=${hex(1 + randomInt(rng, 0xff))};`
                 + `local ${c}=(${a}*${b}+${hex(1 + randomInt(rng, 0xffff))})%${mod};if ${c}<0 then ${c}=0 end end`);
@@ -1567,6 +1643,10 @@ function buildJunkCode(rng, count, options = {}) {
             blocks.push(`do local ${a}=${small()};while ${a}>0 do ${a}=${a}-1 end end`);
         } else if (shape === 12) {
             blocks.push(`do local ${a}=("l1l1"):rep(${1 + randomInt(rng, 4)}).."0O0";local ${b}=${a}:len();if ${b}<0 then ${b}=0 end end`);
+        } else if (shape === 13) {
+            blocks.push(buildStateMachineJunk(rng, next));
+        } else if (shape === 14) {
+            blocks.push(buildRegisterMachineJunk(rng, next));
         } else {
             blocks.push(`do local ${a}=math.floor(${(1 + randomInt(rng, 4000)) / 16});`
                 + `local ${b}=math.abs(${a}-${small()});if ${b}<0 then ${b}=0 end end`);
@@ -1735,11 +1815,15 @@ export function armorVoidedxSource(source, options = {}) {
     }
 
     const bannerRng = createRng();
-    const junkCount = options.junk === 'off'
+    // Filler scales with strength as well as the junk setting: heavier copies
+    // carry state machines and register machines, not just one-line literals.
+    const junkBoost = { fast: 0.7, low: 0.9, medium: 1.2, high: 1.5, absolute: 1.8 }[level] || 1.2;
+    const junkBase = options.junk === 'off'
         ? 0
         : options.junk === 'heavy'
-            ? 34 + randomInt(bannerRng, 22)
-            : 16 + randomInt(bannerRng, 14);
+            ? 48 + randomInt(bannerRng, 26)
+            : 22 + randomInt(bannerRng, 14);
+    const junkCount = junkBase ? Math.max(1, Math.round(junkBase * junkBoost)) : 0;
     return buildBanner() + '\n'
         + (junkCount ? buildJunkCode(bannerRng, junkCount, { comments: options.comments !== false }) + '\n' : '')
         + text;
