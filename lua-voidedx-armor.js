@@ -48,6 +48,10 @@ const FAMILY_PREFIX_BLOCKLIST = Object.freeze(new Set([
 
 // Each nested container re-encodes the previous one, so a layer costs roughly
 // 1.35x. Stop nesting before large scripts become impossible to store.
+// One definition of the protection profile, shared by the browser pipeline, the
+// delivery bootstrap and the admin route so a stored copy can never disagree.
+export const OBFUSCATION_PROFILE_VERSION = 30;
+
 const MAX_ARMOR_NEST_CHARS = 420 * 1024;
 const MAX_ARMOR_TOTAL_CHARS = 3 * 1024 * 1024;
 const MAX_ARMOR_LAYERS = 6;
@@ -1644,6 +1648,7 @@ function renderBannerWord(word) {
 
 function buildBanner() {    const art = renderBannerWord('VOIDEDX');
     return [
+        `--voidedx-obfuscation-profile-${OBFUSCATION_PROFILE_VERSION}`,
         '--[[',
         '   ' + art[0],
         '   ' + art[1],
@@ -1651,7 +1656,7 @@ function buildBanner() {    const art = renderBannerWord('VOIDEDX');
         '   ' + art[3],
         '   ' + art[4],
         '',
-        '   VOIDEDX OBFUSCATION   //   voidedx.vercel.app',
+        `   VOIDEDX OBFUSCATION   //   voidedx.vercel.app   //   profile ${OBFUSCATION_PROFILE_VERSION}`,
         '   do not resell   |   all rights reserved',
         ']]'
     ].join('\n');
