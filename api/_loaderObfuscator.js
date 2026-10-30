@@ -218,11 +218,53 @@ function encodeLuaByteString(buffer, key, step) {
     return `${literal}"`;
 }
 
+const NAME_SYLLABLES = [
+    'ka', 'zu', 'mo', 're', 'ti', 'vo', 'ne', 'ra', 'sh', 'ul',
+    'ix', 'om', 'ep', 'an', 'yi', 'qu', 'da', 'po', 'fi', 'xe'
+];
+
+const DECOY_MESSAGES = [
+    'Voided: Doing this is not allowed.',
+    '[VoidedX] Loader signature mismatch.',
+    '[VoidedX] Checksum verification failed.',
+    '[VoidedX] Session is not authorised.'
+];
+
+function pick(list) {
+    return list[Math.floor(Math.random() * list.length)];
+}
+
+function randomHex(length) {
+    let out = '';
+    for (let index = 0; index < length; index += 1) out += '0123456789abcdef'[Math.floor(Math.random() * 16)];
+    return out;
+}
+
+function randomBody(length) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let out = '';
+    for (let index = 0; index < length; index += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return out;
+}
+
+// A fixed `_0x` prefix is itself a fingerprint, so the naming scheme is drawn
+// per build: hex, syllable pairs, base36, or single letters. The counter keeps
+// names unique and every style starts with an underscore.
 function createNameFactory(used) {
+    const style = Math.floor(Math.random() * 4);
+    const prefix = style === 0
+        ? `_0x${Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')}`
+        : style === 1
+            ? `_${pick(NAME_SYLLABLES)}${pick(NAME_SYLLABLES)}`
+            : style === 2
+                ? `_${Math.random().toString(36).slice(2, 9)}`
+                : `_${'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]}`;
+    let counter = 0;
     return () => {
         let name;
         do {
-            name = `_0x${Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')}`;
+            counter += 1;
+            name = `${prefix}${style === 3 ? String(counter) : counter.toString(36)}`;
         } while (used.has(name));
         used.add(name);
         return name;
@@ -328,6 +370,7 @@ function emit(tokens, rename) {
     let output = '';
     let previous = '';
     let previousToken = null;
+    let sinceBreak = 0;
 
     for (const token of tokens) {
         let text;
@@ -345,6 +388,15 @@ function emit(tokens, rename) {
         }
 
         if (needsSpace(previous, text)) output += ' ';
+        // Break the minified body into ragged lines so no single line, token
+        // run or indentation pattern is stable between builds. A break before
+        // `(` would let Lua read the line as a continuation call of the previous
+        // statement, so those positions stay on one line.
+        sinceBreak += 1;
+        if (output && sinceBreak > 12 && text[0] !== '(' && Math.random() < 0.18) {
+            output += '\n' + ' '.repeat(Math.floor(Math.random() * 3));
+            sinceBreak = 0;
+        }
         output += text;
         previous = text;
         previousToken = token;
@@ -353,8 +405,11 @@ function emit(tokens, rename) {
     return output;
 }
 
-function buildStringTable(tableName, entries, used) {
-    if (entries.length === 0) return `local ${tableName}={}\n`;
+// Each table stores its strings in a shuffled order with its own byte schedule,
+// so a recovered table neither mirrors source order nor shares a key with the
+// other half of the strings.
+function buildStringTableCode(tableName, entries, used) {
+    if (entries.length === 0) return `${tableName}={}\n`;
 
     const nameFactory = createNameFactory(used);
     const key = 17 + Math.floor(Math.random() * 216);
@@ -367,9 +422,7 @@ function buildStringTable(tableName, entries, used) {
 
     const literals = entries.map(buffer => encodeLuaByteString(buffer, key, step));
 
-    return `local ${tableName}={}
-do
-local ${listName}={${literals.join(',')}}
+    return `${listName}={${literals.join(',')}}
 for ${indexName}=1,#${listName} do
 local ${rawName}=${listName}[${indexName}]
 local ${byteName}={}
@@ -377,8 +430,33 @@ for ${charName}=1,#${rawName} do ${byteName}[${charName}]=string.char(math.floor
 ${listName}[${indexName}]=table.concat(${byteName})
 end
 ${tableName}=${listName}
-end
 `;
+}
+
+// Dead branch that reads like the real gate handshake: an attacker who follows
+// the opaque predicate by hand lands on a decoy URL and a decoy refusal.
+function buildDecoyBlock(nameFactory) {
+    const urlName = nameFactory();
+    const messageName = nameFactory();
+    const tokenName = nameFactory();
+    const hexName = nameFactory();
+    const fakeUrl = `https://voidedx.vercel.app/api/raw?id=${randomHex(12)}`
+        + `&token=${randomBody(48)}&format=token-check&n=${randomHex(18)}`;
+    return `local ${urlName}="${fakeUrl}"
+local ${messageName}="${pick(DECOY_MESSAGES)}"
+local ${tokenName}=string.match(${urlName},"[?&]token=([^&]+)") or ""
+local ${hexName}=string.gsub(${tokenName},"[^%x]","")
+if #${hexName}>17 then return error(${messageName},0) end
+if #${hexName}==0 then return error(${messageName}.." (1)",0) end`;
+}
+
+function hashBytes(buffer, salt) {
+    let hash = (0x811c9dc5 ^ salt) >>> 0;
+    for (let index = 0; index < buffer.length; index += 1) {
+        hash ^= buffer[index];
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash;
 }
 
 function obfuscate(source) {
@@ -399,26 +477,58 @@ function obfuscate(source) {
         rename.set(name, nameFactory());
     }
 
-    const stringTableName = nameFactory();
     const stringIndex = new Map();
-    const entries = [];
-
+    const unique = [];
     for (const token of tokens) {
         if (token.type !== 'string') continue;
         const bytes = decodeStringToken(token);
         const fingerprint = bytes.toString('hex');
-        let index = stringIndex.get(fingerprint);
-        if (index === undefined) {
-            index = entries.length;
-            entries.push(bytes);
-            stringIndex.set(fingerprint, index);
+        let slot = stringIndex.get(fingerprint);
+        if (slot === undefined) {
+            slot = unique.length;
+            unique.push(bytes);
+            stringIndex.set(fingerprint, slot);
         }
-        token.refName = stringTableName;
-        token.refIndex = index + 1;
+        token.slot = slot;
+    }
+
+    const tableNames = [nameFactory(), nameFactory()];
+    const tables = [[], []];
+    const refs = [];
+    const salt = Math.floor(Math.random() * 0xFFFFFFFF);
+    const order = unique.map((_, index) => index);
+    for (let index = order.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        const value = order[index];
+        order[index] = order[swap];
+        order[swap] = value;
+    }
+    for (const slot of order) {
+        const tableIndex = hashBytes(unique[slot], salt) & 1;
+        tables[tableIndex].push(unique[slot]);
+        refs[slot] = { refName: tableNames[tableIndex], refIndex: tables[tableIndex].length };
+    }
+    for (const token of tokens) {
+        if (token.type !== 'string') continue;
+        const ref = refs[token.slot];
+        token.refName = ref.refName;
+        token.refIndex = ref.refIndex;
     }
 
     const body = emit(tokens, rename);
-    return `${buildStringTable(stringTableName, entries, used)}${body}`.trim();
+    const seedName = nameFactory();
+    const seed = 10000 + Math.floor(Math.random() * 90000);
+    const container = `local ${tableNames.join(',')}
+do
+local ${seedName}=${seed}
+if (${seedName}*${seedName}+${seedName})%2==1 then
+${buildDecoyBlock(nameFactory)}
+end
+if (${seedName}*${seedName}+${seedName})%2==0 then
+${tables.map((entries, index) => buildStringTableCode(tableNames[index], entries, used)).join('')}end
+end
+`;
+    return `${container}${body}`.trim();
 }
 
 export function obfuscateLoaderSource(source) {

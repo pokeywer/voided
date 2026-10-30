@@ -8,6 +8,7 @@
     <link rel="shortcut icon" type="image/png" href="/voidedx-favicon.png?v=2">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/editor.css?v=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1505057249528749" crossorigin="anonymous"></script>
     <script defer src="/app-shell.js"></script>
@@ -122,6 +123,41 @@
                     </section>
                 </div>
 
+                <div class="vx-reach-grid">
+                    <section class="vx-card vx-card-map">
+                        <div class="vx-card-head">
+                            <div><h2>World reach</h2><p>Where your loaders were verified</p></div>
+                            <select id="dash-reach-vault" class="vx-mini-select" aria-label="Vault to show on the map">
+                                <option value="">All vaults</option>
+                            </select>
+                        </div>
+                        <div class="vx-map-shell" id="dash-map-shell">
+                            <div id="dash-world-map" class="vx-world-map" aria-hidden="true"></div>
+                            <div id="dash-map-tip" class="vx-map-tip" role="status" hidden></div>
+                            <div id="dash-map-empty" class="vx-map-empty hidden">
+                                <i class="fa-solid fa-earth-americas"></i>
+                                <span>No locations recorded yet</span>
+                            </div>
+                        </div>
+                        <div class="vx-map-foot">
+                            <span class="vx-map-legend"><i class="vx-heat-dot h0"></i> none <i class="vx-heat-dot h2"></i> some <i class="vx-heat-dot h4"></i> most</span>
+                            <span id="dash-reach-summary" class="vx-map-summary">—</span>
+                        </div>
+                        <div id="dash-top-countries" class="vx-country-list">
+                            <div class="vx-empty"><i class="fa-solid fa-globe"></i><span>Country totals appear once a loader is verified.</span></div>
+                        </div>
+                    </section>
+                    <section class="vx-card">
+                        <div class="vx-card-head">
+                            <div><h2>Players who ran</h2><p>Username, HWID and the executor used</p></div>
+                            <span class="vx-chip" id="dash-runners-chip">ALL TIME</span>
+                        </div>
+                        <div id="dash-runners" class="vx-runners">
+                            <div class="vx-empty"><i class="fa-solid fa-users"></i><span>No players recorded yet. Share a loadstring and runs will appear here.</span></div>
+                        </div>
+                    </section>
+                </div>
+
                 <section class="vx-card">
                     <div class="vx-card-head">
                         <div><h2>Your vaults</h2><p>Newest first</p></div>
@@ -226,9 +262,9 @@
                                 <option value="1">1 · fastest startup</option>
                                 <option value="2">2</option>
                                 <option value="3">3</option>
-                                <option value="4">4 · default for Absolute</option>
-                                <option value="5">5 · slow startup</option>
-                                <option value="6">6 · slowest startup</option>
+                                <option value="4">4 · default for Medium</option>
+                                <option value="5">5 · default for High</option>
+                                <option value="6">6 · default for Absolute · slowest startup</option>
                             </select>
                         </div>
                         <div class="obfuscation-options">
@@ -264,7 +300,7 @@
                             </label>
                             <label class="toggle-row">
                                 <span class="toggle-label-stack"><span>More string splitting</span><small>Uses shorter chunks for larger output; skips very long strings</small></span>
-                                <input type="checkbox" id="chk-expanded-transforms">
+                                <input type="checkbox" id="chk-expanded-transforms" checked>
                                 <span class="switch"></span>
                             </label>
                             <label class="toggle-row">
@@ -324,22 +360,71 @@
                 </div>
             </aside>
 
-            <section class="editor-stage">
+            <section class="editor-stage" aria-label="Luau script editor">
                 <div class="editor-header">
-                    <span id="editor-title" class="editor-title"><i class="fa-solid fa-code"></i> SCRIPT SOURCE </span>
+                    <div class="editor-head-left">
+                        <span class="editor-file-icon" aria-hidden="true"><i class="fa-solid fa-file-code"></i></span>
+                        <span class="editor-file-block">
+                            <span class="editor-file-name" id="editor-file-name">untitled.lua</span>
+                            <span class="editor-file-sub" id="editor-title"><i class="fa-solid fa-code"></i> SCRIPT SOURCE</span>
+                        </span>
+                        <span class="editor-dirty-dot" id="editor-dirty-dot" aria-hidden="true"></span>
+                    </div>
                     <div class="editor-header-right">
                         <span id="editor-save-status" class="editor-save-status" role="status" aria-live="polite"><i class="fa-solid fa-circle-check"></i><span id="editor-save-label">All changes saved</span></span>
                         <span id="exec-count-badge" class="exec-count-badge hidden"><i class="fa-solid fa-play text-cyan"></i> <span id="exec-count-num">0</span> Executions</span>
                         <span id="editing-indicator" class="text-cyan hidden"><i class="fa-solid fa-pen"></i> Editing Existing Vault</span>
                     </div>
                 </div>
-                <div class="editor-tools" aria-label="Script editor tools">
+                <div class="editor-tools" role="toolbar" aria-label="Script editor tools">
                     <span class="editor-language"><span class="language-dot"></span> LUAU</span>
-                    <span class="editor-tools-hint">Plain text editor · source is saved as entered.</span>
+                    <span class="editor-tool-sep" aria-hidden="true"></span>
+                    <button type="button" class="ed-tool" id="ed-find-btn" title="Find in script (Ctrl+F)"><i class="fa-solid fa-magnifying-glass"></i><span>Find</span></button>
+                    <button type="button" class="ed-tool" id="ed-goto-btn" title="Go to line (Ctrl+G)"><i class="fa-solid fa-arrow-right-to-line"></i><span>Go to</span></button>
+                    <button type="button" class="ed-tool" id="ed-comment-btn" title="Toggle line comment (Ctrl+/)"><i class="fa-solid fa-comment-slash"></i><span>Comment</span></button>
+                    <span class="editor-tool-sep" aria-hidden="true"></span>
+                    <button type="button" class="ed-tool" id="ed-open-btn" title="Open a .lua file from your device"><i class="fa-solid fa-folder-open"></i><span>Open</span></button>
+                    <button type="button" class="ed-tool" id="ed-save-file-btn" title="Download this source as a .lua file"><i class="fa-solid fa-download"></i><span>Save file</span></button>
+                    <button type="button" class="ed-tool" id="ed-copy-btn" title="Copy the whole source"><i class="fa-solid fa-copy"></i><span>Copy</span></button>
+                    <button type="button" class="ed-tool ed-tool-danger" id="ed-clear-btn" title="Clear the editor"><i class="fa-solid fa-eraser"></i><span>Clear</span></button>
+                    <span class="editor-tools-spacer"></span>
+                    <div class="ed-zoom" role="group" aria-label="Editor font size">
+                        <button type="button" class="ed-zoom-btn" id="ed-font-dec" title="Smaller text"><i class="fa-solid fa-minus"></i></button>
+                        <span class="ed-zoom-value" id="ed-font-size">13</span>
+                        <button type="button" class="ed-zoom-btn" id="ed-font-inc" title="Larger text"><i class="fa-solid fa-plus"></i></button>
+                    </div>
                 </div>
                 <div id="editor-source-context" class="editor-source-note" role="status">Paste Luau source here. A loaded vault’s saved script appears in this editor; it is separate from the website HTML.</div>
-                <div class="code-editor-wrap">
-                    <textarea id="source-code" aria-label="Luau script editor" placeholder="-- Paste your Luau script here." spellcheck="false" autocapitalize="off" autocorrect="off" wrap="off"></textarea>
+                <div class="code-editor-wrap vx-code-shell" id="vx-code-shell">
+                    <div class="vx-code-gutter" id="vx-code-gutter" aria-hidden="true"><div class="vx-code-gutter-inner" id="vx-code-gutter-inner"></div></div>
+                    <div class="vx-code-canvas" id="vx-code-canvas">
+                        <div class="vx-code-active-line" id="vx-code-active-line" aria-hidden="true"></div>
+                        <pre class="vx-code-highlight" id="vx-code-highlight" aria-hidden="true"><code id="vx-code-highlight-inner"></code></pre>
+                        <div class="vx-code-findbar" id="vx-find-bar" hidden data-mode="find">
+                            <i class="fa-solid fa-magnifying-glass vx-find-icon" id="vx-find-icon" aria-hidden="true"></i>
+                            <input type="text" id="vx-find-input" class="vx-find-input" placeholder="Find in script" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Find in script">
+                            <span class="vx-find-count" id="vx-find-count">0 / 0</span>
+                            <button type="button" class="vx-find-btn" id="vx-find-prev" title="Previous match"><i class="fa-solid fa-chevron-up"></i></button>
+                            <button type="button" class="vx-find-btn" id="vx-find-next" title="Next match"><i class="fa-solid fa-chevron-down"></i></button>
+                            <button type="button" class="vx-find-btn vx-find-close" id="vx-find-close" title="Close find bar"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <textarea id="source-code" aria-label="Luau script editor" placeholder="-- Paste your Luau script here." spellcheck="false" autocapitalize="off" autocorrect="off" wrap="off"></textarea>
+                    </div>
+                    <input type="file" id="ed-file-input" accept=".lua,.luau,.txt,text/plain" hidden>
+                </div>
+                <div class="editor-statusbar" id="editor-statusbar">
+                    <div class="editor-status-group">
+                        <span class="ed-stat"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i> <span id="ed-stat-pos">Ln 1, Col 1</span></span>
+                        <span class="ed-stat hidden" id="ed-stat-sel"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i> <span id="ed-stat-sel-count">0</span> selected</span>
+                        <span class="ed-stat"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> <span id="ed-stat-lines">1</span> lines</span>
+                    </div>
+                    <div class="editor-status-group editor-status-right">
+                        <span class="ed-stat" id="ed-stat-size">0 B</span>
+                        <span class="ed-stat ed-stat-muted">UTF-8</span>
+                        <span class="ed-stat ed-stat-muted">Spaces: 4</span>
+                        <button type="button" class="ed-stat ed-stat-btn" id="ed-wrap-btn" title="Toggle word wrap"><i class="fa-solid fa-text-width" aria-hidden="true"></i> <span id="ed-wrap-label">No wrap</span></button>
+                        <span class="ed-stat ed-stat-accent"><i class="fa-solid fa-bolt" aria-hidden="true"></i> VoidedX</span>
+                    </div>
                 </div>
                 <span class="field-error field-error-block hidden" id="code-error"></span>
 
@@ -439,6 +524,7 @@
     <!-- Toasts -->
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+    <script type="module" src="/code-editor.js?v=1"></script>
     <script type="module" src="script.js"></script>
 </body>
 </html>

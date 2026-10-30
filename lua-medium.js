@@ -234,7 +234,7 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
     // Every obfuscated output now goes through the VM pipeline. The two-layer
     // ceiling limits runtime overhead and keeps larger copies vault-friendly.
     const vmProtection = true;
-    const expandedTransforms = absoluteMode || (!fastMode && protection.expandedTransforms === true);
+    const expandedTransforms = absoluteMode || (!fastMode && protection.expandedTransforms !== false);
     const vmLayers = VM_LAYER_COUNTS[level] || 1;
     const requestedLayers = Math.floor(Number(protection.layers));
     const armorLayers = Number.isFinite(requestedLayers) && requestedLayers > 0

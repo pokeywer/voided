@@ -8,6 +8,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { obfuscateLua, resolveObfuscationLevel, describeObfuscationError, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES } from './lua-medium.js';
 import { setEmbeddedTokenLoader } from './loader-ui.js';
+import { createDashboardTelemetry } from './dashboard-telemetry.js';
 
 // --- YOUR FIREBASE CONFIG HERE ---
 const firebaseConfig = {
@@ -377,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const syncEditorLayout = () => {
         const mobile = mobileEditorQuery.matches;
         sourceCode.wrap = mobile ? 'soft' : 'off';
+        if (window.VoidedXEditor) window.VoidedXEditor.applyViewport(mobile);
         if (mobileVaultSettings) mobileVaultSettings.open = !mobile;
     };
     syncEditorLayout();
@@ -905,7 +907,8 @@ document.addEventListener('DOMContentLoaded', () => {
             authBtn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Login`;
             vaultListContainer.innerHTML = '<div class="info-box"><p>Sign in to save and manage your script vaults.</p></div>';
             updateVaultCount(0);
-        }
+            dashboardTelemetry.setVaults([]);
+            dashboardTelemetry.clear('Sign in to see who ran your vaults.');        }
     });
 
     // ---------------- Vault list ----------------
@@ -916,6 +919,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (vaultStatTotal) vaultStatTotal.textContent = cachedVaults.length.toLocaleString();
         if (vaultStatExecutions) vaultStatExecutions.textContent = totalExecutions.toLocaleString();
         if (vaultStatProtected) vaultStatProtected.textContent = protectedCount.toLocaleString();
+        dashboardTelemetry.setVaults(cachedVaults.map(vault => ({ id: vault.id, title: vault.data.title })));
         renderDashboardStats();
         renderDashboardVaults();
     }
@@ -1028,6 +1032,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.vxShell) window.vxShell.showView('editor');
         });
     }
+
+    // ---------------- Dashboard: reach map + runners ----------------
+
+    const dashboardTelemetry = createDashboardTelemetry({
+        getToken: async () => (currentUser && !currentUser.isAnonymous ? currentUser.getIdToken() : null),
+        escapeHtml,
+        relativeTime: dashRelative,
+        showToast
+    });
+
+    dashboardTelemetry.mount();
 
     function vaultUpdatedAt(value) {
         if (typeof value === 'number') return value;
@@ -1166,6 +1181,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateVaultCount(cachedVaults.length);
             updateVaultOverview();
             renderVaultList();
+            dashboardTelemetry.refresh();
             if (requestedVaultId && !requestedVaultOpened) {
                 const requestedVault = cachedVaults.find(vault => vault.id === requestedVaultId);
                 if (requestedVault) {
@@ -1292,6 +1308,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scriptTitle.value = data.title || '';
         setEditorSourceContext(true);
         sourceCode.value = loadedCode;
+        if (window.VoidedXEditor) window.VoidedXEditor.refresh();
         if (chkObfuscation) chkObfuscation.checked = data.obfuscationEnabled === true;
         if (chkFastLoadCache) chkFastLoadCache.checked = data.fastLoadCacheEnabled === true;
         if (obfuscationLevelSelect) {
@@ -1315,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (chkJunkComments) chkJunkComments.checked = data.junkCommentsEnabled !== false;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 21) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 22) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         syncObfuscationProtectionControls();
@@ -1702,7 +1719,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 21,
+            obfuscationProfileVersion: 22,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),
@@ -1811,6 +1828,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scriptTitle.value = '';
         setEditorSourceContext(false);
         sourceCode.value = '';
+        if (window.VoidedXEditor) window.VoidedXEditor.refresh();
         if (chkObfuscation) chkObfuscation.checked = false;
         if (obfuscationLevelSelect) obfuscationLevelSelect.value = 'auto';
         if (chkTamperCheck) chkTamperCheck.checked = true;

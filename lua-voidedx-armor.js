@@ -30,11 +30,11 @@ const NAME_SYLLABLES = Object.freeze([
 ]);
 
 const LEVEL_CONFIG = Object.freeze({
-    fast: { segments: 6, passes: 1, depth: 24, dead: 1, robloxCheck: true, layers: 1 },
-    low: { segments: 10, passes: 2, depth: 44, dead: 2, robloxCheck: true, layers: 2 },
-    medium: { segments: 14, passes: 4, depth: 60, dead: 3, robloxCheck: true, layers: 3 },
-    high: { segments: 18, passes: 4, depth: 72, dead: 4, robloxCheck: true, layers: 4 },
-    absolute: { segments: 24, passes: 5, depth: 104, dead: 5, robloxCheck: true, layers: 5 }
+    fast: { segments: 8, passes: 2, depth: 28, dead: 2, robloxCheck: true, layers: 1 },
+    low: { segments: 12, passes: 3, depth: 52, dead: 3, robloxCheck: true, layers: 2 },
+    medium: { segments: 18, passes: 5, depth: 72, dead: 4, robloxCheck: true, layers: 4 },
+    high: { segments: 24, passes: 6, depth: 88, dead: 5, robloxCheck: true, layers: 5 },
+    absolute: { segments: 32, passes: 7, depth: 128, dead: 6, robloxCheck: true, layers: 6 }
 });
 
 // Identifiers inside the inner chunk are reserved before the build's name

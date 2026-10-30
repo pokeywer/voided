@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { deriveBootstrapSeed } from './_loaderToken.js';
-import { xorKeystream } from './_loaderShield.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { obfuscateLoaderSource } from './_loaderObfuscator.js';
 
@@ -181,6 +180,69 @@ function fakeLoaderToken(keyMaterial) {
     return `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${randomBytes(32).toString('base64url')}`;
 }
 
+const BOOT_B64_STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+// Each codec is a different xorshift shape and byte schedule. The Lua side is
+// emitted with the same constants, so every fetch can pick a different decoder
+// without the two ever drifting apart.
+const BOOT_CODECS = Object.freeze([
+    { a: 13, b: 17, c: 5, shifts: [24, 16, 8, 0] },
+    { a: 7, b: 9, c: 13, shifts: [24, 8] },
+    { a: 5, b: 11, c: 29, shifts: [16] }
+]);
+
+function bootPick(list) {
+    return list[randomBytes(1)[0] % list.length];
+}
+
+function bootShuffle(items) {
+    const out = items.slice();
+    for (let index = out.length - 1; index > 0; index -= 1) {
+        const swapIndex = randomBytes(1)[0] % (index + 1);
+        const value = out[index];
+        out[index] = out[swapIndex];
+        out[swapIndex] = value;
+    }
+    return out;
+}
+
+function bootCodec() {
+    return bootPick(BOOT_CODECS);
+}
+
+function bootAlphabet() {
+    return bootShuffle(BOOT_B64_STD.split('')).join('');
+}
+
+function bootNextState(state, codec) {
+    let value = state >>> 0;
+    value = (value ^ (value << codec.a)) >>> 0;
+    value = (value ^ (value >>> codec.b)) >>> 0;
+    value = (value ^ (value << codec.c)) >>> 0;
+    return value >>> 0;
+}
+
+function bootXor(input, seed, codec) {
+    const buffer = Buffer.isBuffer(input) ? input : Buffer.from(String(input ?? ''), 'utf8');
+    const output = Buffer.allocUnsafe(buffer.length);
+    const width = codec.shifts.length;
+    let state = (Number(seed) >>> 0) || 0x9E3779B9;
+    for (let index = 0; index < buffer.length; index += 1) {
+        if (index % width === 0) state = bootNextState(state, codec);
+        output[index] = buffer[index] ^ ((state >>> codec.shifts[index % width]) & 0xFF);
+    }
+    return output;
+}
+
+function encodeBootAlphabet(buffer, alphabet) {
+    const encoded = buffer.toString('base64');
+    let out = '';
+    for (const char of encoded) {
+        const index = BOOT_B64_STD.indexOf(char);
+        out += index === -1 ? char : alphabet[index];
+    }
+    return out;
+}
+
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
     const seed = deriveBootstrapSeed(token);
@@ -189,7 +251,23 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     // decrypted with a stale or fabricated seed fails loudly instead of
     // handing the executor garbage to compile.
     const bootMark = `--[[vb:${randomBytes(6).toString('hex')}]]`;
-    const cipher = xorKeystream(`${bootMark}\n${innerBanner}\n${sealed}`, seed).toString('base64url');
+    // Every fetch rotates the outer codec, the base64 alphabet, how many parts
+    // the ciphertext is split into, and the per-part key schedule. Two copies of
+    // the same vault therefore never share a body, and a captured body is only
+    // useful for the 10-second token it was minted for.
+    const codec = bootCodec();
+    const alphabet = bootAlphabet();
+    const partCount = 1 + (randomBytes(1)[0] % 3);
+    const partStep = randomBytes(4).readUInt32BE(0) || 0x9E3779B9;
+    const codeBytes = Buffer.from(`${bootMark}\n${innerBanner}\n${sealed}`, 'utf8');
+    const partSize = Math.ceil(codeBytes.length / partCount) || 1;
+    const dataParts = [];
+    for (let part = 0; part < partCount; part += 1) {
+        const slice = codeBytes.subarray(part * partSize, Math.min((part + 1) * partSize, codeBytes.length));
+        const partKey = (seed + part * partStep) >>> 0;
+        dataParts.push(encodeBootAlphabet(bootXor(slice, partKey, codec), alphabet));
+    }
+    const dataLiteral = dataParts.map(part => `"${part}"`).join(',');
 
     const buildGateUrl = ({ vaultId, token: gateToken, key: gateKey }) => {
         const url = new URL('/api/raw', origin);
@@ -202,25 +280,37 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     };
 
     // No URL appears as a literal. Each is XORed with its own 32-bit key and
-    // stored as base64url, then rebuilt right before its request.
+    // stored with the build's alphabet, then rebuilt right before its request.
     const sealUrl = href => {
         const urlKey = randomBytes(4).readUInt32BE(0) || 1;
-        return { cipher: xorKeystream(href, urlKey).toString('base64url'), key: urlKey };
+        return { cipher: encodeBootAlphabet(bootXor(href, urlKey, codec), alphabet), key: urlKey };
     };
 
     const decoyKey = randomBytes(32).toString('hex');
     const realUrl = sealUrl(buildGateUrl({ vaultId: id, token, key }));
-    const decoyUrls = [
-        // Unknown vault + unknown key: a dead end that still looks like a load.
-        // Keyless vaults keep an empty keyHash so the shape matches the real one.
-        sealUrl(buildGateUrl({ vaultId: randomTokenString(20), token: fakeLoaderToken(key ? decoyKey : ''), key: key ? decoyKey : '' })),
-        // Real vault, real key, forged token: reads like a retry of the gate.
-        sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key })),
-        sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key }))
-    ];
-    const decoyTable = decoyUrls
+    const decoyCount = 2 + (randomBytes(1)[0] % 3);
+    const decoys = [];
+    for (let index = 0; index < decoyCount; index += 1) {
+        if (index === 0) {
+            // Unknown vault + unknown key: a dead end that still looks like a load.
+            // Keyless vaults keep an empty keyHash so the shape matches the real one.
+            decoys.push(sealUrl(buildGateUrl({
+                vaultId: randomTokenString(20),
+                token: fakeLoaderToken(key ? decoyKey : ''),
+                key: key ? decoyKey : ''
+            })));
+        } else {
+            // Real vault with a forged token: reads like a retry of the gate.
+            decoys.push(sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key })));
+        }
+    }
+    // The real gate is shuffled into the decoys, so neither the table order nor
+    // the fetch order says which URL answers with the seed.
+    const gateList = bootShuffle([realUrl].concat(decoys));
+    const gateTable = gateList
         .map(entry => `{"${entry.cipher}",0x${entry.key.toString(16)}}`)
         .join(',');
+    const probeOrder = bootShuffle(gateList.map((entry, index) => index + 1)).join(',');
     const chunkName = randomBytes(6).toString('hex');
 
     const name = createLoaderNames();
@@ -232,18 +322,18 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         seed: name(), loader: name(), chunk: name(), err: name(),
         lstr: name(), ld: name(), gv: name(), gf: name(), dmp: name(), envs: name(), adde: name(),
         env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
-        code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name()
+        code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name(),
+        shifts: name(), order: name(), probe: name(), seedNum: name(), buf: name(), keyv: name(),
+        stop: name()
     };
     const cap = i => `${n.cap}[${i}]`;
 
     return `${buildLoaderBanner()}
-local ${n.data}="${cipher}"
+local ${n.data}={${dataLiteral}}
 local ${n.map}={}
-do local ${n.alpha}="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+do local ${n.alpha}="${alphabet}"
 for ${n.index}=1,#${n.alpha} do ${n.map}[string.sub(${n.alpha},${n.index},${n.index})]=${n.index}-1 end end
 local function ${n.b64}(v)
-v=string.gsub(v,"%-","+")
-v=string.gsub(v,"_","/")
 local r=#v%4
 if r==2 then v=v.."==" elseif r==3 then v=v.."=" end
 local o={}
@@ -261,17 +351,22 @@ i=i+4
 end
 return table.concat(o)
 end
+local ${n.shifts}={${codec.shifts.join(',')}}
 local function ${n.xor}(v,s)
 local o={}
 local i=1
+local w=#${n.shifts}
+s=s%4294967296
+if s==0 then s=2654435769 end
 while i<=#v do
-local j=(i-1)%4
+local j=(i-1)%w
 if j==0 then
-s=bit32.bxor(s,bit32.lshift(s,13))
-s=bit32.bxor(s,bit32.rshift(s,17))
-s=bit32.bxor(s,bit32.lshift(s,5))
+s=bit32.bxor(s,bit32.lshift(s,${codec.a}))
+s=bit32.bxor(s,bit32.rshift(s,${codec.b}))
+s=bit32.bxor(s,bit32.lshift(s,${codec.c}))
+s=s%4294967296
 end
-o[#o+1]=string.char(bit32.bxor(string.byte(v,i),bit32.rshift(s,24-j*8)%256))
+o[#o+1]=string.char(bit32.bxor(string.byte(v,i),bit32.rshift(s,${n.shifts}[j+1])%256))
 i=i+1
 end
 return table.concat(o)
@@ -334,24 +429,44 @@ local ${n.deny}="Voided: Doing this is not allowed."
 local ${n.exp}="[VoidedX] Error: Loader expired. Get a new loader from the website and try again."
 local ${n.mark}="${bootMark}"
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
-local ${n.sealed}={${decoyTable}}
+local ${n.sealed}={${gateTable}}
+local ${n.order}={${probeOrder}}
 local ${n.dec}={}
 for ${n.slot}=1,#${n.sealed} do ${n.dec}[${n.slot}]=${n.xor}(${n.b64}(${n.sealed}[${n.slot}][1]),${n.sealed}[${n.slot}][2]) end
 local ${n.fire}=function(${n.item}) ${cap(7)}(function() return ${cap(12)}(game,${n.item}) end) end
 local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
-if ${n.spawn} then ${cap(7)}(${n.spawn},${n.fire},${n.dec}[1]) ${cap(7)}(${n.spawn},${n.fire},${n.dec}[2]) else ${n.fire}(${n.dec}[1]) end
-local ${n.url}=${n.xor}(${n.b64}("${realUrl.cipher}"),0x${realUrl.key.toString(16)})
-local ${n.ok},${n.res}=${cap(7)}(function() return ${cap(12)}(game,${n.url}) end)
-if ${n.spawn} then ${cap(7)}(${n.spawn},${n.fire},${n.dec}[3]) else ${n.fire}(${n.dec}[2]) end
+local ${n.seed},${n.ok},${n.res},${n.stop}=nil,nil,nil,#${n.order}
+for ${n.probe}=1,#${n.order} do
+${n.ok},${n.res}=${cap(7)}(function() return ${cap(12)}(game,${n.dec}[${n.order}[${n.probe}]]) end)
+if ${n.ok} and type(${n.res})=="string" then
+local hit=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
+if hit then ${n.seed}=hit end
+end
+if ${n.seed} then ${n.stop}=${n.probe} break end
+end
+-- The unprobed candidates are still requested once each, so a request log
+-- shows every table entry exactly one time and no URL stands out as the one
+-- that answered with the seed.
+if ${n.stop}<#${n.order} then
+if ${n.spawn} then
+for ${n.slot}=${n.stop}+1,#${n.order} do ${cap(7)}(${n.spawn},${n.fire},${n.dec}[${n.order}[${n.slot}]]) end
+else
+for ${n.slot}=${n.stop}+1,#${n.order} do ${n.fire}(${n.dec}[${n.order}[${n.slot}]]) end
+end
+end
 if ${cap(13)} and game.HttpGet~=${cap(12)} then return ${cap(8)}(${n.deny},0) end
-if not ${n.ok} or type(${n.res})~="string" then return ${cap(8)}(${n.exp},0) end
-local ${n.seed}=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
 if not ${n.seed} then return ${cap(8)}(${n.exp},0) end
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
 local ${n.loader}=${cap(11)}
 if ${n.ld} and ${n.ld}~=${n.loader} then local ok,f=${cap(7)}(${n.ld},"return 1") if ok and type(f)=="function" then ${n.loader}=${n.ld} end end
 if type(${n.loader})~="function" then return ${cap(8)}("[VoidedX] This executor does not support loadstring.",0) end
-local ${n.code}=${n.xor}(${n.b64}(${n.data}),${cap(21)}(${n.seed},16))
+local ${n.buf}={}
+local ${n.seedNum}
+for ${n.slot}=1,#${n.data} do
+${n.seedNum}=(${cap(21)}(${n.seed},16)+(${n.slot}-1)*${partStep})%4294967296
+${n.buf}[${n.slot}]=${n.xor}(${n.b64}(${n.data}[${n.slot}]),${n.seedNum})
+end
+local ${n.code}=${cap(6)}(${n.buf})
 if ${cap(3)}(${n.code},1,#${n.mark})~=${n.mark} then return ${cap(8)}(${n.exp},0) end
 local ${n.arg}=${n.code}
 local ${n.probeOk},${n.probeFn}=${cap(7)}(${n.loader},function() return nil end)
@@ -494,6 +609,44 @@ local function vxPlaceParam()
     local place = game and game.PlaceId
     if type(place) == "number" then return "&placeId=" .. vxTostring(place) end
     return ""
+end
+
+local function vxEncode(value)
+    local text = vxTostring(value or "")
+    local ok, encoded = vxPcall(vxUrlEncode, HttpService, text)
+    if ok and type(encoded) == "string" then return encoded end
+    return (vxGsub(text, "[^%w%-%._~]", function(char)
+        return vxFormat("%%%02X", vxByte(char))
+    end))
+end
+
+-- Everything the owner dashboard groups executions by travels on the verify
+-- call. Executor APIs differ, so each probe is guarded and simply omitted when
+-- the function is missing.
+local function vxClientParams(player)
+    local params = ""
+    if player then
+        params = params .. "&userId=" .. vxTostring(player.UserId)
+        local nameOk, name = vxPcall(function() return player.Name end)
+        if nameOk and type(name) == "string" and name ~= "" then
+            params = params .. "&username=" .. vxEncode(vxSub(name, 1, 32))
+        end
+    end
+    local identify = type(identifyexecutor) == "function" and identifyexecutor or nil
+    if identify then
+        local executorOk, executor = vxPcall(identify)
+        if executorOk and type(executor) == "string" and executor ~= "" then
+            params = params .. "&executor=" .. vxEncode(vxSub(executor, 1, 40))
+        end
+    end
+    local gethwid = type(gethwid) == "function" and gethwid or nil
+    if gethwid then
+        local hwidOk, hwid = vxPcall(gethwid)
+        if hwidOk and type(hwid) == "string" and hwid ~= "" then
+            params = params .. "&hwid=" .. vxEncode(vxSub(hwid, 1, 96))
+        end
+    end
+    return params .. vxPlaceParam()
 end
 
 vxPcall(vxPrint, "[VoidedX] VoidedX Protection - protect your scripts at https://voidedx.vercel.app")
@@ -859,9 +1012,7 @@ local ok, response = vxPcall(function()
         game,
         "${verifyBase}?id=${encodeURIComponent(id)}" ..
         "&key=" .. HttpService:UrlEncode(${luaString(key)}) ..
-        "&userId=" .. tostring(player.UserId) ..
-        "&username=" .. HttpService:UrlEncode(player.Name) ..
-        vxPlaceParam()
+        vxClientParams(player)
     )
 end)
 
@@ -893,9 +1044,7 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 ${buildPayloadRuntime(origin, options)}
-local verifyUrl = ${luaString(verifyUrl)}
-if player then verifyUrl = verifyUrl .. "&userId=" .. HttpService:UrlEncode(tostring(player.UserId)) end
-verifyUrl = verifyUrl .. vxPlaceParam()
+local verifyUrl = ${luaString(verifyUrl)} .. vxClientParams(player)
 
 local requestOk, response = vxPcall(function()
     return vxHttpGet(game, verifyUrl)

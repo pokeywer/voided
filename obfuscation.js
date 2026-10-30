@@ -128,7 +128,7 @@ function updateSourceMeta() {
 const SETTINGS_KEY = 'voidedx-obfuscator-settings';
 const DEFAULT_SETTINGS = {
     level: 'auto', layers: '', junk: 'normal', layout: 'messy',
-    tamper: true, expanded: false, comments: true, autodownload: true
+    tamper: true, expanded: true, comments: true, autodownload: true
 };
 
 function readSettings() {
@@ -151,7 +151,7 @@ function applySettings(settings) {
     setRadioValue('obf-junk', next.junk);
     setRadioValue('obf-layout', next.layout);
     els.tamper.checked = next.tamper !== false;
-    els.expanded.checked = next.expanded === true;
+    els.expanded.checked = next.expanded !== false;
     els.comments.checked = next.comments !== false;
     els.autodownload.checked = next.autodownload !== false;
 }
@@ -702,7 +702,7 @@ els.save.addEventListener('click', async () => {
             loaderVersion: 1,
             obfuscationEnabled: true,
             fastLoadCacheEnabled: false,
-            obfuscationProfileVersion: 21,
+            obfuscationProfileVersion: 22,
             obfuscationLevel: generated.requestedLevel,
             tamperCheckEnabled: generated.tamperCheck,
             vmProtectionEnabled: true,
