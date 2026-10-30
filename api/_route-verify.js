@@ -6,7 +6,7 @@ import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import * as loaderTokenModule from './_loaderToken.js';
 import { publicKeyDisabled } from './_keyAccess.js';
 
-const { traceForSession } = loaderTokenModule;
+const { traceForSession, verifyLoaderToken } = loaderTokenModule;
 // Namespace import so a stale sibling file cannot stop the whole catch-all
 // function from loading; the gate below then names the file to upload instead
 // of silently accepting an unattested request.

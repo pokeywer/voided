@@ -60,16 +60,8 @@ async function requestJson(path, options = {}) {
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
     });
     let data = {};
-    try {
-        data = await response.json();
-    } catch {
-        const statusText = response.status ? ` (HTTP ${response.status})` : '';
-        throw new Error(`The server returned an invalid response${statusText}. Check the Vercel function logs and confirm the latest full project deployment is active.`);
-    }
-    if (!response.ok || data.ok === false) {
-        const message = data.message || data.error || `The request failed (HTTP ${response.status}).`;
-        throw new Error(message);
-    }
+    try { data = await response.json(); } catch {}
+    if (!response.ok || data.ok === false) throw new Error(data.message || 'The request could not be completed.');
     return data;
 }
 
