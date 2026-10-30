@@ -149,6 +149,8 @@ export function createDashboardTelemetry(options = {}) {
             const username = String(player.username || 'Unknown');
             const initial = username.trim().charAt(0).toUpperCase() || '?';
             const cc = /^[A-Z]{2}$/.test(String(player.country || '')) ? String(player.country) : '';
+            const region = /^[A-Z0-9]{1,3}$/.test(String(player.region || '')) ? String(player.region) : '';
+            const regionLabel = cc && region ? `${cc}-${region}` : cc;
             const executor = player.executor ? String(player.executor) : 'Unknown executor';
             const hwid = player.hwid ? String(player.hwid) : '';
             const runs = Math.floor(Number(player.runs) || 0);
@@ -158,7 +160,7 @@ export function createDashboardTelemetry(options = {}) {
                 <div class="vx-runner-main">
                     <div class="vx-runner-line">
                         <strong title="${escapeAttr(username)}">${escapeText(username)}</strong>
-                        ${cc ? `<span class="vx-runner-cc">${escapeText(cc)}</span>` : ''}
+                        ${regionLabel ? `<span class="vx-runner-cc">${escapeText(regionLabel)}</span>` : ''}
                         <span class="vx-runner-runs">${runs.toLocaleString()} run${runs === 1 ? '' : 's'}</span>
                     </div>
                     <div class="vx-runner-meta">

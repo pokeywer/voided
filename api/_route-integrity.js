@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { db, FieldValue } from './_admin.js';
 import { isBlockingFlags, normalizeFlags } from './_loaderShield.js';
 
@@ -13,6 +14,12 @@ function json(res, status, body) {
 function getClientIp(req) {
     const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     return forwarded || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+// Reports keep a hash so repeat reporters can be correlated without the
+// collection holding any readable address.
+function bindHash(value) {
+    return createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
 export default async function handler(req, res) {
@@ -36,6 +43,8 @@ export default async function handler(req, res) {
 
     const ip = getClientIp(req);
     const userAgent = String(req.headers['user-agent'] || '').slice(0, 200);
+    const ipHash = bindHash(ip);
+    const uaHash = bindHash(userAgent);
     const now = Date.now();
 
     try {
@@ -66,8 +75,8 @@ export default async function handler(req, res) {
                     await found.docs[0].ref.update({
                         tamperFlags: merged,
                         blocked: block,
-                        tamperIp: ip,
-                        tamperUserAgent: userAgent,
+                        tamperIpHash: ipHash,
+                        tamperUaHash: uaHash,
                         tamperedAt: now,
                         tamperReports: FieldValue.increment(1)
                     });
@@ -84,8 +93,8 @@ export default async function handler(req, res) {
             flags: FieldValue.arrayUnion(...flags),
             reportCount: FieldValue.increment(1),
             blocked: block,
-            ip,
-            userAgent,
+            ipHash,
+            uaHash,
             lastReportAt: now,
             expiresAt: now + REPORT_TTL_MS
         }, { merge: true });

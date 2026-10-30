@@ -1335,6 +1335,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 22) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
+        if (data.obfuscationEnabled === true && !data.obfuscatedCode) {
+            showToast('This vault has no stored protected copy, so it cannot launch. Save it again with obfuscation enabled.', 'error', 12000);
+        }
         syncObfuscationProtectionControls();
         setProtectionKeyStatus(!!data.requireKey);
         clearFieldError(sourceCode, codeError);

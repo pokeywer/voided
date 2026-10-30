@@ -1,4 +1,4 @@
-import { buildPayloadRuntime, compactGeneratedLoader, luaString, packGeneratedLoader } from './_loaderSource.js';
+import { buildPayloadRuntime, compactGeneratedLoader, luaString, packGeneratedLoader, robloxOnlyGuard } from './_loaderSource.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 
 export function sanitizeGuiAppearance(raw = {}) {
@@ -71,6 +71,7 @@ export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = ''
     const backgroundAnimation = appearance.backgroundAnimation;
 
     return compactGeneratedLoader(`
+${robloxOnlyGuard()}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
@@ -1506,9 +1507,7 @@ local function attemptVerify(fromSavedKey)
             game,
             "${verifyBase}?id=${encodeURIComponent(id)}" ..
             "&key=" .. HttpService:UrlEncode(typedKey) ..
-            "&userId=" .. tostring(player.UserId) ..
-            "&username=" .. HttpService:UrlEncode(player.Name) ..
-            vxPlaceParam()
+            vxClientParams(player)
         )
     end)
 

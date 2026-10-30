@@ -181,8 +181,9 @@ export default async function handler(req, res) {
             try {
                 await db.collection('loaderDeliveries').doc(session.shieldTrace).set({
                     deliveredAt: Date.now(),
-                    deliveredIp: getClientIp(req),
-                    deliveredUserAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+                    // Hashes only; the delivery record never holds the address.
+                    deliveredBindIp: bindHash(getClientIp(req)),
+                    deliveredBindUa: bindHash(String(req.headers['user-agent'] || '').slice(0, 200)),
                     version: 5
                 }, { merge: true });
             } catch {}

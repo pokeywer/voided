@@ -129,10 +129,13 @@ export default async function handler(req, res) {
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
+        // Null means the vault claims obfuscation but has no usable protected
+        // copy. Delivering it anyway would hand out the readable source.
+        if (typeof executionCode !== 'string' || !executionCode.trim()) {
+            return res.status(200).send('error("[VoidedX] This vault has no protected copy yet. Ask the owner to save it again with obfuscation enabled.", 0)');
+        }
+
         if (!vaultData.requireKey) {
-            if (typeof executionCode !== 'string' || !executionCode.trim()) {
-                return res.status(200).send(executionCode);
-            }
             return res.status(200).send(buildTrackedScript(id, getOrigin(req), activeLoaderToken, key, loaderOptions));
         }
 

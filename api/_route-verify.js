@@ -144,6 +144,19 @@ export default async function handler(req, res) {
     const username = typeof req.query?.username === 'string'
         ? req.query.username.replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ').trim().slice(0, 32) || 'Unknown'
         : 'Unknown';
+    const executor = typeof req.query?.executor === 'string'
+        ? req.query.executor.replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ').trim().slice(0, 40)
+        : '';
+    const hwid = typeof req.query?.hwid === 'string'
+        ? req.query.hwid.replace(/[\r\n\t\x00-\x1f\x7f]/g, '').trim().slice(0, 96)
+        : '';
+    // Vercel sets this for every request; it is a two-letter ISO country code.
+    const countryHeader = String(req.headers['x-vercel-ip-country'] || '').toUpperCase();
+    const country = /^[A-Z]{2}$/.test(countryHeader) ? countryHeader : null;
+    // Subdivision code (ISO-3166-2 without the country prefix, e.g. "SP"). It is
+    // the only extra location detail recorded: no address, ISP or IP is stored.
+    const regionHeader = String(req.headers['x-vercel-ip-country-region'] || '').toUpperCase();
+    const region = /^[A-Z0-9]{1,3}$/.test(regionHeader) ? regionHeader : null;
     const vaultRef = db.collection('vaults').doc(id);
     const sessionToken = randomBytes(32).toString('hex');
     const sessionRef = db.collection('sessions').doc(sessionToken);
@@ -211,7 +224,8 @@ export default async function handler(req, res) {
         if (!shield) {
             return json(res, 200, {
                 ok: false,
-                message: 'The protected copy of this vault could not be prepared. Save the vault again in the editor and retry.'
+                code: 'vault_needs_rebuild',
+                message: 'This vault has no protected copy yet. The owner needs to save it again with obfuscation enabled.'
             });
         }
 
@@ -260,8 +274,9 @@ export default async function handler(req, res) {
                 vaultId: id,
                 userId,
                 issuedAt: now,
-                ip: getClientIp(req),
-                userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+                // Hashes only: delivery bookkeeping never stores the address or
+                // the client signature in readable form.
+                ...requestBinding(req),
                 placeId,
                 version: 5
             }, { merge: true });
@@ -345,7 +360,15 @@ export default async function handler(req, res) {
             });
         }
 
-        try { await recordExecution(vaultRef, id, initialSnap.data().title, userId); } catch {}
+        try {
+            await recordExecution(vaultRef, id, initialSnap.data().title, userId, {
+                username,
+                executor,
+                hwid,
+                country,
+                region
+            });
+        } catch {}
         return json(res, 200, {
             ok: true,
             token: result.token,

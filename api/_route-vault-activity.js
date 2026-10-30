@@ -49,6 +49,7 @@ function readPlayerDoc(data) {
             ? value.hwid.trim().slice(0, 96)
             : null,
         country: /^[A-Z]{2}$/.test(String(value.country || '')) ? String(value.country) : null,
+        region: /^[A-Z0-9]{1,3}$/.test(String(value.region || '')) ? String(value.region) : null,
         runs: Math.max(0, Math.floor(Number(value.runs) || 0)),
         lastSeenAt: Math.max(0, Number(value.lastSeenAt) || 0)
     };
@@ -80,6 +81,7 @@ function mergePlayers(target, players) {
             existing.executor = player.executor;
             existing.hwid = player.hwid;
             existing.country = player.country;
+            existing.region = player.region;
         }
     }
 }

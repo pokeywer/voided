@@ -14,6 +14,17 @@ export function luaString(str) {
     return `"${escaped}"`;
 }
 
+export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
+
+// Every generated loader opens by proving it is running in a live Roblox
+// client: `typeof` only exists in Luau, DataModel only exists in Roblox, and a
+// real engine can hand back its own services and instances. A rehosted Lua, a
+// different engine, or an analysis harness stubbed with plain tables is refused
+// before the loader makes a single request.
+export function robloxOnlyGuard() {
+    return `if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`;
+}
+
 // Return a compact transport copy; this is cosmetic and does not replace the
 // server-side ticket and key checks that protect delivery.
 export function compactGeneratedLoader(source) {
@@ -316,7 +327,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const name = createLoaderNames();
     const n = {
         data: name(), map: name(), alpha: name(), index: name(), b64: name(), xor: name(),
-        cap: name(), guard: name(), deny: name(), exp: name(), mark: name(),
+        cap: name(), guard: name(), deny: name(), exp: name(), net: name(), fails: name(), mark: name(),
         url: name(), ok: name(), res: name(), sealed: name(), dec: name(),
         fire: name(), spawn: name(), item: name(), slot: name(),
         seed: name(), loader: name(), chunk: name(), err: name(),
@@ -324,11 +335,23 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         env: name(), sh: name(), gh: name(), wd: name(), off: name(), ticks: name(),
         code: name(), arg: name(), pos: name(), own: name(), probeOk: name(), probeFn: name(),
         shifts: name(), order: name(), probe: name(), seedNum: name(), buf: name(), keyv: name(),
-        stop: name()
+        stop: name(), rbx: name(), envOk: name(), envSvc: name()
     };
     const cap = i => `${n.cap}[${i}]`;
 
     return `${buildLoaderBanner()}
+local ${n.rbx}=function()
+if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return false end
+local ${n.envOk},${n.envSvc}=pcall(function() return game:GetService("Players") end)
+if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Players" then return false end
+${n.envOk},${n.envSvc}=pcall(function() return game:GetService("Workspace") end)
+if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Workspace" then return false end
+${n.envOk},${n.envSvc}=pcall(function() return Instance.new("Folder") end)
+if not ${n.envOk} or typeof(${n.envSvc})~="Instance" or ${n.envSvc}.ClassName~="Folder" then return false end
+pcall(function() ${n.envSvc}:Destroy() end)
+return true
+end
+if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end
 local ${n.data}={${dataLiteral}}
 local ${n.map}={}
 do local ${n.alpha}="${alphabet}"
@@ -427,6 +450,7 @@ return true
 end
 local ${n.deny}="Voided: Doing this is not allowed."
 local ${n.exp}="[VoidedX] Error: Loader expired. Get a new loader from the website and try again."
+local ${n.net}="[VoidedX] Could not reach the loader server. Your network or DNS blocked the request. Set DNS to 1.1.1.1 or turn off your VPN, then run the loader again."
 local ${n.mark}="${bootMark}"
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
 local ${n.sealed}={${gateTable}}
@@ -435,13 +459,13 @@ local ${n.dec}={}
 for ${n.slot}=1,#${n.sealed} do ${n.dec}[${n.slot}]=${n.xor}(${n.b64}(${n.sealed}[${n.slot}][1]),${n.sealed}[${n.slot}][2]) end
 local ${n.fire}=function(${n.item}) ${cap(7)}(function() return ${cap(12)}(game,${n.item}) end) end
 local ${n.spawn}=${cap(9)}(task)=="table" and task.spawn or nil
-local ${n.seed},${n.ok},${n.res},${n.stop}=nil,nil,nil,#${n.order}
+local ${n.seed},${n.ok},${n.res},${n.stop},${n.fails}=nil,nil,nil,#${n.order},0
 for ${n.probe}=1,#${n.order} do
 ${n.ok},${n.res}=${cap(7)}(function() return ${cap(12)}(game,${n.dec}[${n.order}[${n.probe}]]) end)
 if ${n.ok} and type(${n.res})=="string" then
 local hit=${cap(5)}(${n.res},"^vx1|(%x+)|%x+$")
 if hit then ${n.seed}=hit end
-end
+elseif not ${n.ok} then ${n.fails}=${n.fails}+1 end
 if ${n.seed} then ${n.stop}=${n.probe} break end
 end
 -- The unprobed candidates are still requested once each, so a request log
@@ -455,7 +479,10 @@ for ${n.slot}=${n.stop}+1,#${n.order} do ${n.fire}(${n.dec}[${n.order}[${n.slot}
 end
 end
 if ${cap(13)} and game.HttpGet~=${cap(12)} then return ${cap(8)}(${n.deny},0) end
-if not ${n.seed} then return ${cap(8)}(${n.exp},0) end
+if not ${n.seed} then
+if ${n.fails}>=#${n.order} then return ${cap(8)}(${n.net},0) end
+return ${cap(8)}(${n.exp},0)
+end
 if not ${n.guard}() then return ${cap(8)}(${n.deny},0) end
 local ${n.loader}=${cap(11)}
 if ${n.ld} and ${n.ld}~=${n.loader} then local ok,f=${cap(7)}(${n.ld},"return 1") if ok and type(f)=="function" then ${n.loader}=${n.ld} end end
@@ -632,19 +659,46 @@ local function vxClientParams(player)
             params = params .. "&username=" .. vxEncode(vxSub(name, 1, 32))
         end
     end
-    local identify = type(identifyexecutor) == "function" and identifyexecutor or nil
-    if identify then
-        local executorOk, executor = vxPcall(identify)
-        if executorOk and type(executor) == "string" and executor ~= "" then
-            params = params .. "&executor=" .. vxEncode(vxSub(executor, 1, 40))
+    -- Executor identity: identifyexecutor first, then the aliases other executors expose.
+    local executor = nil
+    if type(identifyexecutor) == "function" then
+        local ok, value = vxPcall(identifyexecutor)
+        if ok and type(value) == "string" and value ~= "" then executor = value end
+    end
+    if not executor and type(getexecutorname) == "function" then
+        local ok, value = vxPcall(getexecutorname)
+        if ok and type(value) == "string" and value ~= "" then executor = value end
+    end
+    if not executor and type(syn) == "table" and type(syn.get_executor) == "function" then
+        local ok, value = vxPcall(function() return syn.get_executor() end)
+        if ok and type(value) == "string" and value ~= "" then executor = value end
+    end
+    if type(executor) == "string" and executor ~= "" then
+        params = params .. "&executor=" .. vxEncode(vxSub(executor, 1, 40))
+    end
+    -- Device identity only: gethwid, then getserial, then the client's own analytics id.
+    local hwid = nil
+    if type(gethwid) == "function" then
+        local ok, value = vxPcall(gethwid)
+        if ok and type(value) == "string" and value ~= "" then hwid = value end
+    end
+    if not hwid and type(getserial) == "function" then
+        local ok, value = vxPcall(getserial)
+        if ok and type(value) == "string" and value ~= "" then hwid = value end
+    end
+    if not hwid and type(syn) == "table" and type(syn.get_hwid) == "function" then
+        local ok, value = vxPcall(function() return syn.get_hwid() end)
+        if ok and type(value) == "string" and value ~= "" then hwid = value end
+    end
+    if not hwid then
+        local serviceOk, analytics = vxPcall(function() return game:GetService("RbxAnalyticsService") end)
+        if serviceOk and analytics then
+            local ok, value = vxPcall(function() return analytics:GetClientId() end)
+            if ok and type(value) == "string" and value ~= "" then hwid = value end
         end
     end
-    local gethwid = type(gethwid) == "function" and gethwid or nil
-    if gethwid then
-        local hwidOk, hwid = vxPcall(gethwid)
-        if hwidOk and type(hwid) == "string" and hwid ~= "" then
-            params = params .. "&hwid=" .. vxEncode(vxSub(hwid, 1, 96))
-        end
+    if type(hwid) == "string" and hwid ~= "" then
+        params = params .. "&hwid=" .. vxEncode(vxSub(hwid, 1, 96))
     end
     return params .. vxPlaceParam()
 end
@@ -1002,6 +1056,7 @@ end
 export function buildKeyLoader(id, key, origin, loaderToken, options = {}) {
     const verifyBase = `${origin}/api/verify`;
     return packGeneratedLoader(compactGeneratedLoader(`
+${robloxOnlyGuard()}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -1040,6 +1095,7 @@ return vxRunPayload(result.token, player and player.UserId or nil, result.shield
 export function buildTrackedScript(id, origin, loaderToken, key = '', options = {}) {
     const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
+${robloxOnlyGuard()}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
