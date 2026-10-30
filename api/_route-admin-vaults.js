@@ -35,6 +35,8 @@ function listItem(doc) {
         updatedAt: millis(data.updatedAt),
         executions: Math.max(0, Number(data.executions) || 0),
         obfuscationEnabled: data.obfuscationEnabled === true,
+        obfuscationLevel: LEVELS.has(data.obfuscationLevel) ? data.obfuscationLevel : 'auto',
+        obfuscationProfileVersion: Number(data.obfuscationProfileVersion) || 0,
         fastLoadCacheEnabled: data.fastLoadCacheEnabled === true,
         requireKey: data.requireKey === true
     };
@@ -101,7 +103,7 @@ export default async function handler(req, res) {
             const cursor = queryValue(req.query?.cursor);
             if (cursor && !/^[A-Za-z0-9_-]{1,150}$/.test(cursor)) return json(res, 400, { ok: false, message: 'Invalid vault-list cursor.' });
             let query = db.collection('vaults')
-                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'fastLoadCacheEnabled', 'requireKey')
+                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'obfuscationLevel', 'obfuscationProfileVersion', 'fastLoadCacheEnabled', 'requireKey')
                 .orderBy(FieldPath.documentId())
                 .limit(PAGE_SIZE);
             if (cursor) query = query.startAfter(cursor);

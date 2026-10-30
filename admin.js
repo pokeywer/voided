@@ -1,4 +1,4 @@
-import { obfuscateLua, resolveObfuscationLevel, encodeVaultSource, encodeObfuscatedCode, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, encodeVaultSource, encodeObfuscatedCode, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, OBFUSCATION_PROFILE_VERSION } from './lua-medium.js';
 
 const loginView = document.getElementById('admin-login-view');
 const dashboardView = document.getElementById('admin-dashboard-view');
@@ -483,11 +483,105 @@ async function loadAdminVaults() {
     }
 }
 
-function safeVaultFilename(label) {
-    return String(label || 'vault-script').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'vault-script';
+let adminVaultRebuildRunning = false;
+let adminVaultRebuildCancel = false;
+
+async function rebuildOutdatedVaults() {
+    const button = document.getElementById('admin-vault-rebuild-btn');
+    if (adminVaultRebuildRunning) {
+        adminVaultRebuildCancel = true;
+        setVaultStatus('Stopping after the vault that is being rebuilt right now.', 'info');
+        return;
+    }
+    if (adminVaultSaving) return setVaultStatus('Wait for the current vault save to finish first.', 'info');
+    adminVaultRebuildRunning = true;
+    adminVaultRebuildCancel = false;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fa-solid fa-hand"></i> Stop after current';
+    try {
+        setVaultStatus('Reading every vault…', 'info');
+        const all = [];
+        let cursor = '';
+        do {
+            const url = cursor ? `/api/admin-vaults?cursor=${encodeURIComponent(cursor)}` : '/api/admin-vaults';
+            const page = await requestJson(url);
+            all.push(...(Array.isArray(page.items) ? page.items : []));
+            cursor = page.nextCursor || '';
+        } while (cursor);
+        const stale = all.filter(vault => vault.obfuscationEnabled === true
+            && Number(vault.obfuscationProfileVersion || 0) !== OBFUSCATION_PROFILE_VERSION);
+        if (!stale.length) {
+            setVaultStatus(`All ${all.length.toLocaleString()} vaults are already on profile ${OBFUSCATION_PROFILE_VERSION}.`, 'success');
+            return;
+        }
+        if (!(await window.vxDialog.confirm(`Rebuild ${stale.length.toLocaleString()} of ${all.length.toLocaleString()} vaults at profile ${OBFUSCATION_PROFILE_VERSION}? Each live execution copy is replaced and anyone running that vault has to paste its loader again. Keep this tab open until it finishes.`, {
+            title: 'Rebuild outdated copies?',
+            detail: 'Vaults already on the current profile are skipped.',
+            confirmLabel: 'Rebuild copies',
+            tone: 'warning'
+        }))) return;
+        let processed = 0;
+        const failed = [];
+        for (const item of stale) {
+            if (adminVaultRebuildCancel) break;
+            processed += 1;
+            setVaultStatus(`Rebuilding ${processed}/${stale.length}: ${item.title || item.id}…`, 'info');
+            try {
+                const data = await requestJson(`/api/admin-vaults?id=${encodeURIComponent(item.id)}`);
+                const vault = data.vault;
+                const level = resolveObfuscationLevel(vault.source, vault.obfuscationLevel || 'auto');
+                const protection = {
+                    tamperCheck: vault.tamperCheckEnabled === true,
+                    vmProtection: true,
+                    expandedTransforms: vault.expandedTransformsEnabled === true
+                };
+                const output = await obfuscateLua(vault.source, level, protection);
+                const encodedSource = await encodeVaultSource(vault.source);
+                const encodedOutput = await encodeObfuscatedCode(output);
+                await requestJson('/api/admin-vaults', {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        id: item.id,
+                        title: vault.title || item.title,
+                        code: encodedSource.value,
+                        codeEncoding: encodedSource.encoding,
+                        obfuscationEnabled: true,
+                        obfuscationLevel: vault.obfuscationLevel || 'auto',
+                        tamperCheckEnabled: protection.tamperCheck,
+                        vmProtectionEnabled: true,
+                        expandedTransformsEnabled: protection.expandedTransforms,
+                        obfuscatedCodeLevel: level,
+                        obfuscatedCode: encodedOutput.value,
+                        obfuscatedCodeEncoding: encodedOutput.encoding
+                    })
+                });
+                item.obfuscationProfileVersion = OBFUSCATION_PROFILE_VERSION;
+            } catch (error) {
+                failed.push(`${item.title || item.id}: ${error.message}`);
+                if (/session expired/i.test(error.message)) {
+                    setLoggedIn(false);
+                    break;
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 80));
+        }
+        const rebuilt = processed - failed.length;
+        const summary = `Rebuilt ${rebuilt.toLocaleString()} vault${rebuilt === 1 ? '' : 's'} at profile ${OBFUSCATION_PROFILE_VERSION}${failed.length ? `, ${failed.length.toLocaleString()} failed` : ''}.`;
+        setVaultStatus(failed.length ? `${summary} ${failed.slice(0, 3).join(' | ')}` : summary, failed.length ? 'error' : 'success');
+        if (!adminVaultDirty) await loadAdminVaults();
+    } catch (error) {
+        setVaultStatus(error.message, 'error');
+        if (/session expired/i.test(error.message)) setLoggedIn(false);
+    } finally {
+        adminVaultRebuildRunning = false;
+        adminVaultRebuildCancel = false;
+        button.innerHTML = originalHtml;
+    }
 }
 
-function downloadAdminText(filename, text) {
+function safeVaultFilename(label) {
+    return String(label || 'vault-script').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'vault-script';
+}function downloadAdminText(filename, text) {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -1195,6 +1289,7 @@ document.querySelector('.admin-operations-grid').addEventListener('click', async
     finally { setLoading(button, false); }
 });
 document.getElementById('admin-vault-refresh-btn').addEventListener('click', loadAdminVaults);
+document.getElementById('admin-vault-rebuild-btn').addEventListener('click', rebuildOutdatedVaults);
 adminVaultSearch.addEventListener('input', renderAdminVaultList);
 adminVaultList.addEventListener('click', event => {
     const button = event.target.closest('button[data-vault-id]');

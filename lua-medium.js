@@ -9,6 +9,7 @@ export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
+export const OBFUSCATION_PROFILE_VERSION = 24;
 export const MAX_VAULT_SOURCE_BYTES = 2 * 1024 * 1024;
 export const MAX_OBFUSCATION_SOURCE_BYTES = 4 * 1024 * 1024;
 // Keep ordinary scripts directly readable in Firestore for owner audits.

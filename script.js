@@ -6,7 +6,7 @@ import {
 import {
     getFirestore, collection, doc, setDoc, addDoc, getDoc, getDocs, deleteDoc, updateDoc, query, where, serverTimestamp, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { obfuscateLua, resolveObfuscationLevel, describeObfuscationError, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES } from './lua-medium.js';
+import { obfuscateLua, resolveObfuscationLevel, describeObfuscationError, encodeObfuscatedCode, encodeVaultSource, decodeVaultSource, getUtf8ByteLength, MAX_VAULT_SOURCE_BYTES, MAX_OBFUSCATED_OUTPUT_BYTES, MAX_INLINE_OBFUSCATED_PREVIEW_BYTES, MAX_VAULT_DOCUMENT_ESTIMATE_BYTES, OBFUSCATION_PROFILE_VERSION } from './lua-medium.js';
 import { setEmbeddedTokenLoader } from './loader-ui.js';
 import { createDashboardTelemetry } from './dashboard-telemetry.js';
 
@@ -1332,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (chkJunkComments) chkJunkComments.checked = data.junkCommentsEnabled !== false;
         setEditorDirty(false);
-        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== 24) {
+        if (data.obfuscationEnabled === true && data.obfuscationProfileVersion !== OBFUSCATION_PROFILE_VERSION) {
             showToast('This vault has an older obfuscated copy. Save it again to rebuild it with the current protection settings.', 'warning', 10000);
         }
         if (data.obfuscationEnabled === true && !data.obfuscatedCode) {
@@ -1722,7 +1722,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderVersion: currentLoaderVersion + 1,
             obfuscationEnabled,
             fastLoadCacheEnabled: !!(chkFastLoadCache && chkFastLoadCache.checked),
-            obfuscationProfileVersion: 24,
+            obfuscationProfileVersion: OBFUSCATION_PROFILE_VERSION,
             obfuscationLevel: requestedObfuscationLevel,
             tamperCheckEnabled,
             instantRunEnabled: !!(chkInstantRun && chkInstantRun.checked),
