@@ -212,3 +212,41 @@ TURNING IT DOWN WHILE TESTING: LOADER_FETCH_GUARD=enforce is the default and is 
 WHAT IT IS NOT: a user-agent is one line to spoof, so this is a cost on casual link pulling and a signal in the log, not a wall. The ten-second IP-bound token, the sealed delivery attestation, the one-time delivery code and the shielded payload are what actually gate delivery. Blocked requests still perform no database read, so a flood of refused fetches costs the site nothing.
 
 Validated: a new 43-check smoke runs the three real route handlers against a stubbed Firestore and asserts the refusal status and body, that a blocked fetch never reads a document, that Roblox, executor, empty and browser user-agents still get their bootstrap, that the portable clients pass the two gate hops, and that paused, missing-vault and token-check behaviour is unchanged. On top of it: 11 unit tests across loader-token, api-scope and client-gate, a 10-build soak (five armored at the shipped three layers, five unarmored) at 132-170 bootstrap checks and 130 delivery checks per build with zero failures, the Luau oracle at 4/4, and the import graph at 68 files with 0 problems. No vault needs re-saving, no profile number moved, and the copied loadstring line is unchanged.
+
+
+LOADER BUILD 9 (PART 3) - THE LOADER STOPS BEING ONE SHAPE
+
+api/_loaderSource.js (replaced)
+
+MEASURED FIRST: fourteen freshly generated bootstraps, with every identifier erased, still shared 118 normalized lines each and any two builds scored 0.518 median line similarity. Names moved every fetch; the file did not. That fixed skeleton is what an unpacker pattern-matches, so this draws the code shapes themselves per build.
+
+WHAT MOVES NOW:
+  body transport   window (digit weights 262144/4096/64), stride (folds each group
+                   digit by digit), scan (flat per-character loop, no group boundary)
+  keystream        grouped (four bytes out of one word) or stream (four-entry mask
+                   table refreshed on the word boundary, one byte at a time)
+  digest helper    multiplier, modulus (2^32, 2^32-5, 2^31-1), start value and scan
+                   direction are drawn; the JS encoder keeps the same descriptor so
+                   the embedded checksum and the recomputed one cannot drift apart
+  constants        buffer flush size 512-4096, the zero-key fallback, and the 32-bit
+                   word written as an expression - (2147483648*2), (0xFFFFFFFF+1) -
+                   instead of one literal in every copy
+  engine probe     three to six services drawn from twelve plus one of six instance
+                   classes, so a stub that only fakes Players/Workspace/Folder is now
+                   refused instead of passing
+  executor guard   primitive list drawn per build from a pool of thirty, order
+                   shuffled, always keeping getgenv + request + http_request so no
+                   draw can strand a runner that lacks a niche function
+
+A PRECEDENCE BUG THE HARNESS CAUGHT FIRST: the word size is used as s % 2^32, and
+writing it as an expression produced s%0xFFFFFFFF+1, which Lua folds as
+(s%0xFFFFFFFF)+1 - a different keystream, so the loader denied itself with
+"Voided: Doing this is not allowed." on the first harness run. The expressions are
+parenthesized now. Worth stating plainly because it is the second time this week
+that a change looked plausible and only the generated-code tests caught it.
+
+RE-MEASURED on the same protocol: 88 universal normalized lines, median similarity
+0.475, and 262144, 2048, 131 and 2654435769 are gone from the shared-constant list.
+The remaining shared lines are the program dispatch and the builtin-capture table,
+which is the next increment; nothing about delivery, the token, the attestation or
+the copied loadstring changed, so no vault needs re-saving and no profile moved.

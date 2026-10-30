@@ -62,13 +62,44 @@ function armorBootstrap(text) {
 export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
 export const EXECUTOR_ONLY_MESSAGE = '[VoidedX] This loader only runs in an executor.';
 
-// Every generated loader opens by proving it is running in a live Roblox
-// client: `typeof` only exists in Luau, DataModel only exists in Roblox, and a
-// real engine can hand back its own services and instances. A rehosted Lua, a
-// different engine, or an analysis harness stubbed with plain tables is refused
-// before the loader makes a single request.
+// Every generated loader opens by proving it is running in a live Roblox client
+// that was reached through an executor: `typeof` only exists in Luau, DataModel
+// only exists in Roblox, and at least one injection-only primitive has to be
+// present. A rehosted Lua, a bare Luau VM, or an analysis harness stubbed with
+// plain tables is refused before the loader makes a single request.
 export function executorOnlyGuard() {
-    return `if type(getgenv)~="function" and type(hookfunction)~="function" and type(checkcaller)~="function" and type(getrenv)~="function" and type(queue_on_teleport)~="function" and type(setreadonly)~="function" and type(writefile)~="function" and type(request)~="function" and type(http_request)~="function" and type(syn)~="table" and type(krnl)~="table" then return error(${luaString(EXECUTOR_ONLY_MESSAGE)},0) end`;
+    // Deny only when *none* of the drawn primitives exist, which is a bare
+    // interpreter and nothing else. Three near-universal names stay in every draw
+    // so no subset can strand an executor that simply lacks a niche function, and
+    // the order plus the extra names move from build to build.
+    const core = ['getgenv', 'request', 'http_request'];
+    const extras = ['hookfunction', 'checkcaller', 'getrenv', 'setreadonly', 'writefile', 'readfile', 'isfile', 'listfiles', 'makefolder', 'gethui', 'queue_on_teleport', 'firetouchinterest'];
+    const tables = ['syn', 'krnl', 'fluxus', 'proto', 'wave', 'universal', 'codex', 'hr', 'flame', 'nanos'];
+    const chosen = core
+        .concat(bootShuffle(extras).slice(0, randomBytes(1)[0] % 4))
+        .concat(bootShuffle(tables).slice(0, randomBytes(1)[0] % 2));
+    const parts = bootShuffle(chosen)
+        .map(name => `type(${name})~="${tables.includes(name) ? 'table' : 'function'}"`);
+    return `if ${parts.join(' and ')} then return error(${luaString(EXECUTOR_ONLY_MESSAGE)},0) end`;
+}
+
+// The engine check asked for the same three services and one instance in every
+// build. Draw a different set each time: any real DataModel answers all of them,
+// and a stubbed `game` table that only fakes Players/Workspace no longer passes.
+export function robloxProbeChecks() {
+    const services = [
+        ['Players', 'Players'], ['Workspace', 'Workspace'], ['Lighting', 'Lighting'],
+        ['ReplicatedStorage', 'ReplicatedStorage'], ['SoundService', 'SoundService'],
+        ['RunService', 'RunService'], ['StarterGui', 'StarterGui'],
+        ['UserInputService', 'UserInputService'], ['TweenService', 'TweenService'],
+        ['ContextActionService', 'ContextActionService'], ['GuiService', 'GuiService'],
+        ['AudioService', 'AudioService']
+    ];
+    const instances = ['Folder', 'Sound', 'RemoteEvent', 'BindableFunction', 'RemoteFunction', 'BindableEvent'];
+    return {
+        services: bootShuffle(services).slice(0, 3 + (randomBytes(1)[0] % 3)),
+        instance: bootPick(instances)
+    };
 }
 
 export function robloxOnlyGuard() {
@@ -291,11 +322,19 @@ function bootNextState(state, codec) {
     return value >>> 0;
 }
 
-function bootXor(input, seed, codec) {
+function bootChainSum(buffer, hash) {
+    return bootDigest(buffer, hash);
+}
+
+function bootFallbackKey() {
+    return (randomBytes(4).readUInt32BE(0) | 1) >>> 0;
+}
+
+function bootXor(input, seed, codec, fallback) {
     const buffer = Buffer.isBuffer(input) ? input : Buffer.from(String(input ?? ''), 'utf8');
     const output = Buffer.allocUnsafe(buffer.length);
     const width = codec.shifts.length;
-    let state = (Number(seed) >>> 0) || 0x9E3779B9;
+    let state = (Number(seed) >>> 0) || (fallback || 0x9E3779B9);
     for (let index = 0; index < buffer.length; index += 1) {
         if (index % width === 0) state = bootNextState(state, codec);
         output[index] = buffer[index] ^ ((state >>> codec.shifts[index % width]) & 0xFF);
@@ -325,13 +364,70 @@ function bootSbox() {
     return Buffer.from(perm);
 }
 
-function bootChainSum(buffer) {
-    let hash = 0;
-    for (let index = 0; index < buffer.length; index += 1) {
-        hash = (hash * 131 + buffer[index]) % 4294967296;
-    }
-    return hash;
+// A checksum shape, shared by both sides. The JS encoder needs it to compute the
+// value it embeds and the emitted Lua needs it to recompute the same one, so the
+// descriptor is drawn once per build and passed to both. Multiplier, modulus,
+// start value and scan direction all move, which is what stops the digest helper
+// from being one recognizable line in every copy.
+function bootHash() {
+    const mods = [4294967296, 4294967291, 2147483647];
+    const mod = bootPick(mods);
+    let mult = (randomBytes(2).readUInt16BE(0) | 1) % 900 + 131;
+    if (mult >= mod) mult = mod - 1;
+    return {
+        mult,
+        mod,
+        init: (randomBytes(4).readUInt32BE(0) % (mod - 1)) || 1,
+        reverse: (randomBytes(1)[0] & 1) === 1
+    };
 }
+
+function bootDigest(buffer, hash) {
+    let value = hash.init;
+    const step = hash.reverse ? -1 : 1;
+    const from = hash.reverse ? buffer.length - 1 : 0;
+    for (let index = from; index >= 0 && index < buffer.length; index += step) {
+        value = (value * hash.mult + buffer[index]) % hash.mod;
+    }
+    return value;
+}
+
+// Lua source for the same digest, in either scan direction.
+function bootHashLines(fn, val, hsh, idx, hash) {
+    const loop = hash.reverse ? `for ${idx}=#${val},1,-1 do` : `for ${idx}=1,#${val} do`;
+    return [
+        `local ${fn}=function(${val})`,
+        `local ${hsh}=${hash.init}`,
+        loop,
+        `${hsh}=(${hsh}*${hash.mult}+string.byte(${val},${idx}))%${hash.mod}`,
+        `end`,
+        `return ${hsh}`,
+        `end`
+    ];
+}
+
+// The sealed body used to be unpacked by one fixed block of statements, so
+// erasing the random names left the same decoder in every copy. These shapes all
+// read the same base64 string but are written differently: a four-wide window
+// with shift constants, a stride loop that folds each group digit by digit, and a
+// flat scanner that never looks at a group boundary at all.
+const BOOT_PIPE_SHAPES = Object.freeze(['window', 'stride', 'scan']);
+// The keystream had one shape too: either four bytes land per step from one word,
+// or a mask table is refreshed on the word boundary and consumed one byte at a
+// time. Same stream, different statements.
+const BOOT_MASK_SHAPES = Object.freeze(['grouped', 'stream']);
+
+function bootFlushSize() {
+    return bootPick([512, 768, 1024, 1536, 2048, 3072, 4096]);
+}
+
+// The 32-bit word size has to stay 32 bits, but it does not have to be written
+// the same way twice. Always parenthesized: `s%0xFFFFFFFF+1` would fold as
+// `(s%0xFFFFFFFF)+1` and quietly change the keystream.
+function bootWord32() {
+    return bootPick(['(4294967296)', '(2147483648*2)', '(1073741824*4)', '(536870912*8)', '(0xFFFFFFFF+1)']);
+}
+
 
 export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const innerBanner = '-- VoidedX Loader [https://voidedx.vercel.app]';
@@ -344,8 +440,16 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const codec = bootCodec();
     const alphabet = bootAlphabet();
     const sbox = bootSbox();
+    // Drawn once per build and handed to both sides: the JS encoder produces the
+    // literals and the checksum, the emitted Lua reproduces them.
+    const hash = bootHash();
+    const fallbackKey = bootFallbackKey();
+    const pipe = bootPick(BOOT_PIPE_SHAPES);
+    const maskShape = bootPick(BOOT_MASK_SHAPES);
+    const word32 = bootWord32();
+    const flush = bootFlushSize();
     const sealBlob = (buffer, blobKey) => {
-        const mixed = bootXor(buffer, blobKey, codec);
+        const mixed = bootXor(buffer, blobKey, codec, fallbackKey);
         const substituted = Buffer.allocUnsafe(mixed.length);
         for (let index = 0; index < mixed.length; index += 1) substituted[index] = sbox[mixed[index]];
         return encodeBootAlphabet(substituted, alphabet);
@@ -363,7 +467,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         const slice = codeBytes.subarray(part * partSize, Math.min((part + 1) * partSize, codeBytes.length));
         const partKey = (((seed + part * partStep) % 4294967296) ^ chain) >>> 0;
         dataParts.push(sealBlob(slice, partKey));
-        chain = bootChainSum(slice);
+        chain = bootChainSum(slice, hash);
     }
     const dataLiteral = dataParts.map(part => `"${part}"`).join(',');
 
@@ -490,14 +594,15 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(buildLoaderBanner());
 
     const R = loc('ok', 'svc');
+    const probe = robloxProbeChecks();
     add(`local ${n.rbx}=function()`);
     add(`if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return false end`);
-    add(`local ${R.ok},${R.svc}=pcall(function() return game:GetService("Players") end)`);
-    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Players" then return false end`);
-    add(`${R.ok},${R.svc}=pcall(function() return game:GetService("Workspace") end)`);
-    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Workspace" then return false end`);
-    add(`${R.ok},${R.svc}=pcall(function() return Instance.new("Folder") end)`);
-    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="Folder" then return false end`);
+    probe.services.forEach((entry, index) => {
+        add(`${index === 0 ? 'local ' : ''}${R.ok},${R.svc}=pcall(function() return game:GetService("${entry[0]}") end)`);
+        add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="${entry[1]}" then return false end`);
+    });
+    add(`${R.ok},${R.svc}=pcall(function() return Instance.new("${probe.instance}") end)`);
+    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="${probe.instance}" then return false end`);
     add(`pcall(function() ${R.svc}:Destroy() end)`);
     add(`return true`);
     add(`end`);
@@ -509,74 +614,156 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`do local ${A.alpha}="${alphabet}"`);
     add(`for ${A.i}=1,#${A.alpha} do ${n.map}[string.byte(${A.alpha},${A.i})]=${A.i}-1 end end`);
 
-    const B = loc('v', 'r', 'n', 'o', 't', 'k', 'tk', 'i', 'c1', 'c2', 'c3', 'c4', 'q1', 'q2', 'q3', 'q4', 'x', 'b1', 'b2', 'b3');
-    add(`local ${n.b64}=function(${B.v})`);
-    add(`local ${B.r}=#${B.v}%4`);
-    add(`if ${B.r}==2 then ${B.v}=${B.v}.."==" elseif ${B.r}==3 then ${B.v}=${B.v}.."=" end`);
-    add(`local ${B.n}=#${B.v}`);
-    add(`local ${B.o}={}`);
-    add(`local ${B.t}={}`);
-    add(`local ${B.k},${B.tk}=0,0`);
-    add(`local ${B.i}=1`);
-    add(`while ${B.i}<=${B.n} do`);
-    add(`local ${B.c1},${B.c2},${B.c3},${B.c4}=string.byte(${B.v},${B.i},${B.i}+3)`);
-    add(`local ${B.q1},${B.q2}=${n.map}[${B.c1}],${n.map}[${B.c2}]`);
-    add(`local ${B.q3},${B.q4}=${n.map}[${B.c3}],${n.map}[${B.c4}]`);
-    add(`local ${B.x}=(${B.q1} or 0)*262144+(${B.q2} or 0)*4096+(${B.q3} or 0)*64+(${B.q4} or 0)`);
-    add(`local ${B.b1}=bit32.rshift(${B.x},16)`);
-    add(`local ${B.b2}=bit32.band(bit32.rshift(${B.x},8),255)`);
-    add(`local ${B.b3}=bit32.band(${B.x},255)`);
-    add(`if ${B.q4} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2},${B.b3})`);
-    add(`elseif ${B.q3} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2})`);
-    add(`else ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1}) end`);
-    add(`if ${B.tk}>=2048 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) ${B.t}={} ${B.tk}=0 end`);
-    add(`${B.i}=${B.i}+4`);
-    add(`end`);
-    add(`if ${B.tk}>0 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) end`);
-    add(`return table.concat(${B.o})`);
-    add(`end`);
+    const B = loc('v', 'r', 'n', 'o', 't', 'k', 'tk', 'i', 'j', 'c', 'q', 'g', 'p', 'h3', 'h4', 'c1', 'c2', 'c3', 'c4', 'q1', 'q2', 'q3', 'q4', 'x', 'b1', 'b2', 'b3');
+    // One sealed string, three readings. The shape is drawn per build, so the
+    // decode block is not one fixed pattern an unpacker can match on: a four-wide
+    // window with digit weights, a stride loop that folds each group, and a flat
+    // scanner that never looks at a group boundary at all.
+    if (pipe === 'stride') {
+        add(`local ${n.b64}=function(${B.v})`);
+        add(`local ${B.r}=#${B.v}%4`);
+        add(`if ${B.r}==2 then ${B.v}=${B.v}.."==" elseif ${B.r}==3 then ${B.v}=${B.v}.."=" end`);
+        add(`local ${B.o}={} local ${B.t}={}`);
+        add(`local ${B.k},${B.tk}=0,0`);
+        add(`local ${B.i}=1`);
+        add(`while ${B.i}<=#${B.v} do`);
+        add(`local ${B.x}=0`);
+        add(`for ${B.j}=${B.i},${B.i}+3 do`);
+        add(`local ${B.c}=string.byte(${B.v},${B.j})`);
+        add(`${B.x}=${B.x}*64+((${B.c} and ${n.map}[${B.c}]) or 0)`);
+        add(`end`);
+        add(`local ${B.h3}=string.byte(${B.v},${B.i}+2) local ${B.h4}=string.byte(${B.v},${B.i}+3)`);
+        add(`${B.h3}=${B.h3} and ${n.map}[${B.h3}] ${B.h4}=${B.h4} and ${n.map}[${B.h4}]`);
+        add(`local ${B.b1}=math.floor(${B.x}/65536) local ${B.b2}=math.floor(${B.x}/256)%256`);
+        add(`local ${B.b3}=${B.x}%256`);
+        add(`if ${B.h4} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2},${B.b3})`);
+        add(`elseif ${B.h3} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2})`);
+        add(`else ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1}) end`);
+        add(`if ${B.tk}>=${flush} then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) ${B.t}={} ${B.tk}=0 end`);
+        add(`${B.i}=${B.i}+4`);
+        add(`end`);
+        add(`if ${B.tk}>0 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) end`);
+        add(`return table.concat(${B.o})`);
+        add(`end`);
+    } else if (pipe === 'scan') {
+        add(`local ${n.b64}=function(${B.v})`);
+        add(`local ${B.r}=#${B.v}%4`);
+        add(`if ${B.r}==2 then ${B.v}=${B.v}.."==" elseif ${B.r}==3 then ${B.v}=${B.v}.."=" end`);
+        add(`local ${B.o},${B.t}={}, {}`);
+        add(`local ${B.k},${B.tk}=0,0`);
+        add(`local ${B.x},${B.g},${B.p}=0,0,0`);
+        add(`for ${B.i}=1,#${B.v} do`);
+        add(`local ${B.q}=${n.map}[string.byte(${B.v},${B.i})]`);
+        add(`${B.x}=${B.x}*64+(${B.q} or 0) ${B.g}=${B.g}+1`);
+        add(`if ${B.q}==nil then ${B.p}=${B.p}+1 end`);
+        add(`if ${B.g}==4 then`);
+        add(`local ${B.b1}=math.floor(${B.x}/65536) local ${B.b2}=math.floor(${B.x}/256)%256`);
+        add(`local ${B.b3}=${B.x}%256`);
+        add(`if ${B.p}==0 then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2},${B.b3})`);
+        add(`elseif ${B.p}==1 then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2})`);
+        add(`else ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1}) end`);
+        add(`${B.x}=0 ${B.g}=0 ${B.p}=0`);
+        add(`if ${B.tk}>=${flush} then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) ${B.t}={} ${B.tk}=0 end`);
+        add(`end`);
+        add(`end`);
+        add(`if ${B.tk}>0 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) end`);
+        add(`return table.concat(${B.o})`);
+        add(`end`);
+    } else {
+        add(`local ${n.b64}=function(${B.v})`);
+        add(`local ${B.r}=#${B.v}%4`);
+        add(`if ${B.r}==2 then ${B.v}=${B.v}.."==" elseif ${B.r}==3 then ${B.v}=${B.v}.."=" end`);
+        add(`local ${B.n}=#${B.v}`);
+        add(`local ${B.o}={}`);
+        add(`local ${B.t}={}`);
+        add(`local ${B.k},${B.tk}=0,0`);
+        add(`local ${B.i}=1`);
+        add(`while ${B.i}<=${B.n} do`);
+        add(`local ${B.c1},${B.c2},${B.c3},${B.c4}=string.byte(${B.v},${B.i},${B.i}+3)`);
+        add(`local ${B.q1},${B.q2}=${n.map}[${B.c1}],${n.map}[${B.c2}]`);
+        add(`local ${B.q3},${B.q4}=${n.map}[${B.c3}],${n.map}[${B.c4}]`);
+        add(`local ${B.x}=(${B.q1} or 0)*262144+(${B.q2} or 0)*4096+(${B.q3} or 0)*64+(${B.q4} or 0)`);
+        add(`local ${B.b1}=bit32.rshift(${B.x},16)`);
+        add(`local ${B.b2}=bit32.band(bit32.rshift(${B.x},8),255)`);
+        add(`local ${B.b3}=bit32.band(${B.x},255)`);
+        add(`if ${B.q4} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2},${B.b3})`);
+        add(`elseif ${B.q3} then ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1},${B.b2})`);
+        add(`else ${B.tk}=${B.tk}+1 ${B.t}[${B.tk}]=string.char(${B.b1}) end`);
+        add(`if ${B.tk}>=${flush} then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) ${B.t}={} ${B.tk}=0 end`);
+        add(`${B.i}=${B.i}+4`);
+        add(`end`);
+        add(`if ${B.tk}>0 then ${B.k}=${B.k}+1 ${B.o}[${B.k}]=table.concat(${B.t}) end`);
+        add(`return table.concat(${B.o})`);
+        add(`end`);
+    }
 
     const I = loc('t', 'i');
     add(`local ${n.isb}={}`);
     add(`do local ${I.t}=${n.b64}("${sboxLiteral}")`);
     add(`for ${I.i}=1,#${I.t} do ${n.isb}[string.byte(${I.t},${I.i})]=${I.i}-1 end end`);
 
-    const D = loc('v', 's', 'n', 'o', 't', 'k', 'tk', 'i', 'm1', 'm2', 'm3', 'm4', 'b1', 'b2', 'b3', 'b4');
-    add(`local ${n.dec}=function(${D.v},${D.s})`);
-    add(`${D.v}=${n.b64}(${D.v})`);
-    add(`local ${D.n}=#${D.v}`);
-    add(`local ${D.o}={}`);
-    add(`local ${D.t}={}`);
-    add(`local ${D.k},${D.tk}=0,0`);
-    add(`${D.s}=${D.s}%4294967296`);
-    add(`if ${D.s}==0 then ${D.s}=2654435769 end`);
-    add(`local ${D.i}=1`);
-    add(`while ${D.i}<=${D.n} do`);
-    add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.a}))`);
-    add(`${D.s}=bit32.bxor(${D.s},bit32.rshift(${D.s},${codec.b}))`);
-    add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.c}))`);
-    add(`local ${D.m1}=bit32.band(bit32.rshift(${D.s},${codec.shifts[0]}),255)`);
-    add(`local ${D.m2}=bit32.band(bit32.rshift(${D.s},${codec.shifts[1]}),255)`);
-    add(`local ${D.m3}=bit32.band(bit32.rshift(${D.s},${codec.shifts[2]}),255)`);
-    add(`local ${D.m4}=bit32.band(bit32.rshift(${D.s},${codec.shifts[3]}),255)`);
-    add(`local ${D.b1},${D.b2},${D.b3},${D.b4}=string.byte(${D.v},${D.i},${D.i}+3)`);
-    add(`if ${D.b4} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}),bit32.bxor(${n.isb}[${D.b4}],${D.m4}))`);
-    add(`elseif ${D.b3} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}))`);
-    add(`elseif ${D.b2} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}))`);
-    add(`else ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1})) end`);
-    add(`if ${D.tk}>=2048 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) ${D.t}={} ${D.tk}=0 end`);
-    add(`${D.i}=${D.i}+4`);
-    add(`end`);
-    add(`if ${D.tk}>0 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) end`);
-    add(`return table.concat(${D.o})`);
-    add(`end`);
+    const D = loc('v', 's', 'n', 'o', 't', 'k', 'tk', 'i', 'm1', 'm2', 'm3', 'm4', 'b1', 'b2', 'b3', 'b4', 'mask');
+    // Same keystream, two readings: the grouped form consumes a whole 32-bit word
+    // per step, the stream form refreshes a four-entry mask table on the word
+    // boundary and eats one byte at a time.
+    if (maskShape === 'stream') {
+        add(`local ${n.dec}=function(${D.v},${D.s})`);
+        add(`${D.v}=${n.b64}(${D.v})`);
+        add(`local ${D.n}=#${D.v}`);
+        add(`local ${D.o}={} local ${D.t}={}`);
+        add(`local ${D.k},${D.tk}=0,0`);
+        add(`${D.s}=${D.s}%${word32}`);
+        add(`if ${D.s}==0 then ${D.s}=${fallbackKey} end`);
+        add(`local ${D.mask}={0,0,0,0}`);
+        add(`for ${D.i}=1,${D.n} do`);
+        add(`if (${D.i}-1)%4==0 then`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.a}))`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.rshift(${D.s},${codec.b}))`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.c}))`);
+        add(`${D.mask}[1]=bit32.band(bit32.rshift(${D.s},${codec.shifts[0]}),255)`);
+        add(`${D.mask}[2]=bit32.band(bit32.rshift(${D.s},${codec.shifts[1]}),255)`);
+        add(`${D.mask}[3]=bit32.band(bit32.rshift(${D.s},${codec.shifts[2]}),255)`);
+        add(`${D.mask}[4]=bit32.band(bit32.rshift(${D.s},${codec.shifts[3]}),255)`);
+        add(`end`);
+        add(`${D.tk}=${D.tk}+1`);
+        add(`${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[string.byte(${D.v},${D.i})],${D.mask}[(${D.i}-1)%4+1]))`);
+        add(`if ${D.tk}>=${flush} then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) ${D.t}={} ${D.tk}=0 end`);
+        add(`end`);
+        add(`if ${D.tk}>0 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) end`);
+        add(`return table.concat(${D.o})`);
+        add(`end`);
+    } else {
+        add(`local ${n.dec}=function(${D.v},${D.s})`);
+        add(`${D.v}=${n.b64}(${D.v})`);
+        add(`local ${D.n}=#${D.v}`);
+        add(`local ${D.o}={}`);
+        add(`local ${D.t}={}`);
+        add(`local ${D.k},${D.tk}=0,0`);
+        add(`${D.s}=${D.s}%${word32}`);
+        add(`if ${D.s}==0 then ${D.s}=${fallbackKey} end`);
+        add(`local ${D.i}=1`);
+        add(`while ${D.i}<=${D.n} do`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.a}))`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.rshift(${D.s},${codec.b}))`);
+        add(`${D.s}=bit32.bxor(${D.s},bit32.lshift(${D.s},${codec.c}))`);
+        add(`local ${D.m1}=bit32.band(bit32.rshift(${D.s},${codec.shifts[0]}),255)`);
+        add(`local ${D.m2}=bit32.band(bit32.rshift(${D.s},${codec.shifts[1]}),255)`);
+        add(`local ${D.m3}=bit32.band(bit32.rshift(${D.s},${codec.shifts[2]}),255)`);
+        add(`local ${D.m4}=bit32.band(bit32.rshift(${D.s},${codec.shifts[3]}),255)`);
+        add(`local ${D.b1},${D.b2},${D.b3},${D.b4}=string.byte(${D.v},${D.i},${D.i}+3)`);
+        add(`if ${D.b4} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}),bit32.bxor(${n.isb}[${D.b4}],${D.m4}))`);
+        add(`elseif ${D.b3} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}),bit32.bxor(${n.isb}[${D.b3}],${D.m3}))`);
+        add(`elseif ${D.b2} then ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1}),bit32.bxor(${n.isb}[${D.b2}],${D.m2}))`);
+        add(`else ${D.tk}=${D.tk}+1 ${D.t}[${D.tk}]=string.char(bit32.bxor(${n.isb}[${D.b1}],${D.m1})) end`);
+        add(`if ${D.tk}>=${flush} then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) ${D.t}={} ${D.tk}=0 end`);
+        add(`${D.i}=${D.i}+4`);
+        add(`end`);
+        add(`if ${D.tk}>0 then ${D.k}=${D.k}+1 ${D.o}[${D.k}]=table.concat(${D.t}) end`);
+        add(`return table.concat(${D.o})`);
+        add(`end`);
+    }
 
-    const M = loc('h', 'i');
-    add(`local ${n.sum}=function(v)`);
-    add(`local ${M.h}=0`);
-    add(`for ${M.i}=1,#v do ${M.h}=(${M.h}*131+string.byte(v,${M.i}))%4294967296 end`);
-    add(`return ${M.h}`);
-    add(`end`);
+    for (const line of bootHashLines(n.sum, ...Object.values(loc('v', 'h', 'i')), hash)) add(line);
 
     add(`local ${n.cap}={}`);
     add(`do`);
@@ -825,7 +1012,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const seqBuffer = Buffer.from(order.map(name => opcode[name] & 0xFF));
     const seqKey = randomBytes(4).readUInt32BE(0) || 1;
     const seqLiteral = sealBlob(seqBuffer, seqKey);
-    const seqSum = bootChainSum(seqBuffer);
+    const seqSum = bootChainSum(seqBuffer, hash);
 
     const Q = loc('raw', 'i', 'f', 'v', 'a', 'b', 't0');
     add(`local ${Q.raw}=${n.dec}("${seqLiteral}",${seqKey})`);
