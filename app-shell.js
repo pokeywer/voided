@@ -223,6 +223,7 @@
         const workspace = document.querySelector('.workspace');
         if (workspace) workspace.scrollTop = 0;
         setActiveState();
+        document.dispatchEvent(new CustomEvent('vx:viewchange', { detail: { view } }));
     }
 
     rail.querySelectorAll('.vx-rail-link').forEach(link => {

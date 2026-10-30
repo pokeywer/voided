@@ -22,6 +22,7 @@ import payload from './_route-payload.js';
 import raw from './_route-raw.js';
 import scripts from './_route-scripts.js';
 import staff from './_route-staff.js';
+import vaultActivity from './_route-vault-activity.js';
 import vaultBackups from './_route-vault-backups.js';
 import vaultinfo from './_route-vaultinfo.js';
 import verify from './_route-verify.js';
@@ -49,6 +50,7 @@ const handlers = {
     raw,
     scripts,
     staff,
+    'vault-activity': vaultActivity,
     'vault-backups': vaultBackups,
     vaultinfo,
     verify
