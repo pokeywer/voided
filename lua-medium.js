@@ -1,4 +1,4 @@
-import { armorVoidedxSource, ARMOR_LEVELS, MAX_ARMOR_LAYERS } from './lua-voidedx-armor.js';
+import { armorVoidedxSource, ARMOR_LEVELS, MAX_ARMOR_LAYERS, OBFUSCATION_PROFILE_VERSION } from './lua-voidedx-armor.js';
 
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
@@ -9,7 +9,7 @@ export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
 // Retained aliases for any callers that imported the earlier threshold names.
 export const AUTO_LOW_BYTE_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
 export const AUTO_LOW_CHAR_THRESHOLD = AUTO_HIGH_BYTE_THRESHOLD;
-export const OBFUSCATION_PROFILE_VERSION = 30;
+export { OBFUSCATION_PROFILE_VERSION };
 
 // The engine stamps every build with a "VoidedX:<id>" watermark. The armor
 // rewrites the statement but keeps the id, so the marker can still be read back
@@ -324,12 +324,21 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
                         // script no longer carries Prometheus shapes (watermark statement, helper
                         // names, plain `loadstring`-free layout). The inner VM is unchanged.
                         const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
+                        // Firebase rejects the whole vault document past ~1 MiB, so the
+                        // container is built to fit what the document has left rather than
+                        // growing until the save fails. Sources above the readable limit are
+                        // stored compressed, so they cost the document far less.
+                        const storedSourceBytes = sourceBytes > MAX_READABLE_VAULT_SOURCE_BYTES
+                            ? sourceBytes * 0.45
+                            : sourceBytes;
+                        const armorBudget = MAX_STORED_ENCODED_OBFUSCATED_BYTES - storedSourceBytes - 48 * 1024;
                         const output = armorVoidedxSource(patched, {
                             level: armorLevel,
                             layers: armorLayers || undefined,
                             junk,
                             comments,
-                            layout
+                            layout,
+                            budgetBytes: armorBudget > intermediateBytes * 1.25 ? Math.floor(armorBudget) : 0
                         });
                         const outputBytes = getUtf8ByteLength(output);
                         if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {

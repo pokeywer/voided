@@ -1993,10 +1993,20 @@ export function armorVoidedxSource(source, options = {}) {
         Number.isFinite(layerOption) && layerOption > 0 ? layerOption : Number(base.layers) || 1,
         MAX_ARMOR_LAYERS
     ));
+    // The stored-copy caps protect the Firestore document, so a caller that is
+    // generating something never stored (the delivery bootstrap) may raise them.
+    const nestLimit = Number(options.nestLimit) > 0 ? Number(options.nestLimit) : MAX_ARMOR_NEST_CHARS;
+    const totalLimit = Number(options.totalLimit) > 0 ? Number(options.totalLimit) : MAX_ARMOR_TOTAL_CHARS;
+    // A caller that has to store the result passes a byte budget: the strongest
+    // configuration that fits wins instead of the build failing after the work
+    // is already done.
+    const budget = Number(options.budgetBytes) > 0 ? Math.floor(Number(options.budgetBytes)) : 0;
     for (let layer = 1; layer < requestedLayers; layer += 1) {
-        if (text.length > MAX_ARMOR_NEST_CHARS) break;
-        if (text.length * 1.35 > MAX_ARMOR_TOTAL_CHARS) break;
-        text = armorOnce(text, config);
+        if (text.length > nestLimit) break;
+        if (text.length * 1.35 > totalLimit) break;
+        const next = armorOnce(text, config);
+        if (budget && next.length > budget) break;
+        text = next;
     }
 
     const bannerRng = createRng();
@@ -2008,9 +2018,22 @@ export function armorVoidedxSource(source, options = {}) {
         : options.junk === 'heavy'
             ? 26 + randomInt(bannerRng, 13)
             : 12 + randomInt(bannerRng, 9);
-    const junkCount = junkBase ? Math.max(1, Math.round(junkBase * junkBoost)) : 0;
+    const junkOptions = { comments: options.comments !== false };
+    let junkCount = junkBase ? Math.max(1, Math.round(junkBase * junkBoost)) : 0;
+    let junkText = junkCount ? buildJunkCode(bannerRng, junkCount, junkOptions) : '';
+    if (junkText) {
+        const bannerText = buildBanner();
+        const allowance = budget ? budget - text.length - bannerText.length - 8 : 0;
+        if (budget && allowance < 0) {
+            junkCount = 0;
+            junkText = '';
+        } else if (budget && junkText.length > allowance) {
+            junkCount = Math.max(1, Math.floor(junkCount * (allowance / junkText.length)));
+            junkText = buildJunkCode(bannerRng, junkCount, junkOptions);
+        }
+    }
     return buildBanner() + '\n'
-        + (junkCount ? buildJunkCode(bannerRng, junkCount, { comments: options.comments !== false }) + '\n' : '')
+        + (junkText ? junkText + '\n' : '')
         + text;
 }
 

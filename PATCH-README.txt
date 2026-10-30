@@ -131,3 +131,30 @@ TWO FIXES IN THIS SAME SET - UPLOAD EVERY FILE LISTED ABOVE, NOT A SUBSET
 3. /api/verify threw ReferenceError: verifyLoaderToken is not defined on every attested request. The build 7 import that added verifyDeliveryAttestation dropped verifyLoaderToken from scope, so the loader got a 500 from verify after a successful gate handshake and printed "Could not reach the loader server: Http Error 500 - Internal Server Error". The name is imported again, and tests/api-scope.test.js now fails the suite if any api/*.js calls a bare function name that the file neither imports nor declares - the offline mock tests could not see this one, because it only breaks when the real route module runs. Checked against the real handler with a stubbed Firestore: an attested verify returns 200 with token, delivery, shield and report.
 
 
+
+
+LOADER BUILD 8 FOLLOW-UP - COMPACT PROTECTED COPIES THAT FIT FIRESTORE
+
+Upload or replace these together with the build 8 list above:
+
+  lua-voidedx-armor.js   (replaced) byte budget for nested containers and filler, per-call nest/total overrides
+  lua-medium.js          (replaced) passes the document budget into the armor step
+  api/_loaderSource.js   (replaced) armored-bootstrap wrapper (off by default), hook-marker handoff with the armor
+  api/_loaderToken.js    (replaced) loader token lifetime now 6s by default, LOADER_TOKEN_TTL_MS tunable within 3-30s
+  api/_route-verify.js   (replaced) restores the missing verifyLoaderToken import that made every attested verify 500
+  tests/api-scope.test.js (new)    fails if any api/*.js calls a name it neither imports nor declares
+
+WHY: Firestore limits a document to 1 MiB and the app stops at a 920 KiB estimate. Nesting was chosen by strength alone, so a large script at High or Absolute produced a container bigger than the document and the save was rejected - the strength setting was silently the thing that broke saving.
+
+WHAT CHANGED: the armor step is now given the bytes the vault document actually has left (920 KiB minus the stored source minus 48 KiB of headroom) and builds the strongest container that fits inside it. It stops adding nested layers when the next one would not fit, and it trims filler blocks to whatever space remains instead of emitting a fixed count. Nothing is generated and then thrown away, and a save that used to be refused now stores a real protected copy.
+
+MEASURED, armor output for a given Prometheus copy, absolute strength with heavy filler:
+  40 KiB copy   unbudgeted 403 KiB   budgeted 369 KiB
+  300 KiB copy  unbudgeted 479 KiB   budgeted 482 KiB
+  700 KiB copy  unbudgeted 620 KiB   budgeted 467 KiB
+  1400 KiB copy unbudgeted 778 KiB   budgeted 763 KiB
+Every budgeted result stays inside an 800 KiB container budget, and the 10-variant level matrix still passes in Lua 5.4 and Luau.
+
+BOOTSTRAP WEIGHT IS AVAILABLE BUT OFF: BOOTSTRAP_ARMOR_LAYERS wraps the /api/raw bootstrap in the same nested containers. It is never stored, so it costs no document space. Measured per fetch: 3 layers 255 KiB / 0.60s of function CPU, 4 layers 370 KiB / 0.95s, 5 layers 500 KiB / 1.16s, 6 layers 779 KiB / 1.42s. On the Hobby plan the binding limit is Active CPU, about 25,000 launches a month at 6 layers and 38,000 at 4, so the default is 0 (today's behaviour) until a value is chosen. Set it in Vercel environment variables and restart nothing - it is read per request.
+
+HOOK HANDOFF: the bootstrap used to reject any debug hook that was not its own, which made an armored bootstrap deny at startup. It now also accepts a hook named by getgenv()._vxwd, the same marker the armor container uses, and then overwrites the marker with its own watchdog so the outer layer keeps passing. Validated end to end with BOOTSTRAP_ARMOR_LAYERS=6: 96 delivery checks and 4 Luau variants, zero failures.

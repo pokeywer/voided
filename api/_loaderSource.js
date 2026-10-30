@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as loaderTokenModule from './_loaderToken.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { obfuscateLoaderSource } from './_loaderObfuscator.js';
-import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk, OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
+import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk, armorVoidedxSource, OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
 
 const { deriveBootstrapSeed, keyFingerprint } = loaderTokenModule;
 
@@ -33,6 +33,31 @@ export function luaString(str) {
 // Loader build stamp: the delivery bootstrap changes on its own schedule from
 // the stored-copy profile, so both numbers are printed in the banner.
 export const LOADER_BUILD = 8;
+
+// The bootstrap is rebuilt for every /api/raw fetch and never stored with the
+// vault, so weight that would push a saved copy past the Firestore document cap
+// costs nothing here. Each layer wraps the whole loader in another VoidedX
+// container, so a deobfuscator has to open all of them before it reaches the
+// gate URL, the decoys or the delivery code.
+const bootstrapLayerSetting = Number(process.env.BOOTSTRAP_ARMOR_LAYERS);
+export const BOOTSTRAP_ARMOR_LAYERS = Number.isFinite(bootstrapLayerSetting)
+    ? Math.max(0, Math.min(6, Math.round(bootstrapLayerSetting)))
+    : 0;
+
+function armorBootstrap(text) {
+    if (!BOOTSTRAP_ARMOR_LAYERS) return text;
+    const stamp = text.split('\n', 1)[0];
+    const armored = armorVoidedxSource(text, {
+        level: 'absolute',
+        layers: BOOTSTRAP_ARMOR_LAYERS,
+        junk: BOOTSTRAP_ARMOR_LAYERS >= 3 ? 'heavy' : 'normal',
+        // Never stored, so the document caps that protect a saved vault do not
+        // apply here; the ceiling is the executor's own HTTP response limit.
+        nestLimit: 950 * 1024,
+        totalLimit: 2600 * 1024
+    });
+    return `${stamp}\n${armored}`;
+}
 
 export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
 
@@ -564,7 +589,13 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`if ${cap('getfenv')} and (type(getfenv)~="function" or getfenv~=${cap('getfenv')}) then return false end`);
     add(`if ${cap('setfenv')} and (type(setfenv)~="function" or setfenv~=${cap('setfenv')}) then return false end`);
     add(`if ${cap('bit32')} and (bit32.bxor~=${cap('bit32')}.bxor or bit32.lshift~=${cap('bit32')}.lshift or bit32.rshift~=${cap('bit32')}.rshift) then return false end`);
-    add(`if ${cap('gethook')} then local ok,h=pcall(${cap('gethook')}) if ok and h~=nil and h~=${G.own} then return false end end`);
+    // A hook named by the shared getgenv()._vxwd marker belongs to an enclosing
+    // VoidedX container, so it is accepted and then replaced: this loader writes
+    // its own marker when it installs its watchdog, which is what lets an outer
+    // armor layer and this bootstrap share one debug hook slot.
+    add(`if ${cap('gethook')} then local ok,h=pcall(${cap('gethook')}) if ok and h~=nil and h~=${G.own} then`);
+    add(`local mk=nil if ${cap('getgenv')} then local ook,gev=pcall(${cap('getgenv')}) if ook and type(gev)=="table" then mk=gev._vxwd end end`);
+    add(`if h~=mk then return false end end end`);
     add(`if ${cap('sethook')} and (type(debug)~="table" or debug.sethook~=${cap('sethook')}) then return false end`);
     add(`if ${n.dmp} and string.dump~=${n.dmp} then return false end`);
     add(`if ${n.dmp} then`);
@@ -805,7 +836,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`end`);
     add(`return ${n.main}()`);
 
-    return lines.join('\n');
+    return armorBootstrap(lines.join('\n'));
 }
 
 export function buildPayloadRuntime(origin, options = {}, id = '') {
