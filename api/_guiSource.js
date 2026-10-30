@@ -1506,14 +1506,11 @@ local function attemptVerify(fromSavedKey)
     setStatus("", COL_MUTED)
     animateDots(submitLabel, "Verifying")
 
-    local ok, response = vxPcall(function()
-        return vxHttpGet(
-            game,
-            "${verifyBase}" ..
-            "&key=" .. HttpService:UrlEncode(typedKey) ..
-            vxClientParams(player)
-        )
-    end)
+    local ok, response = vxFetch(
+        "${verifyBase}" ..
+        "&key=" .. HttpService:UrlEncode(typedKey) ..
+        vxClientParams(player)
+    )
 
     dotsRunning = false
     verifying = false

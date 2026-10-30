@@ -5,6 +5,7 @@ import { getCodeForExecution } from './_deliveryCode.js';
 import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import * as loaderTokenModule from './_loaderToken.js';
 import { publicKeyDisabled } from './_keyAccess.js';
+import { EXECUTOR_ONLY_MESSAGE, inspectFetch } from './_clientGate.js';
 
 const { traceForSession, verifyLoaderToken } = loaderTokenModule;
 // Namespace import so a stale sibling file cannot stop the whole catch-all
@@ -136,6 +137,12 @@ export default async function handler(req, res) {
     if (req.method !== 'GET') {
         res.setHeader('Allow', 'GET');
         return json(res, 405, { ok: false, message: 'Method not allowed.' });
+    }
+
+    // Same rule as the other two loader hops: a key check comes from a running
+    // game, not from a script replaying captured URLs.
+    if (inspectFetch(req, String(req.query?.id || 'verify'), 'gate').block) {
+        return json(res, 415, { ok: false, message: EXECUTOR_ONLY_MESSAGE });
     }
 
     const id = String(req.query?.id || '');

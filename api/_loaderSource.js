@@ -32,7 +32,7 @@ export function luaString(str) {
 
 // Loader build stamp: the delivery bootstrap changes on its own schedule from
 // the stored-copy profile, so both numbers are printed in the banner.
-export const LOADER_BUILD = 8;
+export const LOADER_BUILD = 9;
 
 // The bootstrap is rebuilt for every /api/raw fetch and never stored with the
 // vault, so weight that would push a saved copy past the Firestore document cap
@@ -60,14 +60,26 @@ function armorBootstrap(text) {
 }
 
 export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
+export const EXECUTOR_ONLY_MESSAGE = '[VoidedX] This loader only runs in an executor.';
 
 // Every generated loader opens by proving it is running in a live Roblox
 // client: `typeof` only exists in Luau, DataModel only exists in Roblox, and a
 // real engine can hand back its own services and instances. A rehosted Lua, a
 // different engine, or an analysis harness stubbed with plain tables is refused
 // before the loader makes a single request.
+export function executorOnlyGuard() {
+    return `if type(getgenv)~="function" and type(hookfunction)~="function" and type(checkcaller)~="function" and type(getrenv)~="function" and type(queue_on_teleport)~="function" and type(setreadonly)~="function" and type(writefile)~="function" and type(request)~="function" and type(http_request)~="function" and type(syn)~="table" and type(krnl)~="table" then return error(${luaString(EXECUTOR_ONLY_MESSAGE)},0) end`;
+}
+
 export function robloxOnlyGuard() {
-    return `if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`;
+    // First the engine: a real Roblox DataModel. Then the injection layer: at
+    // least one primitive that only exists once a script has been run through an
+    // executor. Roblox itself, the Studio command bar and a bare Luau host have
+    // the first and not the second, so the loader stops there instead of handing
+    // its gate, its token and its payload to an environment that is not playing
+    // the game. One line: the minifier can glue a statement's `end` onto the
+    // next `if` and Luau reads that as `endif`.
+    return `if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end ${executorOnlyGuard()}`;
 }
 
 // Return a compact transport copy; this is cosmetic and does not replace the
@@ -490,6 +502,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`return true`);
     add(`end`);
     add(`if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`);
+    add(executorOnlyGuard());
 
     const A = loc('alpha', 'i');
     add(`local ${n.map}={}`);
@@ -939,6 +952,28 @@ local vxUrlEncodeStable = HttpService.UrlEncode == HttpService.UrlEncode
 local vxTaskWait = type(task) == "table" and task.wait or nil
 local vxTaskSpawn = type(task) == "table" and task.spawn or nil
 
+-- Two independent ways to reach the server. game.HttpGet goes first because every
+-- executor has it; when it is blocked, rate limited or hooked, the same request
+-- leaves through the engine's async HTTP call or the executor's own request
+-- function, so a loader is not stranded by whichever one a host disables.
+local function vxFetch(url)
+    local ok, res = vxPcall(function() return vxHttpGet(game, url) end)
+    if ok and type(res) == "string" then return true, res end
+    local last = res
+    if type(HttpService) == "table" and type(HttpService.RequestAsync) == "function" then
+        local ok2, res2 = vxPcall(function() return HttpService:RequestAsync({ Url = url, Method = "GET" }) end)
+        if ok2 and type(res2) == "table" and res2.Success ~= false and type(res2.Body) == "string" then return true, res2.Body end
+        last = res2 or last
+    else
+        local alt = http_request or request or (syn and syn.request) or (flux and flux.request)
+        if type(alt) == "function" then
+            local ok3, res3 = vxPcall(function() return alt({ Url = url, Method = "GET" }) end)
+            if ok3 and type(res3) == "table" and type(res3.Body) == "string" then return true, res3.Body end
+            last = res3 or last
+        end
+    end
+    return false, last
+end
 local function vxPlaceParam()
     local place = game and game.PlaceId
     if type(place) == "number" then return "&placeId=" .. vxTostring(place) end
@@ -1315,7 +1350,7 @@ local function vxRunPayload(token, userId, shield, report, delivery)
         if not vxInstant and type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
             asyncStarted = vxPcall(function()
                 task.spawn(function()
-                    requestOk, response = vxPcall(function() return vxHttpGet(game, candidate) end)
+                    requestOk, response = vxFetch(candidate)
                     requestDone = true
                 end)
             end)
@@ -1329,7 +1364,7 @@ local function vxRunPayload(token, userId, shield, report, delivery)
             end
         else
             vxProgress(40, "Downloading payload")
-            requestOk, response = vxPcall(function() return vxHttpGet(game, candidate) end)
+            requestOk, response = vxFetch(candidate)
         end
 
         if not requestOk then
@@ -1439,14 +1474,11 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 ${buildPayloadRuntime(origin, options, id)}
 
-local ok, response = vxPcall(function()
-    return vxHttpGet(
-        game,
-        "${verifyBase}" ..
-        "&key=" .. HttpService:UrlEncode(${luaString(key)}) ..
-        vxClientParams(player)
-    )
-end)
+local ok, response = vxFetch(
+    "${verifyBase}" ..
+    "&key=" .. HttpService:UrlEncode(${luaString(key)}) ..
+    vxClientParams(player)
+)
 
 if not ok then
     return error("[VoidedX] Could not reach the verification server. Try again.", 0)
@@ -1479,9 +1511,7 @@ local player = Players.LocalPlayer
 ${buildPayloadRuntime(origin, options, id)}
 local verifyUrl = ${luaString(verifyUrl)} .. vxClientParams(player)
 
-local requestOk, response = vxPcall(function()
-    return vxHttpGet(game, verifyUrl)
-end)
+local requestOk, response = vxFetch(verifyUrl)
 if not requestOk then
     error("[VoidedX] Could not reach the loader server: " .. tostring(response), 0)
 end

@@ -3,6 +3,7 @@ import { db } from './_admin.js';
 import { getCodeForExecution } from './_deliveryCode.js';
 import { cipherTag, encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import { publicKeyDisabled } from './_keyAccess.js';
+import { EXECUTOR_ONLY_MESSAGE, inspectFetch } from './_clientGate.js';
 
 function json(res, status, body) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -91,6 +92,12 @@ export default async function handler(req, res) {
     if (req.method !== 'GET') {
         res.setHeader('Allow', 'GET');
         return json(res, 405, { ok: false, message: 'Method not allowed.' });
+    }
+
+    // The payload hop is only ever fetched by a loader. A script that captured a
+    // one-time delivery code still cannot pull it out of a worker or a terminal.
+    if (inspectFetch(req, String(req.query?.rid || 'payload'), 'gate').block) {
+        return json(res, 415, { ok: false, message: EXECUTOR_ONLY_MESSAGE });
     }
 
     let sessionToken = String(req.query?.session || '');

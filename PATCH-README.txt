@@ -158,3 +158,57 @@ Every budgeted result stays inside an 800 KiB container budget, and the 10-varia
 BOOTSTRAP WEIGHT IS AVAILABLE BUT OFF: BOOTSTRAP_ARMOR_LAYERS wraps the /api/raw bootstrap in the same nested containers. It is never stored, so it costs no document space. Measured per fetch: 3 layers 255 KiB / 0.60s of function CPU, 4 layers 370 KiB / 0.95s, 5 layers 500 KiB / 1.16s, 6 layers 779 KiB / 1.42s. On the Hobby plan the binding limit is Active CPU, about 25,000 launches a month at 6 layers and 38,000 at 4, so the default is 0 (today's behaviour) until a value is chosen. Set it in Vercel environment variables and restart nothing - it is read per request.
 
 HOOK HANDOFF: the bootstrap used to reject any debug hook that was not its own, which made an armored bootstrap deny at startup. It now also accepts a hook named by getgenv()._vxwd, the same marker the armor container uses, and then overwrites the marker with its own watchdog so the outer layer keeps passing. Validated end to end with BOOTSTRAP_ARMOR_LAYERS=6: 96 delivery checks and 4 Luau variants, zero failures.
+
+
+GATE URLS ARE NOW ASSEMBLED PER REQUEST
+
+api/_loaderSource.js (replaced)
+
+The bootstrap used to decode every gate candidate up front into one table and then probe from it, so a single memory snapshot taken after that step yielded all four candidate URLs, the live one included. Each candidate is now kept as its two sealed halves and is decoded into a local inside the probe function, immediately before the HttpGet call, so a complete URL exists only for the microseconds around that one request. The old up-front pass was replaced by a shape check on the sealed table, which also denies a tampered or truncated candidate list. Verified in the generated artifact: the table-assignment shape is gone and the per-probe decode is present. Bootstrap 130/0, delivery chain 96/0.
+
+What this does not change: whoever hooks game.HttpGet still sees the live URL at the moment it is called, because the client has to send it. That is why the credential is a 10 second, IP-bound, single-vault token, why /api/verify needs the sealed attestation, and why the script itself arrives on a one-time delivery code that appears in no earlier response.
+
+
+LOADER PROGRAM IS NOW AN OPERAND STREAM WITH A PRESENCE DIGEST (route 3, step 1)
+
+api/_loaderSource.js (replaced)
+
+The bootstrap's sealed program used to be one byte per step with no operands, so a reader could delete any cell it judged unreachable and nothing changed. Every instruction now carries an operand byte, decoy cells are interleaved before the terminal step, and the operands fold into a running total that the terminal handler verifies before it runs the payload. Trimming, inserting or corrupting cells changes the total and the loader denies itself with the usual message. The operand bytes ride the same sealed, checksummed stream as the opcodes, so they are not readable without opening it, and the opcode numbering is still redrawn per build.
+
+Verified: bootstrap 154/0 unarmored and 131/0 at the default 3 containers, delivery chain 96/0, Luau 4/0. Negative test - setting the expected total one off made every run deny with "Voided: Doing this is not allowed.", which proves the check gates execution instead of sitting in the file unused.
+
+Not done yet in route 3: the handlers are still plain Lua functions rather than instruction bodies, so a runtime trace still shows the steps. That is the next increment, and it is what the private-ISA work in routes 1 and 2 subsumes.
+
+
+LOADER BUILD 9 - TWO WAYS TO FETCH, AND A REVERTED EXPERIMENT
+
+api/_loaderSource.js, api/_guiSource.js (replaced)
+
+REVERTED: the operand-stream program digest added earlier today was withdrawn. A 40-build soak showed 22% of builds misbehaved - every gate candidate probed twice, and some builds denied themselves with "Voided: Doing this is not allowed." That build would have bricked the loader for a large share of launches. Single-build test runs had passed it, which is the lesson: the loader is now soaked across many generated builds before anything is called done. The per-request URL assembly (candidates decoded only inside the probe, never materialized into a table) is kept and is soaked clean.
+
+NEW: the loader now reaches the server two independent ways. game.HttpGet is tried first, as always. If it is blocked, rate limited, or hooked, the same request goes out through HttpService:RequestAsync, or through the executor's own http_request / request / syn.request / flux.request when the engine's async call is not present. This covers the verify call, the payload fetch on both the /get/raw/<id>/<code> path and the session form, and the in-game key card. The gate probe still uses game.HttpGet only, because it runs in the outer bootstrap before services are resolved.
+
+Validated by soaking freshly generated builds rather than one: 8 delivery-chain builds x 130 checks (including two cases where HttpGet is blocked and RequestAsync must carry the delivery), 6 unarmored and 6 armored bootstrap builds x ~140 checks, Luau oracle 4/4, unit tests 8/8, import graph 67 files 0 problems. Loader stamp is now --voidedx-loader-p30-b9.
+
+
+LOADER BUILD 9 (PART 2) - THE LINK ONLY ANSWERS AN EXECUTOR
+
+Upload or replace these together:
+
+  api/_clientGate.js           (new) user-agent classifier, guard mode, hashed fetch fingerprint
+  api/_route-raw.js            (replaced) refuses known HTTP libraries with 415 before any database read
+  api/_route-verify.js         (replaced) same rule with the portable-client allowance
+  api/_route-payload.js        (replaced) same rule with the portable-client allowance
+  api/_loaderSource.js         (replaced) the loader itself now refuses a bare engine before it sends a request
+  tests/client-gate.test.js    (new) two-tier classification, mode fallbacks, fingerprint shape
+  README.md                    (replaced) build 9 notes
+
+CLIENT SIDE: the first check in every generated loader used to ask only "is this Roblox". It now also asks "is this an executor". On top of the game identity check, a script that exposes none of getgenv, hookfunction, checkcaller, getrenv, queue_on_teleport, setreadonly, writefile, request, http_request, syn and krnl stops with [VoidedX] This loader only runs in an executor. and never contacts the server. It runs in the outer bootstrap as well as in the inner loaders, so in a bare interpreter the stop happens before the gate probe, not just before the verification call - no token, no attestation and no delivery code ever leaves the machine. Plain lua, lua54, LuaJIT, a headless luau VM and a stubbed game table all stop on that line, so a captured copy cannot be replayed offline to reach the gate. The harness covers it with bare-engine cases for the tracked, keyed and keyless bootstrap that assert both the refusal and that no request was made.
+
+SERVER SIDE: /api/raw refuses a fetch whose user-agent is a known HTTP library, worker runtime or browser driver and answers 415 with the same Lua error as its body, so a terminal or a scraper handed the link gets nothing runnable: undici, node, node-fetch, axios, got, superagent, python-requests, python-urllib, urllib3, aiohttp, httpx, okhttp, Java, Go-http-client, curl, wget, libwww-perl, PostmanRuntime, insomnia, RestSharp, Faraday, workerd, Cloudflare-Workers, Vercel, edge-runtime, Deno, PhantomJS, headlessChrome, Selenium, Puppeteer, Playwright, NSUrlSession, Apifox, Apipost, Hoppscotch. /api/verify and /api/payload apply the narrower version of the rule, because that is where the game identity is proven and a phone executor's own HTTP backend can legitimately present a platform client: there curl, wget, okhttp, Java, NSUrlSession, httpclient, libwww-perl, Faraday, Apifox, Apipost and Hoppscotch are logged and not blocked, while server-side script runtimes are still refused. Nothing is ever blocked for being unfamiliar - an executor that sends no user-agent, or one this list has never seen, is allowed, because locking a paying runner out of its own loader is worse than the leak it prevents. Every non-executor fetch is written to the function log as loader-fetch:<label> <16-hex fingerprint> <vault id>; the user-agent itself is hashed, never stored, in line with the no-IP rule, so the log shows what clients actually send without hoarding client strings.
+
+TURNING IT DOWN WHILE TESTING: LOADER_FETCH_GUARD=enforce is the default and is what ships. Set it to log to record without refusing, or off to switch the rule off, if a user's executor ever trips it - no restart is needed, it is read per request. Note that this also means curl -i https://voidedx.vercel.app/api/raw?id=... now returns 415 with the Lua refusal instead of a bootstrap; use a Roblox executor, or set LOADER_FETCH_GUARD=log in a preview deployment, to check the endpoint by hand.
+
+WHAT IT IS NOT: a user-agent is one line to spoof, so this is a cost on casual link pulling and a signal in the log, not a wall. The ten-second IP-bound token, the sealed delivery attestation, the one-time delivery code and the shielded payload are what actually gate delivery. Blocked requests still perform no database read, so a flood of refused fetches costs the site nothing.
+
+Validated: a new 43-check smoke runs the three real route handlers against a stubbed Firestore and asserts the refusal status and body, that a blocked fetch never reads a document, that Roblox, executor, empty and browser user-agents still get their bootstrap, that the portable clients pass the two gate hops, and that paused, missing-vault and token-check behaviour is unchanged. On top of it: 11 unit tests across loader-token, api-scope and client-gate, a 10-build soak (five armored at the shipped three layers, five unarmored) at 132-170 bootstrap checks and 130 delivery checks per build with zero failures, the Luau oracle at 4/4, and the import graph at 68 files with 0 problems. No vault needs re-saving, no profile number moved, and the copied loadstring line is unchanged.

@@ -7,6 +7,7 @@ import { deriveBootstrapSeed, issueLoaderToken, requestBinding, verifyLoaderToke
 import { buildKeyLoader, buildTrackedScript } from './_loaderSource.js';
 import { buildGuiLoader } from './_guiSource.js';
 import { publicKeyDisabled } from './_keyAccess.js';
+import { inspectFetch } from './_clientGate.js';
 
 function isExecutorRequest(req) {
     const ua = (req.headers['user-agent'] || '').toLowerCase();
@@ -38,6 +39,17 @@ export default async function handler(req, res) {
         return res.status(400).send('Error: Missing Vault ID');
     }
 
+    // Loader links are meant to be opened by an executor, not by a service
+    // fetching them from a worker. Known HTTP libraries are refused; anything
+    // else is recorded as a hashed fingerprint so the log shows what clients
+    // actually send before the rule is tightened any further.
+    const fetchGuard = inspectFetch(req, id);
+    if (fetchGuard.block) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.status(415).send(`error("[VoidedX] This loader only runs in an executor.", 0)`);
+    }
+
     if (trackOnly === '1') {
         if (!userId || !/^\d{1,20}$/.test(String(userId))) {
             return res.status(400).send('Error: Invalid player ID');
@@ -57,7 +69,8 @@ export default async function handler(req, res) {
         return res.redirect(302, `/vault.html?id=${encodeURIComponent(id)}${keyParam}`);
     }
 
-    if (!mintTokenForBootstrap && !verifyLoaderToken(loaderToken, id, key, undefined, req)) {
+    const hints = { day: String(req.query.d || ''), kh: String(req.query.kh || '') };
+    if (!mintTokenForBootstrap && !verifyLoaderToken(loaderToken, id, key, undefined, req, hints)) {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         return res.status(410).send('error("[VoidedX] Error: Loader expired. Get a new loader from the website and try again.", 0)');
@@ -105,7 +118,7 @@ export default async function handler(req, res) {
             activeLoaderToken = issueLoaderToken(id, key, vaultData.loaderVersion, requestBinding(req)).token;
         }
 
-        if (!verifyLoaderToken(activeLoaderToken, id, key, vaultData.loaderVersion, req)) {
+        if (!verifyLoaderToken(activeLoaderToken, id, key, vaultData.loaderVersion, req, hints)) {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             return res.status(410).send('error("[VoidedX] Error: Loader expired or was revoked. Get a new loader from the website and try again.", 0)');
