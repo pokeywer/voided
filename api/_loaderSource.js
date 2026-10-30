@@ -42,7 +42,7 @@ export const LOADER_BUILD = 8;
 const bootstrapLayerSetting = Number(process.env.BOOTSTRAP_ARMOR_LAYERS);
 export const BOOTSTRAP_ARMOR_LAYERS = Number.isFinite(bootstrapLayerSetting)
     ? Math.max(0, Math.min(6, Math.round(bootstrapLayerSetting)))
-    : 6;
+    : 3;
 
 function armorBootstrap(text) {
     if (!BOOTSTRAP_ARMOR_LAYERS) return text;
@@ -464,7 +464,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     const slotPool = bootShuffle(Array.from({ length: 72 }, (_, index) => index + 1));
     const sl = {};
     for (const role of [
-        'data', 'sealed', 'order', 'decoded', 'seed', 'fails', 'done', 'deny', 'expired',
+        'data', 'sealed', 'order', 'decoded', 'seed', 'fails', 'rejected', 'done', 'deny', 'expired',
         'net', 'mark', 'tail', 'step', 'chain', 'spawn', 'wait', 'loader', 'code', 'arg',
         'chunk', 'wd', 'off', 'env', 'session', 'beacon'
     ]) {
@@ -635,6 +635,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`${st('order')}={${probeOrder}}`);
     add(`${st('decoded')}={}`);
     add(`${st('fails')}=0`);
+    add(`${st('rejected')}=0`);
     add(`${st('done')}=0`);
     add(`${st('deny')}=${luaString('Voided: Doing this is not allowed.')}`);
     add(`${st('expired')}=${luaString('[VoidedX] Error: Loader expired. Get a new loader from the website and try again.')}`);
@@ -653,7 +654,9 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`if ${P.ok} and type(${P.res})=="string" then`);
     add(`local ${P.hit}=${cap('match')}(${P.res},"^vx1|(%x%x%x%x%x%x%x%x)|%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")`);
     add(`if ${P.hit} and not ${st('seed')} then ${st('seed')}=${P.hit} end`);
-    add(`elseif not ${P.ok} then ${st('fails')}=${st('fails')}+1 end`);
+    add(`elseif not ${P.ok} then`);
+    add(`if ${cap('match')}(${cap('tostring')}(${P.res}),"410") then ${st('rejected')}=${st('rejected')}+1 else ${st('fails')}=${st('fails')}+1 end`);
+    add(`end`);
     add(`${st('done')}=${st('done')}+1`);
     add(`end`);
 
@@ -676,7 +679,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         `while ${O.i}<=#${st('order')} do ${n.probeOne}(${O.i}) ${O.i}=${O.i}+1 end`,
         `end`,
         `if not ${st('seed')} then`,
-        `if ${st('fails')}>=#${st('order')} then error(${st('net')},0) end`,
+        `if ${st('fails')}>=#${st('order')} and ${st('rejected')}==0 then error(${st('net')},0) end`,
         `error(${st('expired')},0)`,
         `end`
     ]);
