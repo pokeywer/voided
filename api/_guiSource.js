@@ -1,3 +1,4 @@
+import { deliveryAttestation } from './_loaderToken.js';
 import { buildPayloadRuntime, compactGeneratedLoader, luaString, packGeneratedLoader, robloxOnlyGuard } from './_loaderSource.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 
@@ -42,11 +43,16 @@ export function sanitizeGuiAppearance(raw = {}) {
 }
 
 export function buildGuiLoader(id, origin, rawAppearance = {}, rawVaultName = '', loaderToken, options = {}) {
-    return packGeneratedLoader(buildGuiSource(id, origin, rawAppearance, rawVaultName, options), { id, origin, token: loaderToken });
+    return packGeneratedLoader(buildGuiSource(id, origin, rawAppearance, rawVaultName, options, loaderToken), { id, origin, token: loaderToken });
 }
 
-export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = '', options = {}) {
-    const verifyBase = `${origin}/api/verify`;
+export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = '', options = {}, loaderToken = '') {
+    // The in-game card only reaches /api/verify when it was served inside a real
+    // bootstrap, so the attestation is added when a loader token exists; the
+    // website preview builds the same card without one.
+    const verifyBase = loaderToken
+        ? `${origin}/api/verify?boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`
+        : `${origin}/api/verify`;
     const keyPageUrl = `${origin}/key.html?id=${id}`;
     const appearance = sanitizeGuiAppearance(rawAppearance);
     const vaultName = typeof rawVaultName === 'string'
@@ -79,7 +85,7 @@ local TextService = game:GetService("TextService")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local savedKeyPath = ${luaString(savedKeyFile)}
-${buildPayloadRuntime(origin, options)}
+${buildPayloadRuntime(origin, options, id)}
 
 local function readSavedKey()
     if type(readfile) ~= "function" then return nil end
@@ -1585,7 +1591,7 @@ local function attemptVerify(fromSavedKey)
     card:Destroy()
     overlay:Destroy()
     showKeyTimer(result.remainingSeconds, fileSaved, result.expiresAt)
-    vxRunPayload(result.token, player.UserId, result.shield, result.report)
+    vxRunPayload(result.token, player.UserId, result.shield, result.report, result.delivery)
 end
 
 submitBtn.Activated:Connect(function()

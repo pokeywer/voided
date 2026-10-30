@@ -5,6 +5,10 @@
     {
       "source": "/obfuscationvx=:token",
       "destination": "/obfuscation.html?vx=:token"
+    },
+    {
+      "source": "/get/raw/:id/:code",
+      "destination": "/api/payload?rid=:id&rcode=:code"
     }
   ],
   "crons": [

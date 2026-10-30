@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { deriveBootstrapSeed } from './_loaderToken.js';
+import { deriveBootstrapSeed, keyFingerprint, deliveryAttestation } from './_loaderToken.js';
 import { buildRemovedVaultGui } from './_removedVaultGui.js';
 import { obfuscateLoaderSource } from './_loaderObfuscator.js';
-import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk } from '../lua-voidedx-armor.js';
+import { createConfusableFactory, buildStateMachineJunk, buildRegisterMachineJunk, OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
 
 export function luaString(str) {
     const escaped = String(str)
@@ -14,6 +14,10 @@ export function luaString(str) {
         .replace(/\0/g, '\\000');
     return `"${escaped}"`;
 }
+
+// Loader build stamp: the delivery bootstrap changes on its own schedule from
+// the stored-copy profile, so both numbers are printed in the banner.
+export const LOADER_BUILD = 8;
 
 export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
 
@@ -112,6 +116,7 @@ function buildLoaderBanner() {
         for (let row = 0; row < 5; row += 1) rows[row] += glyph[row] + ' ';
     }
     return [
+        `--voidedx-loader-p${OBFUSCATION_PROFILE_VERSION}-b${LOADER_BUILD}`,
         '--[[',
         '   ' + rows[0],
         '   ' + rows[1],
@@ -119,7 +124,7 @@ function buildLoaderBanner() {
         '   ' + rows[3],
         '   ' + rows[4],
         '',
-        '   VOIDEDX LOADER   //   voidedx.vercel.app',
+        `   VOIDEDX LOADER   //   voidedx.vercel.app   //   profile ${OBFUSCATION_PROFILE_VERSION}   build ${LOADER_BUILD}`,
         '   protected delivery build   |   do not resell',
         ']]'
     ].join('\n');
@@ -310,19 +315,47 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     }
     const dataLiteral = dataParts.map(part => `"${part}"`).join(',');
 
-    const buildGateUrl = ({ vaultId, token: gateToken, key: gateKey }) => {
+    const gateDay = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+    // Decoys carry a real-looking day within a month of today, so the parameter
+    // does not single out the live entry in a request log.
+    const nearbyDay = () => new Date(Date.now() + (randomBytes(1)[0] - 128) * 86_400_000)
+        .toISOString().slice(0, 10).replaceAll('-', '');
+    const buildGateUrl = ({ vaultId, token: gateToken, key: gateKey, hint }) => {
+        const usedKey = gateKey ?? key;
+        // Credential, key hint, mint day and nonce all sit beside the vault id,
+        // and decoys are built the same way from their own key and a plausible
+        // nearby date, so a request log cannot mark the live entry.
         const url = new URL('/api/raw', origin);
         url.searchParams.set('id', vaultId);
         url.searchParams.set('token', gateToken);
         url.searchParams.set('format', 'token-check');
-        if (key) url.searchParams.set('key', gateKey || key);
+        if (usedKey) {
+            url.searchParams.set('key', usedKey);
+            url.searchParams.set('kh', keyFingerprint(usedKey).slice(0, 8));
+        }
+        url.searchParams.set('d', hint || gateDay);
         url.searchParams.set('n', randomBytes(9).toString('hex'));
         return url.href;
     };
 
+    // Each URL is sealed in two halves under two different keys, cut inside the
+    // token itself, so no single decoded blob ever holds the whole credential.
     const sealUrl = href => {
-        const urlKey = randomBytes(4).readUInt32BE(0) || 1;
-        return { cipher: sealBlob(Buffer.from(href, 'utf8'), urlKey), key: urlKey };
+        const firstKey = randomBytes(4).readUInt32BE(0) || 1;
+        const secondKey = randomBytes(4).readUInt32BE(0) || 1;
+        const start = href.indexOf('token=');
+        let cut = Math.floor(href.length / 2);
+        if (start !== -1) {
+            const valueStart = start + 'token='.length;
+            const valueEnd = href.indexOf('&', valueStart) === -1 ? href.length : href.indexOf('&', valueStart);
+            if (valueEnd - valueStart > 8) cut = valueStart + 1 + (randomBytes(1)[0] % (valueEnd - valueStart - 2));
+        }
+        return {
+            c1: sealBlob(Buffer.from(href.slice(0, cut), 'utf8'), firstKey),
+            k1: firstKey,
+            c2: sealBlob(Buffer.from(href.slice(cut), 'utf8'), secondKey),
+            k2: secondKey
+        };
     };
 
     const decoyKey = randomBytes(32).toString('hex');
@@ -334,15 +367,16 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
             decoys.push(sealUrl(buildGateUrl({
                 vaultId: randomTokenString(20),
                 token: fakeLoaderToken(key ? decoyKey : ''),
-                key: key ? decoyKey : ''
+                key: key ? decoyKey : '',
+                hint: nearbyDay()
             })));
         } else {
-            decoys.push(sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key })));
+            decoys.push(sealUrl(buildGateUrl({ vaultId: id, token: fakeLoaderToken(key), key, hint: nearbyDay() })));
         }
     }
     const gateList = bootShuffle([realUrl].concat(decoys));
     const gateTable = gateList
-        .map(entry => `{"${entry.cipher}",0x${entry.key.toString(16)}}`)
+        .map(entry => `{"${entry.c1}",0x${entry.k1.toString(16)},"${entry.c2}",0x${entry.k2.toString(16)}}`)
         .join(',');
     const probeOrder = bootShuffle(gateList.map((entry, index) => index + 1)).join(',');
     const chunkName = randomBytes(6).toString('hex');
@@ -583,7 +617,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         `if not ${n.guard}() then error(${st('deny')},0) end`
     ]);
     H.set('openUrls', [
-        `for ${O.i}=1,#${st('sealed')} do local ${O.e}=${st('sealed')}[${O.i}] ${st('decoded')}[${O.i}]=${n.dec}(${O.e}[1],${O.e}[2]) end`
+        `for ${O.i}=1,#${st('sealed')} do local ${O.e}=${st('sealed')}[${O.i}] ${st('decoded')}[${O.i}]=${n.dec}(${O.e}[1],${O.e}[2])..${n.dec}(${O.e}[3],${O.e}[4]) end`
     ]);
     H.set('probe', [
         `if ${st('spawn')} and ${st('wait')} then`,
@@ -759,7 +793,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     return lines.join('\n');
 }
 
-export function buildPayloadRuntime(origin, options = {}) {
+export function buildPayloadRuntime(origin, options = {}, id = '') {
     const instant = options.instant === true;
     // Instant loaders carry no progress renderer at all, so the only console
     // output they can produce is the VoidedX credit line.
@@ -783,9 +817,13 @@ local function vxProgress(percent, stage)
     vxPcall(vxPrint, line)
 end`;
     const payloadBase = luaString(`${origin}/api/payload?session=`);
+    const hasRawPath = typeof id === 'string' && id.length > 0;
+    const getRawBase = luaString(`${origin}/get/raw/${encodeURIComponent(id || '')}/`);
     const integrityBase = luaString(`${origin}/api/integrity?session=`);
     return `
 local vxPayloadBase = ${payloadBase}
+local vxGetRawPath = ${hasRawPath ? 'true' : 'false'}
+local vxGetRawBase = ${getRawBase}
 local vxIntegrityBase = ${integrityBase}
 local vxBit = bit32
 if type(vxBit) ~= "table" then
@@ -1136,7 +1174,7 @@ local function vxUnshield(result, shield)
     return code
 end
 
-local function vxRunPayload(token, userId, shield, report)
+local function vxRunPayload(token, userId, shield, report, delivery)
     if type(token) ~= "string" or token == "" then
         return error("[VoidedX] The server did not issue a delivery ticket.", 0)
     end
@@ -1200,61 +1238,99 @@ local function vxRunPayload(token, userId, shield, report)
         return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
     end
 
-    local payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token)
-    if userId ~= nil then payloadUrl = payloadUrl .. "&userId=" .. HttpService:UrlEncode(tostring(userId)) end
-    payloadUrl = payloadUrl .. vxPlaceParam()
+    local suffix = ""
+    if userId ~= nil then suffix = suffix .. "&userId=" .. HttpService:UrlEncode(tostring(userId)) end
+    local vxPlaceId = game and game.PlaceId
+    if type(vxPlaceId) == "number" then suffix = suffix .. "&placeId=" .. vxTostring(vxPlaceId) end
 
-    local requestOk, response
-    local requestDone = false
-    local progress = 2
-    vxProgress(progress, "Connecting to server")
-
-    local asyncStarted = false
-    if not vxInstant and type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
-        asyncStarted = vxPcall(function()
-            task.spawn(function()
-                requestOk, response = vxPcall(function() return vxHttpGet(game, payloadUrl) end)
-                requestDone = true
-            end)
-        end)
-    end
-
-    if asyncStarted then
-        while not requestDone do
-            progress = math.min(progress + 6, 85)
-            vxProgress(progress, "Downloading payload")
-            task.wait(0.2)
-        end
+    local payloadUrl, fallbackUrl
+    if vxGetRawPath and type(delivery) == "string" and #delivery == 32 then
+        payloadUrl = vxGetRawBase .. HttpService:UrlEncode(delivery) .. "?" .. vxSub(suffix, 2)
+        fallbackUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
     else
-        vxProgress(40, "Downloading payload")
-        requestOk, response = vxPcall(function() return vxHttpGet(game, payloadUrl) end)
+        payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
     end
 
-    if not requestOk then
-        vxProgress(progress, "Download failed")
-        return error("[VoidedX] Could not download the script: " .. tostring(response), 0)
+    local candidates = { payloadUrl }
+    if fallbackUrl then candidates[2] = fallbackUrl end
+
+    local result
+    for _, candidate in ipairs(candidates) do
+        local canFallback = fallbackUrl ~= nil and candidate == payloadUrl
+        local requestOk, response
+        local requestDone = false
+        local progress = 2
+        vxProgress(progress, "Connecting to server")
+
+        local asyncStarted = false
+        if not vxInstant and type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
+            asyncStarted = vxPcall(function()
+                task.spawn(function()
+                    requestOk, response = vxPcall(function() return vxHttpGet(game, candidate) end)
+                    requestDone = true
+                end)
+            end)
+        end
+
+        if asyncStarted then
+            while not requestDone do
+                progress = math.min(progress + 6, 85)
+                vxProgress(progress, "Downloading payload")
+                task.wait(0.2)
+            end
+        else
+            vxProgress(40, "Downloading payload")
+            requestOk, response = vxPcall(function() return vxHttpGet(game, candidate) end)
+        end
+
+        if not requestOk then
+            if canFallback then
+                vxProgress(progress, "Retrying delivery")
+            else
+                vxProgress(progress, "Download failed")
+                return error("[VoidedX] Could not download the script: " .. tostring(response), 0)
+            end
+        else
+            flags = vxCollectFlags()
+            if #flags > 0 and vxReport(report, shield.trace, flags) then
+                return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
+            end
+
+            vxProgress(90, "Verifying payload")
+            local decodeOk, decoded = vxPcall(vxJsonDecode, HttpService, response)
+            if not decodeOk or type(decoded) ~= "table" then
+                if canFallback then
+                    vxProgress(90, "Retrying delivery")
+                else
+                    vxProgress(90, "Server error")
+                    return error("[VoidedX] The payload server returned a bad response.", 0)
+                end
+            elseif not decoded.ok then
+                if canFallback then
+                    vxProgress(90, "Retrying delivery")
+                else
+                    vxProgress(90, "Access denied")
+                    return error("[VoidedX] " .. tostring(decoded.message or "The script could not be delivered."), 0)
+                end
+            elseif decoded.v ~= 5 then
+                if canFallback then
+                    vxProgress(90, "Retrying delivery")
+                else
+                    vxProgress(90, "Invalid payload")
+                    return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
+                end
+            else
+                result = decoded
+                break
+            end
+        end
     end
 
-    flags = vxCollectFlags()
-    if #flags > 0 and vxReport(report, shield.trace, flags) then
-        return error("[VoidedX] This session was blocked because the runtime environment was modified.", 0)
-    end
-
-    vxProgress(90, "Verifying payload")
-    local decodeOk, result = vxPcall(vxJsonDecode, HttpService, response)
-    if not decodeOk or type(result) ~= "table" then
+    if not result then
         vxProgress(90, "Server error")
         return error("[VoidedX] The payload server returned a bad response.", 0)
     end
-    if not result.ok then
-        vxProgress(90, "Access denied")
-        return error("[VoidedX] " .. tostring(result.message or "The script could not be delivered."), 0)
-    end
 
-    if result.v ~= 5 then
-        vxProgress(90, "Invalid payload")
-        return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
-    end
     local executionCode, reason = vxUnshield(result, shield)
     if not executionCode then
         vxReport(report, shield.trace, { reason or "payload_shape_invalid" })
@@ -1306,13 +1382,13 @@ end
 `.trim();
 }
 export function buildKeyLoader(id, key, origin, loaderToken, options = {}) {
-    const verifyBase = `${origin}/api/verify`;
+    const verifyBase = `${origin}/api/verify?boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 ${robloxOnlyGuard()}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin, options)}
+${buildPayloadRuntime(origin, options, id)}
 
 local ok, response = vxPcall(function()
     return vxHttpGet(
@@ -1340,18 +1416,18 @@ if not result.ok then
     return error("[VoidedX] " .. tostring(result.message or "Access denied."), 0)
 end
 
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery)
 `), { id, key, origin, token: loaderToken });
 }
 
 export function buildTrackedScript(id, origin, loaderToken, key = '', options = {}) {
-    const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}`;
+    const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
     return packGeneratedLoader(compactGeneratedLoader(`
 ${robloxOnlyGuard()}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-${buildPayloadRuntime(origin, options)}
+${buildPayloadRuntime(origin, options, id)}
 local verifyUrl = ${luaString(verifyUrl)} .. vxClientParams(player)
 
 local requestOk, response = vxPcall(function()
@@ -1371,6 +1447,6 @@ if not result.ok then
     end
     error("[VoidedX] " .. tostring(result.message or "Could not load the script."), 0)
 end
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery)
 `), { id, key, origin, token: loaderToken });
 }

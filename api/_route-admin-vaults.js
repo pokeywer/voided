@@ -5,7 +5,11 @@ import { getSourceForEditor } from './_deliveryCode.js';
 import { hasAdminSession, sameOriginRequest } from './_adminSession.js';
 import { createVaultBackup } from './_vaultBackups.js';
 
+import { OBFUSCATION_PROFILE_VERSION } from '../lua-voidedx-armor.js';
+import { LOADER_BUILD } from './_loaderSource.js';
+
 const PAGE_SIZE = 100;
+const REVOKE_PAGE_SIZE = 120;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENT_ESTIMATE_BYTES = 920 * 1024;
@@ -37,6 +41,7 @@ function listItem(doc) {
         obfuscationEnabled: data.obfuscationEnabled === true,
         obfuscationLevel: LEVELS.has(data.obfuscationLevel) ? data.obfuscationLevel : 'auto',
         obfuscationProfileVersion: Number(data.obfuscationProfileVersion) || 0,
+        loaderVersion: Math.max(0, Number(data.loaderVersion) || 0),
         watermark: typeof data.watermark === 'string' ? data.watermark : '',
         fastLoadCacheEnabled: data.fastLoadCacheEnabled === true,
         requireKey: data.requireKey === true
@@ -104,16 +109,53 @@ export default async function handler(req, res) {
             const cursor = queryValue(req.query?.cursor);
             if (cursor && !/^[A-Za-z0-9_-]{1,150}$/.test(cursor)) return json(res, 400, { ok: false, message: 'Invalid vault-list cursor.' });
             let query = db.collection('vaults')
-                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'obfuscationLevel', 'obfuscationProfileVersion', 'watermark', 'fastLoadCacheEnabled', 'requireKey')
+                .select('title', 'uid', 'updatedAt', 'executions', 'obfuscationEnabled', 'obfuscationLevel', 'obfuscationProfileVersion', 'loaderVersion', 'watermark', 'fastLoadCacheEnabled', 'requireKey')
                 .orderBy(FieldPath.documentId())
                 .limit(PAGE_SIZE);
             if (cursor) query = query.startAfter(cursor);
             const snap = await query.get();
             const items = snap.docs.map(listItem);
-            return json(res, 200, { ok: true, items, nextCursor: snap.docs.length === PAGE_SIZE ? snap.docs.at(-1).id : null });
+            return json(res, 200, {
+                ok: true,
+                items,
+                loaderBuild: LOADER_BUILD,
+                profileVersion: OBFUSCATION_PROFILE_VERSION,
+                nextCursor: snap.docs.length === PAGE_SIZE ? snap.docs.at(-1).id : null
+            });
         }
 
         const body = req.body && typeof req.body === 'object' ? req.body : {};
+        if (body.action === 'revoke-loaders') {
+            // Loader builds are never stored per vault: every run pulls the current
+            // bootstrap from /api/raw. Bumping loaderVersion is what retires the
+            // copies people saved earlier, because their signed token embeds it.
+            const cursor = String(body.cursor || '');
+            if (cursor && !/^[A-Za-z0-9_-]{1,150}$/.test(cursor)) {
+                return json(res, 400, { ok: false, message: 'Invalid vault-list cursor.' });
+            }
+            let query = db.collection('vaults')
+                .select('loaderVersion')
+                .orderBy(FieldPath.documentId())
+                .limit(REVOKE_PAGE_SIZE);
+            if (cursor) query = query.startAfter(cursor);
+            const snap = await query.get();
+            if (snap.docs.length) {
+                const batch = db.batch();
+                for (const doc of snap.docs) {
+                    batch.update(doc.ref, {
+                        loaderVersion: FieldValue.increment(1),
+                        loadersRevokedAt: Date.now()
+                    });
+                }
+                await batch.commit();
+            }
+            return json(res, 200, {
+                ok: true,
+                bumped: snap.docs.length,
+                loaderBuild: LOADER_BUILD,
+                nextCursor: snap.docs.length === REVOKE_PAGE_SIZE ? snap.docs.at(-1).id : null
+            });
+        }
         const id = String(body.id || '');
         if (!/^[A-Za-z0-9_-]{1,150}$/.test(id)) return json(res, 400, { ok: false, message: 'Choose a valid vault.' });
         if (Object.prototype.hasOwnProperty.call(body, 'executions')) {
@@ -178,7 +220,7 @@ export default async function handler(req, res) {
             loaderVersion: nextLoaderVersion,
             obfuscationEnabled,
             fastLoadCacheEnabled,
-            obfuscationProfileVersion: 30,
+            obfuscationProfileVersion: OBFUSCATION_PROFILE_VERSION,
             watermark: typeof body.watermark === 'string' && /^\d{1,20}$/.test(body.watermark) ? body.watermark : null,
             obfuscationLevel,
             tamperCheckEnabled,

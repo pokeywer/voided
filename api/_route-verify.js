@@ -3,7 +3,7 @@ import { db } from './_admin.js';
 import { recordExecution } from './_executionStats.js';
 import { getCodeForExecution } from './_deliveryCode.js';
 import { buildShield, sha256Hex, watermarkPrefix } from './_loaderShield.js';
-import { traceForSession } from './_loaderToken.js';
+import { traceForSession, verifyDeliveryAttestation } from './_loaderToken.js';
 import { publicKeyDisabled } from './_keyAccess.js';
 
 const VERIFY_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -12,6 +12,11 @@ const VERIFY_LIMIT_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function cleanupExpiredSessions() {
     const expired = await db.collection('sessions').where('expiresAt', '<=', Date.now()).limit(25).get();
+    await Promise.all(expired.docs.map(doc => doc.ref.delete()));
+}
+
+async function cleanupExpiredDeliveryCodes() {
+    const expired = await db.collection('deliveryCodes').where('expiresAt', '<=', Date.now()).limit(25).get();
     await Promise.all(expired.docs.map(doc => doc.ref.delete()));
 }
 
@@ -132,6 +137,12 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: 'Missing or invalid vault ID.' });
     }
     if (key.length > 256) return json(res, 400, { ok: false, message: 'Invalid key.' });
+    // First of two gates: the request has to carry the attestation that only a
+    // bootstrap served by /api/raw for this vault knows.
+    const attestedToken = verifyDeliveryAttestation(req.query?.boot, id);
+    if (!attestedToken) {
+        return json(res, 403, { ok: false, message: 'This loader is not valid. Copy it again from the website.' });
+    }
     if (rawUserId && !/^\d{1,20}$/.test(rawUserId)) {
         return json(res, 400, { ok: false, message: 'Invalid player ID.' });
     }
@@ -165,6 +176,7 @@ export default async function handler(req, res) {
     try {
         try { await cleanupExpiredSessions(); } catch {}
         try { await cleanupExpiredVerificationLimits(); } catch {}
+        try { await cleanupExpiredDeliveryCodes(); } catch {}
         const initialSnap = await vaultRef.get();
         if (!initialSnap.exists) {
             return json(res, 200, {
@@ -177,6 +189,11 @@ export default async function handler(req, res) {
         const initialVaultData = initialSnap.data();
         if (initialVaultData.launchPaused === true) {
             return json(res, 200, { ok: false, message: 'This vault is temporarily paused by its owner.' });
+        }
+        // Second gate input: the embedded loader token must still be valid for
+        // this vault and this version, signed, in-date and bound to this network.
+        if (!verifyLoaderToken(attestedToken, id, key, initialVaultData.loaderVersion, req)) {
+            return json(res, 410, { ok: false, message: 'Error: Loader expired. Get a new loader from the website and try again.' });
         }
         const initiallyKeyed = !!initialVaultData.requireKey;
         if (initiallyKeyed) {
@@ -265,6 +282,7 @@ export default async function handler(req, res) {
                 userId,
                 placeId,
                 requireKey: initiallyKeyed,
+                attested: true,
                 ...requestBinding(req),
                 ...shieldFields
             };
@@ -369,9 +387,25 @@ export default async function handler(req, res) {
                 region
             });
         } catch {}
+        // Second hop: the script is fetched from its own short-lived path URL,
+        // keyed by a 32-character code that exists nowhere in any earlier
+        // response. The code points at the same one-use ticket, and is deleted
+        // the moment it is spent.
+        let deliveryCode = '';
+        try {
+            deliveryCode = randomBytes(16).toString('hex');
+            await db.collection('deliveryCodes').doc(deliveryCode).set({
+                session: result.token,
+                vaultId: id,
+                expiresAt: result.ticketExpiresAt || Date.now() + 60_000
+            });
+        } catch {
+            deliveryCode = '';
+        }
         return json(res, 200, {
             ok: true,
             token: result.token,
+            delivery: deliveryCode || null,
             ticketExpiresAt: result.ticketExpiresAt,
             expiresAt: result.expiresAt,
             remainingSeconds: result.remainingSeconds ?? null,

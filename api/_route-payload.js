@@ -55,6 +55,7 @@ function bindingMismatch(session, req, placeId) {
 
 async function findSessionKey(session, vault) {
     if (!session.requireKey) return { ok: !vault.requireKey };
+    if (session.attested !== true) return { ok: false, message: 'This loader is not valid. Copy it again from the website.' };
     if (!vault.requireKey || !session.keyHash) return { ok: false, message: 'Key access changed. Run the current loader again.' };
 
     let key = null;
@@ -92,7 +93,32 @@ export default async function handler(req, res) {
         return json(res, 405, { ok: false, message: 'Method not allowed.' });
     }
 
-    const sessionToken = String(req.query?.session || '');
+    let sessionToken = String(req.query?.session || '');
+    const pathVault = String(req.query?.rid || '');
+    const pathCode = String(req.query?.rcode || '');
+    if (!sessionToken && pathCode) {
+        // Path form: /get/raw/<vault id>/<32 hex code>. The code is a one-time
+        // pointer to the ticket, so the ticket itself never appears in a URL.
+        if (!/^[a-f0-9]{32}$/.test(pathCode)) {
+            return json(res, 400, { ok: false, message: 'Missing or invalid delivery code.' });
+        }
+        const codeRef = db.collection('deliveryCodes').doc(pathCode);
+        let codeSnap;
+        try {
+            codeSnap = await codeRef.get();
+        } catch {
+            return json(res, 500, { ok: false, message: 'Could not check the delivery code.' });
+        }
+        if (!codeSnap.exists) {
+            return json(res, 401, { ok: false, message: 'Delivery ticket expired or already used.' });
+        }
+        const link = codeSnap.data();
+        try { await codeRef.delete(); } catch {}
+        if (pathVault && String(link.vaultId || '') !== pathVault) {
+            return json(res, 403, { ok: false, message: 'This delivery code belongs to a different vault.' });
+        }
+        sessionToken = String(link.session || '');
+    }
     if (!/^[a-f0-9]{64}$/i.test(sessionToken)) {
         return json(res, 400, { ok: false, message: 'Missing or invalid delivery ticket.' });
     }

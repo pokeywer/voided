@@ -67,10 +67,12 @@
                     <span id="admin-vault-count" class="admin-state-pill">Loading…</span>
                 </div>
                 <p class="admin-help">Browse every saved vault, inspect its original Luau source, edit the title or code, and regenerate its obfuscated execution copy. Saving here changes the live vault used by its loader.</p>
+                <p class="admin-help">The loader itself is rebuilt on every fetch, so a pasted <code>loadstring(game:HttpGet("…/api/raw?id=…"))()</code> always gets the newest one. Use <b>Push newest loader</b> to switch off saved copies of older bootstraps, and <b>Rebuild outdated copies</b> to re-protect stored scripts with the current obfuscation profile.</p>
                 <div id="admin-vault-status" class="admin-status hidden" role="status" aria-live="polite"></div>
                 <div class="admin-vault-toolbar">
                     <input id="admin-vault-search" class="input-field" type="search" placeholder="Search title, vault ID, or owner UID" aria-label="Search vaults">
                     <button id="admin-vault-refresh-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-rotate"></i> Reload vaults</button>
+                    <button id="admin-vault-loader-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-arrows-rotate"></i> Push newest loader</button>
                     <button id="admin-vault-rebuild-btn" class="btn-ghost admin-action-btn" type="button"><i class="fa-solid fa-shield-halved"></i> Rebuild outdated copies</button>
                 </div>
                 <div class="admin-vault-layout">
