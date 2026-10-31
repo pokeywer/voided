@@ -116,9 +116,12 @@ export function executorOnlyGuard() {
     return `if ${parts.join(' and ')} then return error(${luaString(EXECUTOR_ONLY_MESSAGE)},0) end`;
 }
 
-// The engine check asked for the same three services and one instance in every
-// build. Draw a different set each time: any real DataModel answers all of them,
-// and a stubbed `game` table that only fakes Players/Workspace no longer passes.
+// The engine check used to ask for the same three services and one instance in
+// every build, so a stub with those three passed. Drawn per build now - but as a
+// quorum, not a checklist: requiring every drawn service meant one rare or absent
+// service denied a real player outright, which is exactly what "This loader only
+// works inside Roblox." looked like from the inside. A fake still has to answer
+// this many services with the right class names.
 export function robloxProbeChecks() {
     const services = [
         ['Players', 'Players'], ['Workspace', 'Workspace'], ['Lighting', 'Lighting'],
@@ -129,9 +132,11 @@ export function robloxProbeChecks() {
         ['AudioService', 'AudioService']
     ];
     const instances = ['Folder', 'Sound', 'RemoteEvent', 'BindableFunction', 'RemoteFunction', 'BindableEvent'];
+    const drawn = bootShuffle(services).slice(0, 5 + (randomBytes(1)[0] % 3));
     return {
-        services: bootShuffle(services).slice(0, 3 + (randomBytes(1)[0] % 3)),
-        instance: bootPick(instances)
+        services: drawn,
+        need: Math.max(3, drawn.length - 2),
+        instances: bootShuffle(instances).slice(0, 3)
     };
 }
 
@@ -633,16 +638,20 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
 
     const R = loc('ok', 'svc');
     const probe = robloxProbeChecks();
+    const hits = loc('hits').hits;
     add(`local ${n.rbx}=function()`);
     add(`if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return false end`);
-    probe.services.forEach((entry, index) => {
-        add(`${index === 0 ? 'local ' : ''}${R.ok},${R.svc}=pcall(function() return game:GetService("${entry[0]}") end)`);
-        add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="${entry[1]}" then return false end`);
-    });
-    add(`${R.ok},${R.svc}=pcall(function() return Instance.new("${probe.instance}") end)`);
-    add(`if not ${R.ok} or typeof(${R.svc})~="Instance" or ${R.svc}.ClassName~="${probe.instance}" then return false end`);
-    add(`pcall(function() ${R.svc}:Destroy() end)`);
-    add(`return true`);
+    add(`local ${hits}=0`);
+    for (const entry of probe.services) {
+        add(`local ${R.ok},${R.svc}=pcall(function() return game:GetService("${entry[0]}") end)`);
+        add(`if ${R.ok} and typeof(${R.svc})=="Instance" and ${R.svc}.ClassName=="${entry[1]}" then ${hits}=${hits}+1 end`);
+    }
+    add(`if ${hits}<${probe.need} then return false end`);
+    for (const kind of probe.instances) {
+        add(`local ${R.ok},${R.svc}=pcall(function() return Instance.new("${kind}") end)`);
+        add(`if ${R.ok} and typeof(${R.svc})=="Instance" and ${R.svc}.ClassName=="${kind}" then pcall(function() ${R.svc}:Destroy() end) return true end`);
+    }
+    add(`return false`);
     add(`end`);
     add(`if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`);
     add(executorOnlyGuard());
@@ -1074,11 +1083,27 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`end`);
     add(`end`);
     add(`end`);
-    add(`if os.clock()-${Q.t0}>${6 + randomBytes(1)[0] % 6} then return error(${st('deny')},0) end`);
+    // The budget used to be fatal, and it timed the whole program - including the
+    // gate, verify and payload requests. A phone on a slow connection, or a run
+    // that spends its second delivery URL, could cross it and print the tamper
+    // message for no tampering at all. It now only stops the watchdog, like the
+    // armor's own, and the containers wrapped around this file still carry their
+    // own timing checks for a tracer that single-steps the decoder.
+    add(`if os.clock()-${Q.t0}>${20 + randomBytes(1)[0] % 10} then return end`);
     add(`end`);
     add(`return ${n.main}()`);
 
-    return armorBootstrap(lines.join('\n'));
+    let text = lines.join('\n');
+    // LOADER_DEBUG_DENY=1 numbers every denial site in the delivered bootstrap, so a
+    // player's screenshot says which check fired instead of only sharing the one
+    // tamper string. Off by default; it changes no behaviour and no wording.
+    if (process.env.LOADER_DEBUG_DENY === '1') {
+        let denyIndex = 0;
+        const denyRef = st('deny').replace(/[.*+?^${}()|[\]\\]/g, match => `\\${match}`);
+        text = text.replace(new RegExp(`error\\(${denyRef},0\\)`, 'gu'),
+            () => `error(${st('deny')}."#${++denyIndex}",0)`);
+    }
+    return armorBootstrap(text);
 }
 
 export function buildPayloadRuntime(origin, options = {}, id = '') {

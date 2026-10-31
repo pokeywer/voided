@@ -332,6 +332,21 @@ twelve chunk-name cases in Lua 5.4 (allowed: own link, own subdomain, loadstring
 the suffix trick, our host as a path on theirs) and compiled-and-run under the Luau CLI,
 which has no debug.getinfo and so fails open there by design.
 
+"THIS LOADER ONLY WORKS INSIDE ROBLOX" WAS TOO STRICT - FIXED
+
+The engine probe I widened earlier this session asked for three to six services and
+required EVERY drawn one to answer, so a client missing a single rare service denied a
+real player. It is a quorum now: five to seven services are drawn and asked, and only
+`need` of them have to answer (drawn minus two, never below three), plus one of three
+instance classes has to be creatable. Measured on six freshly generated builds against
+hosts that answer only part of the drawn set: all-present passes, one-missing passes,
+exactly-need passes, one-short denies. A stub table still has to produce three to five
+correctly-named services, so the check keeps its teeth.
+
+Also in this file set: LOADER_DEBUG_DENY=1 numbers the bootstrap denial sites (nine of
+them) so a screenshot names the check that fired instead of only the shared tamper
+text, and the clock budget is no longer fatal (see above).
+
 TWO FIXES FOR "THE PAYLOAD FAILED ITS INTEGRITY CHECK" (in this same file set)
 
 1. The runaway key was not exact on every host. The first version folded the seed
