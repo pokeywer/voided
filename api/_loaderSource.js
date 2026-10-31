@@ -1478,7 +1478,9 @@ end
 -- check" for those players. This form never exceeds 2^41, so every host lands on
 -- the same 32 bits as the server.
 local function vxRunawaySeed(seed, code, hop)
+    -- Mirrors the route: a zero seed is replaced, never folded from.
     local value = seed
+    if value == 0 then value = 2654435769 end
     local halves = { code, hop }
     for index = 1, 2 do
         local half = halves[index]
@@ -1677,7 +1679,12 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
                     return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
                 end
             else
-                local verified, verifyReason = vxUnshield(decoded, shield, delivery, linkHop)
+                -- Only the paired path link is served under the runaway key. The
+                -- ticket form is a different request and the server leaves its body
+                -- on the plain session seed, so folding here would fail every
+                -- fallback delivery - which is what "Invalid payload" meant.
+                local foldHop = (candidate == payloadUrl and linkHop ~= nil) and linkHop or nil
+                local verified, verifyReason = vxUnshield(decoded, shield, delivery, foldHop)
                 if verified then
                     executionCode = verified
                     break
@@ -1691,6 +1698,7 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
                     vxProgress(90, "Retrying delivery")
                 else
                     vxProgress(90, "Invalid payload")
+                    vxReport(report, shield.trace, { reason })
                     return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
                 end
             end
