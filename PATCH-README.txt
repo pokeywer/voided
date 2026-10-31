@@ -332,6 +332,33 @@ twelve chunk-name cases in Lua 5.4 (allowed: own link, own subdomain, loadstring
 the suffix trick, our host as a path on theirs) and compiled-and-run under the Luau CLI,
 which has no debug.getinfo and so fails open there by design.
 
+TWO FIXES FOR "THE PAYLOAD FAILED ITS INTEGRITY CHECK" (in this same file set)
+
+1. The runaway key was not exact on every host. The first version folded the seed
+   with a single mixed multiply, and that product reaches 2^57. On Luau and Lua 5.4
+   integers that is fine, but on a host whose numbers are doubles it rounds, the key
+   comes out different, and the loader stops with exactly that message. The fold is
+   now split into 16-bit halves so no intermediate passes 2^41, which is exact in
+   doubles and identical in integers. Measured on 300 random seed/code/hop triples:
+   the Node route, Lua 5.4 integers, the Luau CLI and a double-arithmetic model all
+   agree with each other, and the previous one-line form disagreed on 293 of 300
+   cases. (The split needed math.floor, because "/" always yields a float in Lua -
+   the first rewrite drifted on integer hosts too until that was fixed.)
+
+2. A bad body on the second hop used to be fatal. The loader verified the payload
+   AFTER the candidate loop, so one clipped or rewritten response on /get/raw - a
+   truncated HttpGet, a proxy, a hooked fetch - ended the run even though the ticket
+   form was a different request that would have worked. Verification now happens
+   inside the loop: on a failed check the loader spends its other URL and only then
+   gives up, and it reports the reason once. The harness proves it with a new case
+   that serves a length-for-length corrupted body on the path URL and asserts the
+   loader falls back to /api/payload?session= and still runs the script.
+
+To tell the two apart in the field: the reason reaches /api/integrity and shows up in
+the admin tamper report as payload_crc_mismatch (the body arrived damaged) or
+watermark_missing (the key did not match). The first line of a delivered loader still
+prints its build, so --voidedx-loader-p30-b10 says which runtime the player is on.
+
 VALIDATED: 55 checks against the real payload handler on a stubbed Firestore -
 paired delivery, absence of the fixed names in the body, ciphertext equal to the
 runaway-key encryption and NOT equal to the session-seed one, both halves consumed,

@@ -1469,7 +1469,14 @@ end
 -- Same fold the delivery route applies: the session seed mixed with both halves of
 -- the one-time link that just opened this delivery. The link is destroyed by the
 -- request, so the key that decodes a body cannot be rebuilt from an archived
--- response and a captured session seed.
+-- response and a captured session seed. The client reproduces this from the URL it
+-- just used, with plain hex reads - no hashing in Lua.
+--
+-- The multiply is split into 16-bit halves on purpose. A direct a*b reaches 2^57,
+-- which is exact on Luau and Lua 5.4 integers but silently rounds on a host whose
+-- numbers are doubles, and a rounded key means "the payload failed its integrity
+-- check" for those players. This form never exceeds 2^41, so every host lands on
+-- the same 32 bits as the server.
 local function vxRunawaySeed(seed, code, hop)
     local value = seed
     local halves = { code, hop }
@@ -1478,7 +1485,10 @@ local function vxRunawaySeed(seed, code, hop)
         for offset = 1, #half - 7, 8 do
             local word = vxTonumber(vxSub(half, offset, offset + 7), 16)
             if word then
-                value = (vxBxor(value, word) * 16777619 + word) % 4294967296
+                local mixed = vxBxor(value, word)
+                local low = mixed % 65536
+                local high = math.floor((mixed - low) / 65536)
+                value = ((low * 16777619 + (high * 16777619) % 65536 * 65536) + word) % 4294967296
             end
         end
     end
@@ -1601,7 +1611,7 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
     local candidates = { payloadUrl }
     if fallbackUrl then candidates[2] = fallbackUrl end
 
-    local result
+    local executionCode, reason
     for _, candidate in ipairs(candidates) do
         local canFallback = fallbackUrl ~= nil and candidate == payloadUrl
         local requestOk, response
@@ -1667,20 +1677,28 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
                     return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
                 end
             else
-                result = decoded
-                break
+                local verified, verifyReason = vxUnshield(decoded, shield, delivery, linkHop)
+                if verified then
+                    executionCode = verified
+                    break
+                end
+                -- The body arrived but did not verify. That is normally a clipped
+                -- or rewritten response on this URL, and the other candidate is a
+                -- different request, so spend it before giving up. Before this the
+                -- loader tried the second hop, failed once and stopped.
+                reason = verifyReason
+                if fallbackUrl ~= nil and candidate == payloadUrl then
+                    vxProgress(90, "Retrying delivery")
+                else
+                    vxProgress(90, "Invalid payload")
+                    return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
+                end
             end
         end
     end
 
-    if not result then
-        vxProgress(90, "Server error")
-        return error("[VoidedX] The payload server returned a bad response.", 0)
-    end
-
-    local executionCode, reason = vxUnshield(result, shield, delivery, linkHop)
     if not executionCode then
-        vxReport(report, shield.trace, { reason or "payload_shape_invalid" })
+        if reason then vxReport(report, shield.trace, { reason }) end
         return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
     end
     vxProgress(95, "Integrity verified")
