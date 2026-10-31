@@ -410,20 +410,31 @@ export default async function handler(req, res) {
         // response. The code points at the same one-use ticket, and is deleted
         // the moment it is spent.
         let deliveryCode = '';
+        let deliveryHop = '';
         try {
             deliveryCode = randomBytes(16).toString('hex');
+            // A loader that asks for the pair gets a second single-use secret in
+            // the path. Both halves are destroyed when the delivery is spent, and
+            // the payload key is folded from them, so a captured response body and
+            // the session seed alone no longer open anything. A loader that does
+            // not ask gets no hop and keeps using the ticket form, so nothing that
+            // is already running is stranded by this.
+            if (String(req.query?.dual || '') === '1') deliveryHop = randomBytes(16).toString('hex');
             await db.collection('deliveryCodes').doc(deliveryCode).set({
                 session: result.token,
                 vaultId: id,
+                hop: deliveryHop || null,
                 expiresAt: result.ticketExpiresAt || Date.now() + 60_000
             });
         } catch {
             deliveryCode = '';
+            deliveryHop = '';
         }
         return json(res, 200, {
             ok: true,
             token: result.token,
             delivery: deliveryCode || null,
+            hop: deliveryHop || null,
             ticketExpiresAt: result.ticketExpiresAt,
             expiresAt: result.expiresAt,
             remainingSeconds: result.remainingSeconds ?? null,

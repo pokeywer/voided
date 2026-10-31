@@ -9,6 +9,10 @@
     {
       "source": "/get/raw/:id/:code",
       "destination": "/api/payload?rid=:id&rcode=:code"
+    },
+    {
+      "source": "/get/raw/:id/:code/:hop",
+      "destination": "/api/payload?rid=:id&rcode=:code&rhop=:hop"
     }
   ],
   "crons": [

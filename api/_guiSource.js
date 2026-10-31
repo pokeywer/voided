@@ -75,7 +75,7 @@ export function buildGuiSource(id, origin, rawAppearance = {}, rawVaultName = ''
     const backgroundAnimation = appearance.backgroundAnimation;
 
     return compactGeneratedLoader(`
-${robloxOnlyGuard()}
+${robloxOnlyGuard(origin)}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
@@ -1586,7 +1586,7 @@ local function attemptVerify(fromSavedKey)
     card:Destroy()
     overlay:Destroy()
     showKeyTimer(result.remainingSeconds, fileSaved, result.expiresAt)
-    vxRunPayload(result.token, player.UserId, result.shield, result.report, result.delivery)
+    vxRunPayload(result.token, player.UserId, result.shield, result.report, result.delivery, result.hop)
 end
 
 submitBtn.Activated:Connect(function()

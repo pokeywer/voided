@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { db } from './_admin.js';
 import { getCodeForExecution } from './_deliveryCode.js';
-import { cipherTag, encryptParts, isBlockingFlags, sha256Hex, watermarkPrefix } from './_loaderShield.js';
+import { cipherTag, deliveryKeySeed, encryptParts, isBlockingFlags, permuteReply, sha256Hex, watermarkPrefix } from './_loaderShield.js';
 import { publicKeyDisabled } from './_keyAccess.js';
 import { EXECUTOR_ONLY_MESSAGE, inspectFetch } from './_clientGate.js';
 
@@ -13,6 +13,15 @@ function json(res, status, body) {
 
 function keyDigest(key) {
     return createHash('sha256').update(String(key)).digest('hex');
+}
+
+// Both halves of a paired link are secrets, so they are compared without leaking
+// how much of a guess was right.
+function timingSafeEqualHex(stored, presented) {
+    const a = Buffer.from(String(stored || '').toLowerCase(), 'utf8');
+    const b = Buffer.from(String(presented || '').toLowerCase(), 'utf8');
+    if (a.length !== b.length || a.length === 0) return false;
+    return timingSafeEqual(a, b);
 }
 
 function keyExpiresAt(key) {
@@ -103,11 +112,19 @@ export default async function handler(req, res) {
     let sessionToken = String(req.query?.session || '');
     const pathVault = String(req.query?.rid || '');
     const pathCode = String(req.query?.rcode || '');
+    const pathHop = String(req.query?.rhop || '');
+    // Set when this delivery opened through the two-secret path form; it selects
+    // the runaway key and the re-labelled reply below.
+    let pairedHop = false;
     if (!sessionToken && pathCode) {
-        // Path form: /get/raw/<vault id>/<32 hex code>. The code is a one-time
-        // pointer to the ticket, so the ticket itself never appears in a URL.
+        // Path form: /get/raw/<vault id>/<32 hex code>[/<32 hex hop>]. The code is
+        // a one-time pointer to the ticket, so the ticket itself never appears in
+        // a URL. When the link was minted with a hop, both halves must be right.
         if (!/^[a-f0-9]{32}$/.test(pathCode)) {
             return json(res, 400, { ok: false, message: 'Missing or invalid delivery code.' });
+        }
+        if (pathHop && !/^[a-f0-9]{32}$/.test(pathHop)) {
+            return json(res, 400, { ok: false, message: 'Missing or invalid delivery hop.' });
         }
         const codeRef = db.collection('deliveryCodes').doc(pathCode);
         let codeSnap;
@@ -123,6 +140,18 @@ export default async function handler(req, res) {
         try { await codeRef.delete(); } catch {}
         if (pathVault && String(link.vaultId || '') !== pathVault) {
             return json(res, 403, { ok: false, message: 'This delivery code belongs to a different vault.' });
+        }
+        if (link.hop) {
+            if (!pathHop) {
+                return json(res, 401, { ok: false, message: 'This delivery needs its full link. Run the loader again.' });
+            }
+            // A wrong half burns the whole link: the code is already deleted, and
+            // nothing is returned either way, so probing one half tells an attacker
+            // nothing about the other.
+            if (!timingSafeEqualHex(String(link.hop), pathHop)) {
+                return json(res, 401, { ok: false, message: 'Delivery ticket expired or already used.' });
+            }
+            pairedHop = true;
         }
         sessionToken = String(link.session || '');
     }
@@ -209,7 +238,14 @@ export default async function handler(req, res) {
             if (sha256Hex(watermarked) !== session.shieldHash) {
                 return json(res, 409, { ok: false, message: 'The payload no longer matches this loader session. Run the loader again.' });
             }
-            const parts = encryptParts(watermarked, Number(session.shieldSeed));
+            // The key runs away from the link that opened it: folded from the
+            // single-use code and hop, both of which are destroyed by this very
+            // request. A body captured off the wire, even together with the seed
+            // verify handed out, does not decode.
+            const openKey = pairedHop
+                ? deliveryKeySeed(Number(session.shieldSeed), pathCode, pathHop)
+                : Number(session.shieldSeed);
+            const parts = encryptParts(watermarked, openKey);
             const tag = cipherTag(parts);
             try {
                 await db.collection('loaderDeliveries').doc(session.shieldTrace).set({
@@ -220,12 +256,11 @@ export default async function handler(req, res) {
                     version: 5
                 }, { merge: true });
             } catch {}
-            return json(res, 200, {
-                ok: true,
-                v: 5,
-                parts,
-                tag
-            });
+            const reply = { ok: true, v: 5, parts, tag };
+            // Only a delivery opened by the full link gets the re-labelled shape,
+            // so a loader that is already running still finds the field names it
+            // was written against.
+            return json(res, 200, pairedHop ? permuteReply(reply) : reply);
         }
 
         // Only shielded deliveries exist: a plaintext body here would be the

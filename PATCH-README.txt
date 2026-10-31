@@ -250,3 +250,96 @@ RE-MEASURED on the same protocol: 88 universal normalized lines, median similari
 The remaining shared lines are the program dispatch and the builtin-capture table,
 which is the next increment; nothing about delivery, the token, the attestation or
 the copied loadstring changed, so no vault needs re-saving and no profile moved.
+
+VALIDATION OVERRIDES (not for production use, leave them unset): LOADER_PIPE_SHAPE
+= window|stride|scan and LOADER_MASK_SHAPE = grouped|stream force one decoder shape
+instead of drawing one, so a test pass can prove each of the six combinations
+executes. A random draw cannot prove coverage - the first 12-build soak only landed
+four of the six - which is why these exist. Each generated file is classified back
+from its own text after the run, so an override that is silently ignored reads as a
+mismatch rather than a pass.
+
+VALIDATED: 12-build soak (six armored at the shipped three containers, six
+unarmored) at 138-170 bootstrap checks and 130 delivery checks per build, zero
+anomalies; then the forced matrix, every combination in turn -
+  window/grouped  emitted as such   bootstrap 165/0   delivery 130/0   luau 0 failed
+  window/stream   emitted as such   bootstrap 154/0   delivery 130/0   luau 0 failed
+  stride/grouped  emitted as such   bootstrap 159/0   delivery 130/0   luau 0 failed
+  stride/stream   emitted as such   bootstrap 156/0   delivery 130/0   luau 0 failed
+  scan/grouped    emitted as such   bootstrap 155/0   delivery 130/0   luau 0 failed
+  scan/stream     emitted as such   bootstrap 158/0   delivery 130/0   luau 0 failed
+plus 11 unit tests, the 43-check route smoke, import graph 68 files 0 problems.
+
+
+LOADER BUILD 10 - TWO SECRETS ON THE DELIVERY HOP, A KEY THAT RUNS AWAY, A ANSWER WITH NO FIXED SHAPE
+
+Upload or replace these together. vercel.json is in the set again: without the new
+rewrite the paired link 404s and every loader spends a second request on the ticket.
+
+  vercel.json                    (replaced) /get/raw/:id/:code/:hop -> ?rid&rcode&rhop
+  api/_loaderShield.js           (replaced) deliveryKeySeed() and permuteReply()
+  api/_route-verify.js           (replaced) mints the hop when the loader asks (dual=1)
+  api/_route-payload.js          (replaced) requires the hop, folds the key, re-labels the reply
+  api/_loaderSource.js           (replaced) loader build 10 runtime: hop in the link, the fold, the field map
+  api/_guiSource.js              (replaced) in-game key card passes result.hop through
+  README.md, PATCH-README.txt     (replaced) notes
+
+HOW IT WORKS: /api/verify stores a second 32-hex secret, the hop, on the same
+one-use deliveryCodes document and returns it only to a loader that asked with
+dual=1. The link is /get/raw/<vault>/<code>/<hop>. The payload route reads the
+document once, deletes it, and only then compares the halves in constant time. Code
+without its hop is refused. A wrong hop is refused. Because the document is already
+gone, a wrong hop also makes the correct pair useless - one guess costs the delivery
+instead of measuring the link - and every refusal answers the same way, so the
+endpoint is not an oracle about which half was right.
+
+THE KEY RUNS AWAY: the body is encrypted under deliveryKeySeed(sessionSeed, code,
+hop), the session seed folded with every 32-bit word of both halves. The fold is the
+point: the halves are destroyed by the request that used them, so keeping the seed
+verify handed out and archiving the response does not decode anything later. The
+loader redoes the same fold in Lua using tonumber(hex,16) and integer arithmetic
+only, which is exact on Luau and Lua 5.4 (a double-precision version of this fold
+would drift - the harness builds its replies with the route's own helpers so a drift
+between the two sides fails the test instead of shipping).
+
+THE ANSWER HAS NO FIXED SHAPE: a paired delivery replies with its field names drawn
+anew for that response - parts, tag, v and ok become random names, a small map under
+k says which is which, and decoy fields sit beside them. A captured delivery response
+is no longer one object to pattern-match, and the shape differs every single time.
+
+COMPATIBILITY IS BY CAPABILITY, NOT VERSION GUESSING: a loader that does not ask for
+a hop is never issued one, keeps receiving {ok,v,parts,tag} and the un-folded session
+key, and the legacy /api/payload?session= ticket form is unchanged. A player who
+pasted a loader before this deploy still gets their script; only a loader fetched
+from now on uses the pair. Admin - Push newest loader is what switches everyone over
+in one click by revoking the saved bootstraps.
+
+PASTE SITES AND SCRIPT STORES ARE REFUSED TOO: before any request, a loader now reads
+its own chunk name (debug.getinfo(1,"S").source) and stops with "[VoidedX] This loader
+only runs from its own link." when that name carries an http(s) host that is not
+VoidedX. A bootstrap body re-hosted on a gist, raw.githubusercontent.com, Pastebin or a
+script hub is therefore refused on the first line instead of starting a session. When
+the chunk name holds no URL at all - which is what a pasted one-liner normally looks
+like, "loadstring" or "=game:HttpGet" or a file path - nothing is denied, because there
+is no evidence to deny on. Subdomains of the site count as ours; a
+"voidedx.vercel.app.evil.tld" host does not. Set LOADER_ORIGIN_GUARD=off to drop the
+check from generated loaders. Limit, stated plainly: the chunk name is whatever the host
+chooses to write, so an executor that never puts a URL there is not caught, and a saved
+body was already useless because its token expires in ten seconds - this closes the
+paste-and-store distribution path people actually use, not every possible one. Proven by
+twelve chunk-name cases in Lua 5.4 (allowed: own link, own subdomain, loadstring,
+=game:HttpGet, a file path, empty; denied: gist, GitHub raw, pastebin/raw, a script hub,
+the suffix trick, our host as a path on theirs) and compiled-and-run under the Luau CLI,
+which has no debug.getinfo and so fails open there by design.
+
+VALIDATED: 55 checks against the real payload handler on a stubbed Firestore -
+paired delivery, absence of the fixed names in the body, ciphertext equal to the
+runaway-key encryption and NOT equal to the session-seed one, both halves consumed,
+replay refused, code-alone refused, wrong hop refused and burning the link,
+malformed hop refused before any document read, hopless links still delivering,
+ticket form keeping the classic shape; the 140-check delivery chain in Lua 5.4 with
+the replies built by the route's own helpers; the 164-check bootstrap harness; the
+forced 6-shape decoder matrix; the Luau oracle; and the standing unit tests and
+import-graph check. No vault needs re-saving and no obfuscation profile moved: the
+stored copy is untouched, only the way it is opened changed.
+

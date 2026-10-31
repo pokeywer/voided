@@ -85,6 +85,53 @@ export function encryptParts(code, seed) {
     return parts;
 }
 
+// The payload key runs away from the session: it is folded with both halves of
+// the one-time link that opened this delivery, so a captured response body plus
+// the session seed verify handed out is no longer enough to decode it. The two
+// secrets are destroyed when they are spent, so the key that opens a delivery
+// exists only for that delivery. The client reproduces this from the URL it just
+// used, with plain hex reads - no hashing in Lua.
+export function deliveryKeySeed(sessionSeed, code, hop) {
+    const words = [];
+    for (const half of [String(code || ''), String(hop || '')]) {
+        for (let offset = 0; offset + 8 <= half.length; offset += 8) {
+            words.push(parseInt(half.slice(offset, offset + 8), 16) >>> 0);
+        }
+    }
+    let value = (Number(sessionSeed) >>> 0) || 0x9E3779B9;
+    for (const word of words) {
+        value = (Math.imul(value ^ word, 0x01000193) + word) >>> 0;
+    }
+    return value >>> 0;
+}
+
+// Field names for a confused reply. Only the little map under `k` is invariant;
+// the names it points at are drawn per response, and decoy fields sit beside them,
+// so a delivery response is not one fixed object any more.
+export function permuteReply(reply) {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+    const taken = new Set(['k']);
+    const pick = () => {
+        let name;
+        do {
+            name = '';
+            for (let index = 0; index < 7; index += 1) name += alphabet[randomBytes(1)[0] % alphabet.length];
+        } while (taken.has(name));
+        taken.add(name);
+        return name;
+    };
+    const codes = { s: 'ok', v: 'v', p: 'parts', t: 'tag' };
+    const names = {};
+    for (const code of Object.keys(codes)) names[code] = pick();
+    const out = {};
+    for (let index = 0; index < 2 + (randomBytes(1)[0] % 3); index += 1) {
+        out[pick()] = index % 2 === 0 ? true : randomBytes(6).toString('hex');
+    }
+    for (const code of Object.keys(codes)) out[names[code]] = reply[codes[code]];
+    out.k = names;
+    return out;
+}
+
 // Integrity travels as a checksum of the ciphertext the client received. The
 // loader verifies it before decrypting, so a mangled transfer is caught without
 // publishing a checksum of the plaintext for someone to check a decode against.

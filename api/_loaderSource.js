@@ -16,7 +16,10 @@ const deliveryAttestation = typeof loaderTokenModule.deliveryAttestation === 'fu
 
 export function loaderBootQuery(loaderToken, id) {
     if (!loaderToken || !deliveryAttestation) return '';
-    return `&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
+    // `dual` tells the gate this loader understands the two-secret delivery link
+    // (code and hop) and the re-labelled payload reply. A loader built before it
+    // asks for nothing, so it keeps being served the single-code link it parses.
+    return `&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}&dual=1`;
 }
 
 export function luaString(str) {
@@ -32,7 +35,7 @@ export function luaString(str) {
 
 // Loader build stamp: the delivery bootstrap changes on its own schedule from
 // the stored-copy profile, so both numbers are printed in the banner.
-export const LOADER_BUILD = 9;
+export const LOADER_BUILD = 10;
 
 // The bootstrap is rebuilt for every /api/raw fetch and never stored with the
 // vault, so weight that would push a saved copy past the Firestore document cap
@@ -59,8 +62,38 @@ function armorBootstrap(text) {
     return `${stamp}\n${armored}`;
 }
 
-export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';
-export const EXECUTOR_ONLY_MESSAGE = '[VoidedX] This loader only runs in an executor.';
+export const ROBLOX_ONLY_MESSAGE = '[VoidedX] This loader only works inside Roblox.';export const EXECUTOR_ONLY_MESSAGE = '[VoidedX] This loader only runs in an executor.';
+export const FOREIGN_ORIGIN_MESSAGE = '[VoidedX] This loader only runs from its own link.';
+
+// Hosts a loader is allowed to have been fetched from. A copy re-served by a
+// paste site, a gist, a raw-file host or a script store names the URL it really
+// came from, and that name is what the check below reads.
+export function loaderOriginHosts(origin) {
+    const hosts = new Set(['voidedx.vercel.app', 'localhost', '127.0.0.1']);
+    try {
+        hosts.add(new URL(String(origin)).host);
+    } catch {
+        // An unusable origin just means the built-in allowlist stands alone.
+    }
+    return [...hosts];
+}
+
+export function originGuardMode() {
+    const value = String(process.env.LOADER_ORIGIN_GUARD || 'enforce').toLowerCase();
+    return value === 'off' ? 'off' : 'enforce';
+}
+
+// Refuse a copy that reached the machine through somebody else's link. The chunk
+// name is the executor's own record of where the string came from, so a loader
+// served from a paste store reports that store, and the loader stops there. When
+// the host gives no URL at all - which is what most executors name a pasted
+// loadstring with - nothing is denied, because there is no evidence to deny on.
+// One line: the minifier can glue a statement's `end` onto the next `if`.
+export function foreignOriginGuard(origin) {
+    if (originGuardMode() === 'off') return '';
+    const list = loaderOriginHosts(origin).map(host => `"${host}"`).join(',');
+    return `local vxOriginSource="" do local vxOriginOk,vxOriginInfo=pcall(function() return debug.getinfo(1,"S") end) if vxOriginOk and type(vxOriginInfo)=="table" and type(vxOriginInfo.source)=="string" then vxOriginSource=vxOriginInfo.source end end local vxOriginHost=string.match(vxOriginSource,"://([^/%?#]+)") if vxOriginHost then local vxOriginOwn=false for vxOriginIndex=1,#{${list}} do local vxAllowed=({${list}})[vxOriginIndex] if vxOriginHost==vxAllowed or string.sub(vxOriginHost,-#vxAllowed-1)=="."..vxAllowed then vxOriginOwn=true break end end if not vxOriginOwn then return error(${luaString(FOREIGN_ORIGIN_MESSAGE)},0) end end`;
+}
 
 // Every generated loader opens by proving it is running in a live Roblox client
 // that was reached through an executor: `typeof` only exists in Luau, DataModel
@@ -102,7 +135,7 @@ export function robloxProbeChecks() {
     };
 }
 
-export function robloxOnlyGuard() {
+export function robloxOnlyGuard(origin = 'https://voidedx.vercel.app') {
     // First the engine: a real Roblox DataModel. Then the injection layer: at
     // least one primitive that only exists once a script has been run through an
     // executor. Roblox itself, the Studio command bar and a bare Luau host have
@@ -110,7 +143,7 @@ export function robloxOnlyGuard() {
     // its gate, its token and its payload to an environment that is not playing
     // the game. One line: the minifier can glue a statement's `end` onto the
     // next `if` and Luau reads that as `endif`.
-    return `if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end ${executorOnlyGuard()}`;
+    return `if type(typeof)~="function" or typeof(game)~="Instance" or game.ClassName~="DataModel" then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end ${executorOnlyGuard()} ${foreignOriginGuard(origin)}`;
 }
 
 // Return a compact transport copy; this is cosmetic and does not replace the
@@ -444,8 +477,13 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     // literals and the checksum, the emitted Lua reproduces them.
     const hash = bootHash();
     const fallbackKey = bootFallbackKey();
-    const pipe = bootPick(BOOT_PIPE_SHAPES);
-    const maskShape = bootPick(BOOT_MASK_SHAPES);
+    // LOADER_PIPE_SHAPE / LOADER_MASK_SHAPE exist so a test run can force one
+    // shape and prove every variant executes, instead of waiting for the draw to
+    // pick it. Unset, both are per-build randomness like everything else.
+    const pipeSetting = String(process.env.LOADER_PIPE_SHAPE || '').toLowerCase();
+    const pipe = BOOT_PIPE_SHAPES.includes(pipeSetting) ? pipeSetting : bootPick(BOOT_PIPE_SHAPES);
+    const maskSetting = String(process.env.LOADER_MASK_SHAPE || '').toLowerCase();
+    const maskShape = BOOT_MASK_SHAPES.includes(maskSetting) ? maskSetting : bootPick(BOOT_MASK_SHAPES);
     const word32 = bootWord32();
     const flush = bootFlushSize();
     const sealBlob = (buffer, blobKey) => {
@@ -608,6 +646,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`end`);
     add(`if not ${n.rbx}() then return error(${luaString(ROBLOX_ONLY_MESSAGE)},0) end`);
     add(executorOnlyGuard());
+    add(foreignOriginGuard(origin));
 
     const A = loc('alpha', 'i');
     add(`local ${n.map}={}`);
@@ -1418,34 +1457,68 @@ end
 
 ${progressPrinter}
 
-local function vxUnshield(result, shield)
-    if type(result.parts) ~= "table" then
+-- A delivery opened through the full link comes back with its field names
+-- re-labelled and a small map saying where they went. Without the map the classic
+-- names are used, so a payload served to an older loader still parses.
+local function vxReplyName(result, code, fallback)
+    local map = type(result.k) == "table" and result.k or nil
+    if map and type(map[code]) == "string" then return map[code] end
+    return fallback
+end
+
+-- Same fold the delivery route applies: the session seed mixed with both halves of
+-- the one-time link that just opened this delivery. The link is destroyed by the
+-- request, so the key that decodes a body cannot be rebuilt from an archived
+-- response and a captured session seed.
+local function vxRunawaySeed(seed, code, hop)
+    local value = seed
+    local halves = { code, hop }
+    for index = 1, 2 do
+        local half = halves[index]
+        for offset = 1, #half - 7, 8 do
+            local word = vxTonumber(vxSub(half, offset, offset + 7), 16)
+            if word then
+                value = (vxBxor(value, word) * 16777619 + word) % 4294967296
+            end
+        end
+    end
+    return value
+end
+
+local function vxUnshield(result, shield, delivery, hop)
+    local partsField = vxReplyName(result, "p", "parts")
+    local tagField = vxReplyName(result, "t", "tag")
+    if type(result[partsField]) ~= "table" then
         return nil, "payload_shape_invalid"
     end
-    local count = #result.parts
+    local parts = result[partsField]
+    local count = #parts
     if count < 1 or count > 64 then
         return nil, "payload_shape_invalid"
     end
     local chunks = {}
     for index = 1, count do
-        if type(result.parts[index]) ~= "string" then return nil, "payload_shape_invalid" end
-        chunks[index] = result.parts[index]
+        if type(parts[index]) ~= "string" then return nil, "payload_shape_invalid" end
+        chunks[index] = parts[index]
     end
     -- The checksum covers the ciphertext as received. It proves the transfer was
     -- intact without publishing a checksum of the plaintext to calibrate against.
     local cipher, crc = vxDecodeParts(chunks, count)
-    if crc ~= vxLower(vxTostring(result.tag or "")) then
+    if crc ~= vxLower(vxTostring(result[tagField] or "")) then
         return nil, "payload_crc_mismatch"
     end
     local seed = vxTonumber(shield.key, 16)
     if not seed then return nil, "payload_shape_invalid" end
+    if type(delivery) == "string" and #delivery == 32 and type(hop) == "string" and #hop == 32 then
+        seed = vxRunawaySeed(seed, delivery, hop)
+    end
     local code = vxXor(cipher, seed)
     local prefix = "--[[vx:" .. shield.trace .. "]]"
     if vxSub(code, 1, #prefix) ~= prefix then return nil, "watermark_missing" end
     return code
 end
 
-local function vxRunPayload(token, userId, shield, report, delivery)
+local function vxRunPayload(token, userId, shield, report, delivery, hop)
     if type(token) ~= "string" or token == "" then
         return error("[VoidedX] The server did not issue a delivery ticket.", 0)
     end
@@ -1515,8 +1588,11 @@ local function vxRunPayload(token, userId, shield, report, delivery)
     if type(vxPlaceId) == "number" then suffix = suffix .. "&placeId=" .. vxTostring(vxPlaceId) end
 
     local payloadUrl, fallbackUrl
+    local linkHop = (type(hop) == "string" and #hop == 32) and hop or nil
     if vxGetRawPath and type(delivery) == "string" and #delivery == 32 then
-        payloadUrl = vxGetRawBase .. HttpService:UrlEncode(delivery) .. "?" .. vxSub(suffix, 2)
+        payloadUrl = vxGetRawBase .. HttpService:UrlEncode(delivery)
+            .. (linkHop and ("/" .. HttpService:UrlEncode(linkHop)) or "")
+            .. "?" .. vxSub(suffix, 2)
         fallbackUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
     else
         payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
@@ -1576,14 +1652,14 @@ local function vxRunPayload(token, userId, shield, report, delivery)
                     vxProgress(90, "Server error")
                     return error("[VoidedX] The payload server returned a bad response.", 0)
                 end
-            elseif not decoded.ok then
+            elseif not decoded[vxReplyName(decoded, "s", "ok")] then
                 if canFallback then
                     vxProgress(90, "Retrying delivery")
                 else
                     vxProgress(90, "Access denied")
                     return error("[VoidedX] " .. tostring(decoded.message or "The script could not be delivered."), 0)
                 end
-            elseif decoded.v ~= 5 then
+            elseif decoded[vxReplyName(decoded, "v", "v")] ~= 5 then
                 if canFallback then
                     vxProgress(90, "Retrying delivery")
                 else
@@ -1602,7 +1678,7 @@ local function vxRunPayload(token, userId, shield, report, delivery)
         return error("[VoidedX] The payload server returned a bad response.", 0)
     end
 
-    local executionCode, reason = vxUnshield(result, shield)
+    local executionCode, reason = vxUnshield(result, shield, delivery, linkHop)
     if not executionCode then
         vxReport(report, shield.trace, { reason or "payload_shape_invalid" })
         return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
@@ -1655,7 +1731,7 @@ end
 export function buildKeyLoader(id, key, origin, loaderToken, options = {}) {
     const verifyBase = `${origin}/api/verify?id=${encodeURIComponent(id)}${loaderBootQuery(loaderToken, id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
-${robloxOnlyGuard()}
+${robloxOnlyGuard(origin)}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -1684,14 +1760,14 @@ if not result.ok then
     return error("[VoidedX] " .. tostring(result.message or "Access denied."), 0)
 end
 
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery, result.hop)
 `), { id, key, origin, token: loaderToken });
 }
 
 export function buildTrackedScript(id, origin, loaderToken, key = '', options = {}) {
     const verifyUrl = `${origin}/api/verify?id=${encodeURIComponent(id)}${loaderBootQuery(loaderToken, id)}`;
     return packGeneratedLoader(compactGeneratedLoader(`
-${robloxOnlyGuard()}
+${robloxOnlyGuard(origin)}
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -1713,6 +1789,6 @@ if not result.ok then
     end
     error("[VoidedX] " .. tostring(result.message or "Could not load the script."), 0)
 end
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery, result.hop)
 `), { id, key, origin, token: loaderToken });
 }
