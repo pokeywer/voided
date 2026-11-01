@@ -332,16 +332,29 @@ twelve chunk-name cases in Lua 5.4 (allowed: own link, own subdomain, loadstring
 the suffix trick, our host as a path on theirs) and compiled-and-run under the Luau CLI,
 which has no debug.getinfo and so fails open there by design.
 
-"THIS LOADER ONLY WORKS INSIDE ROBLOX" WAS TOO STRICT - FIXED
+DELETING A VAULT WAS BLOCKED - FIXED
 
-The engine probe I widened earlier this session asked for three to six services and
-required EVERY drawn one to answer, so a client missing a single rare service denied a
-real player. It is a quorum now: five to seven services are drawn and asked, and only
-`need` of them have to answer (drawn minus two, never below three), plus one of three
-instance classes has to be creatable. Measured on six freshly generated builds against
-hosts that answer only part of the drawn set: all-present passes, one-missing passes,
-exactly-need passes, one-short denies. A stub table still has to produce three to five
-correctly-named services, so the check keeps its teeth.
+"Failed to delete vault: Could not create a safe backup: doc.data is not a function".
+Deleting a vault first takes a snapshot backup (POST /api/vault-backups,
+action "snapshot"). That handler returned the freshly created record through the same
+helper the list endpoint uses, and the helper called doc.data() on it - but the
+created record carries its fields as a plain object, not as a Firestore snapshot, so
+every snapshot threw and the delete was refused before it started. backupItem() now
+accepts either shape. Community-script deletion was unaffected; only vault delete and
+any caller of the snapshot action were blocked.
+
+THE ROBLEX CHECK IS NOW DELIBERATELY LENIENT
+
+"Still giving people This loader only works inside Roblox." The probe asked five to
+seven services and required three to five correct answers, which is more than some real
+clients give. It now needs ONE: a single correctly-named service, or one creatable
+instance class. Measured on six freshly generated builds - all services answer: pass;
+one missing: pass; only one service answering: pass; no services at all but instances
+work: pass; no services and no Instance (a game-shaped stub and nothing else): deny.
+The DataModel identity check (typeof(game) == "Instance" and game.ClassName ==
+"DataModel") is still required, and so is the executor-primitive check, which is the
+part that actually stops offline replay. Anything stricter than this has already
+denied a paying player, so it will not go back.
 
 Also in this file set: LOADER_DEBUG_DENY=1 numbers the bootstrap denial sites (nine of
 them) so a screenshot names the check that fired instead of only the shared tamper

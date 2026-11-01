@@ -16,10 +16,14 @@ async function signedInUser(req) {
     catch { return null; }
 }
 
-function backupItem(doc, backupType = 'vault') {
-    const data = doc.data();
+function backupItem(source, backupType = 'vault') {
+    // Callers hand this either a Firestore DocumentSnapshot or the record
+    // createVaultBackup just returned, so `data` is a method in one case and a
+    // plain object in the other. Reading it as a method only made every snapshot
+    // throw "doc.data is not a function", which blocked vault deletion.
+    const data = typeof source.data === 'function' ? source.data() : (source.data || {});
     return {
-        id: doc.id,
+        id: source.id,
         backupType,
         vaultId: String(data.vaultId || ''),
         scriptId: String(data.scriptId || ''),

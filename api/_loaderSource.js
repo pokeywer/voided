@@ -135,7 +135,10 @@ export function robloxProbeChecks() {
     const drawn = bootShuffle(services).slice(0, 5 + (randomBytes(1)[0] % 3));
     return {
         services: drawn,
-        need: Math.max(3, drawn.length - 2),
+        // One correct service, or one creatable instance class, is enough. Real
+        // clients answer all of them; this only stops a host that fakes `game`
+        // and nothing else. Anything stricter has already denied a real player.
+        need: 1,
         instances: bootShuffle(instances).slice(0, 3)
     };
 }
@@ -646,7 +649,7 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
         add(`local ${R.ok},${R.svc}=pcall(function() return game:GetService("${entry[0]}") end)`);
         add(`if ${R.ok} and typeof(${R.svc})=="Instance" and ${R.svc}.ClassName=="${entry[1]}" then ${hits}=${hits}+1 end`);
     }
-    add(`if ${hits}<${probe.need} then return false end`);
+    add(`if ${hits}>=${probe.need} then return true end`);
     for (const kind of probe.instances) {
         add(`local ${R.ok},${R.svc}=pcall(function() return Instance.new("${kind}") end)`);
         add(`if ${R.ok} and typeof(${R.svc})=="Instance" and ${R.svc}.ClassName=="${kind}" then pcall(function() ${R.svc}:Destroy() end) return true end`);
