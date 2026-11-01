@@ -35,7 +35,7 @@ export function luaString(str) {
 
 // Loader build stamp: the delivery bootstrap changes on its own schedule from
 // the stored-copy profile, so both numbers are printed in the banner.
-export const LOADER_BUILD = 10;
+export const LOADER_BUILD = 11;
 
 // The bootstrap is rebuilt for every /api/raw fetch and never stored with the
 // vault, so weight that would push a saved copy past the Firestore document cap
@@ -45,9 +45,57 @@ export const LOADER_BUILD = 10;
 const bootstrapLayerSetting = Number(process.env.BOOTSTRAP_ARMOR_LAYERS);
 export const BOOTSTRAP_ARMOR_LAYERS = Number.isFinite(bootstrapLayerSetting)
     ? Math.max(0, Math.min(6, Math.round(bootstrapLayerSetting)))
-    : 3;
+    : 1;
+
+// BOOTSTRAP_VX picks the VoidedX Luau obfuscator profile for the bootstrap:
+// light (default), standard, strong or off. Measured on the real 82 KiB bootstrap:
+// light is 0.99x and about 46 ms, standard is 3.6x and about 2 s, strong is 16x and
+// 1.3 MB - so the VM profiles are never run per fetch, and light is the one that
+// pays for itself. Their own environment gate is left off on purpose: the loader
+// already runs a Roblox and executor check, and the strict-Instance gate denies
+// hosts the loader is fine on.
+const bootstrapVxPresets = new Set(['light', 'standard', 'strong', 'off']);
+const bootstrapVxSetting = String(process.env.BOOTSTRAP_VX || 'light').toLowerCase();
+export const BOOTSTRAP_VX = bootstrapVxPresets.has(bootstrapVxSetting) ? bootstrapVxSetting : 'light';
+
+let vxObfuscate = null;
+// A floating import, never a top-level await and never a throw: the API ships as
+// one catch-all function, so a missing or stale engine folder has to cost one
+// protection layer, not every route in the project.
+if (BOOTSTRAP_VX !== 'off') {
+    import('../vx-engine/pipeline.js').then(module => {
+        vxObfuscate = typeof module.obfuscateLuau === 'function' ? module.obfuscateLuau : null;
+    }).catch(() => {
+        console.warn('VoidedX bootstrap obfuscator is unavailable; shipping the armor alone.');
+    });
+}
+
+function protectBootstrap(text) {
+    if (BOOTSTRAP_VX === 'off' || typeof vxObfuscate !== 'function') return text;
+    const stamp = text.split('\n', 1)[0];
+    try {
+        const result = vxObfuscate(text, {
+            preset: BOOTSTRAP_VX,
+            // Their env gate is deliberately off; see the note above. encodeStrings
+            // and scramble are left off too: measured on the real bootstrap they
+            // inflate the copy 3.3x (162 KiB to 617 KiB before the container) and
+            // add a second of server CPU per fetch, for a string table the sealed
+            // bootstrap already keeps in ciphertext.
+            env: false,
+            banner: false
+        });
+        const code = typeof result?.code === 'string' ? result.code : '';
+        // A copy that lost most of its body is a broken build, not a smaller one.
+        if (code.length < text.length * 0.5 || !code.includes('end')) return text;
+        return `${stamp}\n${code}`;
+    } catch (error) {
+        console.warn('bootstrap obfuscation skipped:', error && error.message);
+        return text;
+    }
+}
 
 function armorBootstrap(text) {
+    text = protectBootstrap(text);
     if (!BOOTSTRAP_ARMOR_LAYERS) return text;
     const stamp = text.split('\n', 1)[0];
     const armored = armorVoidedxSource(text, {

@@ -398,3 +398,42 @@ forced 6-shape decoder matrix; the Luau oracle; and the standing unit tests and
 import-graph check. No vault needs re-saving and no obfuscation profile moved: the
 stored copy is untouched, only the way it is opened changed.
 
+LOADER BUILD 11 - THE BOOTSTRAP RUNS THROUGH THE VOIDEDX LUAU OBFUSCATOR, AND IS SMALLER
+
+Upload the whole set including voided-main/vx-engine/ (52 files). Without that folder
+the loader still works - api/_loaderSource.js imports it lazily and falls back to the
+armor alone - but the extra layer is silently skipped, so check the function log for
+"VoidedX bootstrap obfuscator is unavailable" after deploying.
+
+WHAT CHANGED: every /api/raw fetch now runs the bootstrap through the obfuscator
+pipeline (lexer -> parser -> AST rename -> printer) before the VoidedX container wraps
+it, and the container count drops from three to one.
+
+MEASURED END TO END (average of five builds of the real tracked loader):
+  3 containers, no obfuscator   291 KiB per fetch   957 ms server CPU
+  obfuscator + 1 container      136 KiB per fetch   491 ms server CPU
+  obfuscator + 2 containers     194 KiB per fetch   878 ms server CPU
+So the delivered loader is 53% smaller and the player decodes one nested container
+instead of three - that is the speed difference they will feel - while the server does
+less work per request too.
+
+WHY NOT THE VM PROFILES ON THE LOADER: their own presets, measured on our 82 KiB
+bootstrap source - light 0.99x / 46 ms, standard 3.6x / about 2 s, strong 16x /
+1.3 MB. A per-request path cannot afford 2 s of Active CPU or a 1.3 MB response, so the
+VM presets belong on stored vault copies (where the source is small), not on the
+bootstrap. encodeStrings and scramble were measured too and left off: 162 KiB -> 617 KiB
+before the container and up to a second of CPU, for strings the bootstrap already seals.
+
+THEIR ENVIRONMENT GATE IS OFF ON PURPOSE (env: false). The loader runs its own Roblox
+and executor checks, and the strict-Instance gate denies hosts the loader works fine
+on - the same "too strict" failure that was just fixed by hand.
+
+KNOBS: BOOTSTRAP_VX=off|light|standard|strong (default light),
+BOOTSTRAP_ARMOR_LAYERS=0-6 (default 1), LOADER_DEBUG_DENY=1, LOADER_ORIGIN_GUARD=off,
+LOADER_FETCH_GUARD=off|log|enforce.
+
+VALIDATED with the obfuscator applied to every build: 146 bootstrap checks, 152
+delivery-chain checks, four Luau interpreter variants, import graph 68 files / 0
+problems, 11 unit tests, 55 real-handler route checks - zero failures. Loader stamp is
+now --voidedx-loader-p30-b11.
+
