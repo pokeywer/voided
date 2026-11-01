@@ -16,10 +16,11 @@ const deliveryAttestation = typeof loaderTokenModule.deliveryAttestation === 'fu
 
 export function loaderBootQuery(loaderToken, id) {
     if (!loaderToken || !deliveryAttestation) return '';
-    // `dual` tells the gate this loader understands the two-secret delivery link
-    // (code and hop) and the re-labelled payload reply. A loader built before it
-    // asks for nothing, so it keeps being served the single-code link it parses.
-    return `&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}&dual=1`;
+    // `boot` is the delivery attestation. There is no `dual` any more: build 12
+    // does not use the two-secret /get link, so it does not advertise that it can
+    // parse a re-labelled reply, and the gate mints no second half. Loaders built
+    // before it still ask, and the route still serves them that link.
+    return `&boot=${encodeURIComponent(deliveryAttestation(loaderToken, id))}`;
 }
 
 export function luaString(str) {
@@ -35,7 +36,7 @@ export function luaString(str) {
 
 // Loader build stamp: the delivery bootstrap changes on its own schedule from
 // the stored-copy profile, so both numbers are printed in the banner.
-export const LOADER_BUILD = 11;
+export const LOADER_BUILD = 12;
 
 // The bootstrap is rebuilt for every /api/raw fetch and never stored with the
 // vault, so weight that would push a saved copy past the Firestore document cap
@@ -1135,11 +1136,11 @@ export function packGeneratedLoader(source, { id, key = '', origin, token }) {
     add(`end`);
     add(`end`);
     // The budget used to be fatal, and it timed the whole program - including the
-    // gate, verify and payload requests. A phone on a slow connection, or a run
-    // that spends its second delivery URL, could cross it and print the tamper
-    // message for no tampering at all. It now only stops the watchdog, like the
-    // armor's own, and the containers wrapped around this file still carry their
-    // own timing checks for a tracer that single-steps the decoder.
+    // gate, verify and payload requests. A phone on a slow connection could cross
+    // it and print the tamper message for no tampering at all. It now only stops
+    // the watchdog, like the armor's own, and the containers wrapped around this
+    // file still carry their own timing checks for a tracer that single-steps the
+    // decoder.
     add(`if os.clock()-${Q.t0}>${20 + randomBytes(1)[0] % 10} then return end`);
     add(`end`);
     add(`return ${n.main}()`);
@@ -1181,13 +1182,9 @@ local function vxProgress(percent, stage)
     vxPcall(vxPrint, line)
 end`;
     const payloadBase = luaString(`${origin}/api/payload?session=`);
-    const hasRawPath = typeof id === 'string' && id.length > 0;
-    const getRawBase = luaString(`${origin}/get/raw/${encodeURIComponent(id || '')}/`);
     const integrityBase = luaString(`${origin}/api/integrity?session=`);
     return `
 local vxPayloadBase = ${payloadBase}
-local vxGetRawPath = ${hasRawPath ? 'true' : 'false'}
-local vxGetRawBase = ${getRawBase}
 local vxIntegrityBase = ${integrityBase}
 local vxBit = bit32
 if type(vxBit) ~= "table" then
@@ -1533,53 +1530,11 @@ end
 
 ${progressPrinter}
 
--- A delivery opened through the full link comes back with its field names
--- re-labelled and a small map saying where they went. Without the map the classic
--- names are used, so a payload served to an older loader still parses.
-local function vxReplyName(result, code, fallback)
-    local map = type(result.k) == "table" and result.k or nil
-    if map and type(map[code]) == "string" then return map[code] end
-    return fallback
-end
-
--- Same fold the delivery route applies: the session seed mixed with both halves of
--- the one-time link that just opened this delivery. The link is destroyed by the
--- request, so the key that decodes a body cannot be rebuilt from an archived
--- response and a captured session seed. The client reproduces this from the URL it
--- just used, with plain hex reads - no hashing in Lua.
---
--- The multiply is split into 16-bit halves on purpose. A direct a*b reaches 2^57,
--- which is exact on Luau and Lua 5.4 integers but silently rounds on a host whose
--- numbers are doubles, and a rounded key means "the payload failed its integrity
--- check" for those players. This form never exceeds 2^41, so every host lands on
--- the same 32 bits as the server.
-local function vxRunawaySeed(seed, code, hop)
-    -- Mirrors the route: a zero seed is replaced, never folded from.
-    local value = seed
-    if value == 0 then value = 2654435769 end
-    local halves = { code, hop }
-    for index = 1, 2 do
-        local half = halves[index]
-        for offset = 1, #half - 7, 8 do
-            local word = vxTonumber(vxSub(half, offset, offset + 7), 16)
-            if word then
-                local mixed = vxBxor(value, word)
-                local low = mixed % 65536
-                local high = math.floor((mixed - low) / 65536)
-                value = ((low * 16777619 + (high * 16777619) % 65536 * 65536) + word) % 4294967296
-            end
-        end
-    end
-    return value
-end
-
-local function vxUnshield(result, shield, delivery, hop)
-    local partsField = vxReplyName(result, "p", "parts")
-    local tagField = vxReplyName(result, "t", "tag")
-    if type(result[partsField]) ~= "table" then
+local function vxUnshield(result, shield)
+    if type(result.parts) ~= "table" then
         return nil, "payload_shape_invalid"
     end
-    local parts = result[partsField]
+    local parts = result.parts
     local count = #parts
     if count < 1 or count > 64 then
         return nil, "payload_shape_invalid"
@@ -1592,21 +1547,18 @@ local function vxUnshield(result, shield, delivery, hop)
     -- The checksum covers the ciphertext as received. It proves the transfer was
     -- intact without publishing a checksum of the plaintext to calibrate against.
     local cipher, crc = vxDecodeParts(chunks, count)
-    if crc ~= vxLower(vxTostring(result[tagField] or "")) then
+    if crc ~= vxLower(vxTostring(result.tag or "")) then
         return nil, "payload_crc_mismatch"
     end
     local seed = vxTonumber(shield.key, 16)
     if not seed then return nil, "payload_shape_invalid" end
-    if type(delivery) == "string" and #delivery == 32 and type(hop) == "string" and #hop == 32 then
-        seed = vxRunawaySeed(seed, delivery, hop)
-    end
     local code = vxXor(cipher, seed)
     local prefix = "--[[vx:" .. shield.trace .. "]]"
     if vxSub(code, 1, #prefix) ~= prefix then return nil, "watermark_missing" end
     return code
 end
 
-local function vxRunPayload(token, userId, shield, report, delivery, hop)
+local function vxRunPayload(token, userId, shield, report)
     if type(token) ~= "string" or token == "" then
         return error("[VoidedX] The server did not issue a delivery ticket.", 0)
     end
@@ -1675,23 +1627,11 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
     local vxPlaceId = game and game.PlaceId
     if type(vxPlaceId) == "number" then suffix = suffix .. "&placeId=" .. vxTostring(vxPlaceId) end
 
-    local payloadUrl, fallbackUrl
-    local linkHop = (type(hop) == "string" and #hop == 32) and hop or nil
-    if vxGetRawPath and type(delivery) == "string" and #delivery == 32 then
-        payloadUrl = vxGetRawBase .. HttpService:UrlEncode(delivery)
-            .. (linkHop and ("/" .. HttpService:UrlEncode(linkHop)) or "")
-            .. "?" .. vxSub(suffix, 2)
-        fallbackUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
-    else
-        payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
-    end
-
-    local candidates = { payloadUrl }
-    if fallbackUrl then candidates[2] = fallbackUrl end
+    local payloadUrl = vxPayloadBase .. HttpService:UrlEncode(token) .. suffix
 
     local executionCode, reason
-    for _, candidate in ipairs(candidates) do
-        local canFallback = fallbackUrl ~= nil and candidate == payloadUrl
+    do
+        local candidate = payloadUrl
         local requestOk, response
         local requestDone = false
         local progress = 2
@@ -1719,12 +1659,8 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
         end
 
         if not requestOk then
-            if canFallback then
-                vxProgress(progress, "Retrying delivery")
-            else
-                vxProgress(progress, "Download failed")
-                return error("[VoidedX] Could not download the script: " .. tostring(response), 0)
-            end
+            vxProgress(progress, "Download failed")
+            return error("[VoidedX] Could not download the script: " .. tostring(response), 0)
         else
             flags = vxCollectFlags()
             if #flags > 0 and vxReport(report, shield.trace, flags) then
@@ -1734,45 +1670,23 @@ local function vxRunPayload(token, userId, shield, report, delivery, hop)
             vxProgress(90, "Verifying payload")
             local decodeOk, decoded = vxPcall(vxJsonDecode, HttpService, response)
             if not decodeOk or type(decoded) ~= "table" then
-                if canFallback then
-                    vxProgress(90, "Retrying delivery")
-                else
-                    vxProgress(90, "Server error")
-                    return error("[VoidedX] The payload server returned a bad response.", 0)
-                end
-            elseif not decoded[vxReplyName(decoded, "s", "ok")] then
-                if canFallback then
-                    vxProgress(90, "Retrying delivery")
-                else
-                    vxProgress(90, "Access denied")
-                    return error("[VoidedX] " .. tostring(decoded.message or "The script could not be delivered."), 0)
-                end
-            elseif decoded[vxReplyName(decoded, "v", "v")] ~= 5 then
-                if canFallback then
-                    vxProgress(90, "Retrying delivery")
-                else
-                    vxProgress(90, "Invalid payload")
-                    return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
-                end
+                vxProgress(90, "Server error")
+                return error("[VoidedX] The payload server returned a bad response.", 0)
+            elseif not decoded.ok then
+                vxProgress(90, "Access denied")
+                return error("[VoidedX] " .. tostring(decoded.message or "The script could not be delivered."), 0)
+            elseif decoded.v ~= 5 then
+                vxProgress(90, "Invalid payload")
+                return error("[VoidedX] The payload server returned no script. Run the loader again.", 0)
             else
-                -- Only the paired path link is served under the runaway key. The
-                -- ticket form is a different request and the server leaves its body
-                -- on the plain session seed, so folding here would fail every
-                -- fallback delivery - which is what "Invalid payload" meant.
-                local foldHop = (candidate == payloadUrl and linkHop ~= nil) and linkHop or nil
-                local verified, verifyReason = vxUnshield(decoded, shield, delivery, foldHop)
+                local verified, verifyReason = vxUnshield(decoded, shield)
                 if verified then
                     executionCode = verified
-                    break
-                end
-                -- The body arrived but did not verify. That is normally a clipped
-                -- or rewritten response on this URL, and the other candidate is a
-                -- different request, so spend it before giving up. Before this the
-                -- loader tried the second hop, failed once and stopped.
-                reason = verifyReason
-                if fallbackUrl ~= nil and candidate == payloadUrl then
-                    vxProgress(90, "Retrying delivery")
                 else
+                    -- The body arrived but did not verify: clipped, rewritten, or a
+                    -- response archived from somebody else's session. There is no
+                    -- second URL to spend, so report and stop.
+                    reason = verifyReason
                     vxProgress(90, "Invalid payload")
                     vxReport(report, shield.trace, { reason })
                     return error("[VoidedX] The payload failed its integrity check. Run the loader again.", 0)
@@ -1862,7 +1776,7 @@ if not result.ok then
     return error("[VoidedX] " .. tostring(result.message or "Access denied."), 0)
 end
 
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery, result.hop)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report)
 `), { id, key, origin, token: loaderToken });
 }
 
@@ -1891,6 +1805,6 @@ if not result.ok then
     end
     error("[VoidedX] " .. tostring(result.message or "Could not load the script."), 0)
 end
-return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report, result.delivery, result.hop)
+return vxRunPayload(result.token, player and player.UserId or nil, result.shield, result.report)
 `), { id, key, origin, token: loaderToken });
 }

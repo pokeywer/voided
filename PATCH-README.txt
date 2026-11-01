@@ -435,8 +435,8 @@ LOADER_FETCH_GUARD=off|log|enforce.
 VALIDATED with the obfuscator applied to every build: 146 bootstrap checks, 152
 delivery-chain checks, four Luau interpreter variants, import graph 68 files / 0
 problems, 11 unit tests, 55 real-handler route checks - zero failures. Loader stamp is
---voidedx-loader-p<b>-b<build>, and the profile half tracks OBFUSCATION_PROFILE_VERSION,
-so it now reads --voidedx-loader-p32-b11.
+--voidedx-loader-p<build> stamp, and the profile half tracks OBFUSCATION_PROFILE_VERSION,
+so a build-12 loader under profile 32 reads --voidedx-loader-p32-b12.
 
 OBFUSCATION PROFILE 32 - THE COPY STARTS FAST AND NO LONGER ABORTS SILENTLY
 
@@ -495,6 +495,37 @@ after the change: 147 bootstrap checks and 152 delivery-chain checks, zero failu
 11 unit tests, 55 real-handler route checks and an import graph of 103 files with 0
 problems (the checker walks vx-engine/ now and resolves dynamic imports too, which is how
 the on-demand engine import stays honest).
+
+LOADER BUILD 12 - THE /get DELIVERY LINK IS RETIRED
+
+Upload api/_loaderSource.js. Nothing else changes, and no server route is removed.
+
+A build-10/11 loader asked the gate for `&dual=1`, then fetched the script through
+https://…/get/raw/<vault id>/<32-hex code>/<32-hex hop>?… - two one-time secrets in the
+path, the body keyed from a fold of both, and the reply's field names re-labelled per
+response - with the ordinary ticket URL as its fallback. Build 12 sends no capability
+flag, uses exactly one URL (`/api/payload?session=<ticket>`), reads the reply under its
+plain names, and stops with the integrity message if that one body arrives broken.
+
+Why retire it: the link bought confusion, not protection. A caller who runs the flow
+still gets the body, and the cost was a second request path, a fold that had to agree
+across four interpreter kinds (two production "payload failed its integrity check"
+reports this session came from that fold drifting), a rewrite in vercel.json, and a
+fallback branch that hid the first failure. Delivery is still bound to the ticket, the
+attestation, the one-use session and the player id.
+
+KEPT ON PURPOSE: `_route-payload` still accepts the path form and still requires the hop
+when a session minted one, and both `/get/raw/...` rewrites stay in vercel.json. Loaders
+saved as files by players before this build use that path, and deleting the route strands
+them. Remove the two rewrites and the path branch once nothing reports a path request
+any more - the admin loader-build control is the lever that pushes everyone onto build 12.
+
+Measured on the real generator: average bootstrap 136.5 KiB (122-156 across shapes),
+574 ms per fetch under load. Re-run after the change: 151 bootstrap checks, 139
+delivery-chain checks (new ones assert the loader never touches /get, never sends `dual`,
+and that a mangled body now stops instead of retrying), 55 real-handler route checks,
+11 unit tests, and the runaway-fold cross-host check still agrees between the route and
+the frozen build-11 loader text on all four hosts (300 triples each).
 
 OBFUSCATION PROFILE 31 - THE STORED COPY IS NOW COMPILED BY THE VOIDEDX CLYDE-FORK ENGINE
 
