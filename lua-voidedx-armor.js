@@ -50,7 +50,7 @@ const FAMILY_PREFIX_BLOCKLIST = Object.freeze(new Set([
 // 1.35x. Stop nesting before large scripts become impossible to store.
 // One definition of the protection profile, shared by the browser pipeline, the
 // delivery bootstrap and the admin route so a stored copy can never disagree.
-export const OBFUSCATION_PROFILE_VERSION = 30;
+export const OBFUSCATION_PROFILE_VERSION = 32;
 
 const MAX_ARMOR_NEST_CHARS = 420 * 1024;
 const MAX_ARMOR_TOTAL_CHARS = 3 * 1024 * 1024;
@@ -1548,7 +1548,17 @@ function buildLoader(o) {
     // matches what executes.
     const swapMod = 2 + randomInt(rng, 3);
     const swapBias = randomInt(rng, 97);
-    add(`local ${rt.t0}=os.clock()`);
+    // The slow-run check below is measured against a calibration loop rather than a
+    // fixed number of seconds. Every fixed budget is eventually a false positive -
+    // a busy machine, an executor whose os.clock is wall time, a copy with a large
+    // payload inside it - and a false positive here means the vault runs and shows
+    // nothing at all. A global single-step hook still costs far more than the
+    // allowance, so the check keeps its teeth without guessing the player's machine.
+    const cal = locals(['cali', 'calv', 'tcal', 't0', 'lim']);
+    add(`local ${cal.tcal}=os.clock()`);
+    add(`local ${cal.calv}=0 for ${cal.cali}=1,20000 do ${cal.calv}=(${cal.calv}*131+${cal.cali})%4294967296 end`);
+    add(`if ${cal.calv}<0 then return end`);
+    add(`local ${cal.t0}=os.clock()`);
     if (chained) {
         const extra = locals(['next', 'count']);
         add(`local ${extra.next}=${entryPoint}`);
@@ -1578,9 +1588,12 @@ function buildLoader(o) {
         add(`    end`);
         add(`end`);
     }
-    // A trace that single-steps the decoder blows the budget long before a real
-    // start does, so a run that took far too long is refused.
-    add(`if os.clock()-${rt.t0}>${6 + randomInt(rng, 6)} then return end`);
+    // A trace that single-steps the decoder blows the allowance long before a real
+    // start does, so a run that took far too long is refused. The allowance is the
+    // calibration time times a fixed ratio plus a size term, never a bare constant.
+    const clockBase = 20 + randomInt(rng, 8) + Math.min(120, Math.ceil(programText.length / 8192));
+    add(`local ${cal.lim}=${clockBase}+(${cal.t0}-${cal.tcal})*2000 if ${cal.lim}>400 then ${cal.lim}=400 end`);
+    add(`if os.clock()-${cal.t0}>${cal.lim} then return end`);
     add(`return ${slot('fn')}()`);
     flushBlock('tail');
 

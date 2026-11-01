@@ -3,6 +3,10 @@ import { armorVoidedxSource, ARMOR_LEVELS, MAX_ARMOR_LAYERS, OBFUSCATION_PROFILE
 let nextJobId = 0;
 let lastSuccessfulObfuscation = null;
 
+// Marks "this copy cannot fit the vault document" so the refusal is what the user
+// reads, instead of a silent retry through the older pipeline.
+class SizeRefusal extends Error {}
+
 // Keep Auto's two-layer mode for tiny scripts; larger sources fall back to the
 // single-layer Low profile to reduce runtime and vault-size overhead.
 export const AUTO_HIGH_BYTE_THRESHOLD = 16 * 1024;
@@ -271,116 +275,195 @@ export function obfuscateLua(source, level = 'medium', protection = {}) {
         return Promise.resolve(lastSuccessfulObfuscation.output);
     }
 
-    return new Promise((resolve, reject) => {
-        const workerUrl = new URL('./prometheus-engine/assets/prometheus.worker-CXYhVY6S.js', import.meta.url);
-        let worker;
-        let timeoutId;
-        let settled = false;
-        const jobId = `voidedx-${Date.now()}-${++nextJobId}`;
-        const timeoutPer10KiB = absoluteMode ? 12_000 : 8_000;
-        const timeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(MIN_JOB_TIMEOUT_MS, Math.ceil(sourceBytes / 10_240) * timeoutPer10KiB));
-
-        const finish = (error, output, outputBytes) => {
-            if (settled) return;
-            settled = true;
-            if (timeoutId !== undefined) clearTimeout(timeoutId);
-            try { worker?.terminate(); } catch {}
-            if (error) {
-                reject(publicObfuscationError(error));
-                return;
+    // The Clyde-fork engine is the obfuscator now: register VM, control-flow
+    // flattening and an integrity envelope of keyed copies, a decoy and several
+    // differently written re-check probes. The Prometheus worker path below stays
+    // reachable for one call with { engine: 'prometheus' } so a build can be
+    // compared against the old output, and as the fallback if the engine throws.
+    if (protection.engine !== 'prometheus') {
+        // Imported only when a copy is actually being built: the engine is ~680 KB
+        // of modules and the dashboard, editor and admin pages all load this file.
+        return import('./lua-voidedx-clyde.js').then(({ clydeObfuscateWithinBudget }) => {
+            const storedSourceBytes = sourceBytes > MAX_READABLE_VAULT_SOURCE_BYTES
+                ? sourceBytes * 0.45
+                : sourceBytes;
+            const armorBudget = MAX_STORED_ENCODED_OBFUSCATED_BYTES - storedSourceBytes - 48 * 1024;
+            const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
+            // The engine output has to leave room for the container that wraps it, so
+            // it is given a smaller budget than the document. Handing it the whole
+            // budget is what let a 209 KiB script come out at 1034 KiB and then get
+            // refused by Firestore at save time. The starting ratio is a guess, so an
+            // over-budget first build corrects it once with the expansion actually
+            // measured on this source instead of refusing straight away.
+            const buildCopy = (engineBudget) => {
+                const built = clydeObfuscateWithinBudget(source, level, {
+                    budgetBytes: engineBudget,
+                    envChecks: protection.envChecks === true,
+                    integrity: protection.integrity,
+                    integrityCopies: protection.integrityCopies,
+                    integrityProbes: protection.integrityProbes
+                });
+                const engineBytes = getUtf8ByteLength(built.code);
+                if (engineBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
+                    throw new Error('The obfuscator produced more than 32 MiB. Try a lower strength or a smaller source.');
+                }
+                const output = armorVoidedxSource(built.code, {
+                    level: armorLevel,
+                    // One container round by default. The engine output is already a
+                    // register VM with an integrity envelope, and every extra round
+                    // re-encodes the whole payload: on a 170 KB engine output the
+                    // measured start cost was 1.2 s at one layer, 3.1 s at two and
+                    // 4.9 s at three, for a copy 2x the size. The container keeps its
+                    // watermark, tripwire, profile stamp and host checks either way; an
+                    // explicit layers choice still overrides this.
+                    layers: armorLayers || 1,
+                    junk,
+                    comments,
+                    layout,
+                    // Always the real remaining budget. The container stops nesting when
+                    // the next layer would not fit instead of growing past the document.
+                    budgetBytes: armorBudget > 0 ? Math.floor(armorBudget) : 0,
+                    avoid: protection.avoid
+                });
+                return { output, outputBytes: getUtf8ByteLength(output) };
+            };
+            const startingBudget = armorBudget > 0 ? Math.floor(armorBudget / 1.4) : 0;
+            let attempt = buildCopy(startingBudget);
+            if (armorBudget > 0 && attempt.outputBytes > armorBudget) {
+                const smaller = Math.max(8 * 1024, Math.floor(startingBudget * armorBudget / attempt.outputBytes));
+                const corrected = buildCopy(smaller);
+                if (corrected.outputBytes < attempt.outputBytes) attempt = corrected;
             }
-            const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
-            if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
-                lastSuccessfulObfuscation = {
-                    source, level, tamperCheck, vmProtection, expandedTransforms, fastMode, vmLayers,
-                    armorLayers, junk, comments, layout, output
-                };
-            } else {
-                lastSuccessfulObfuscation = null;
+            if (attempt.outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
+                throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
             }
-            resolve(output);
-        };
+            if (armorBudget > 0 && attempt.outputBytes > armorBudget) {
+                throw new SizeRefusal(`This script is too large to protect at this strength: the protected copy is ${Math.round(attempt.outputBytes / 1024)} KiB and the vault document holds about ${Math.round(armorBudget / 1024)} KiB. Try a lower strength, or save it without obfuscation.`);
+            }
+            return attempt.output;
+        }).catch((error) => {
+            // A copy that genuinely does not fit is reported, not quietly rebuilt by
+            // the older pipeline at an even larger size that Firestore then refuses.
+            if (error instanceof SizeRefusal) throw error;
+            console.warn('VoidedX engine could not build this copy, using the previous pipeline:', error);
+            return prometheusPipeline();
+        });
+    }
 
-        try {
-            worker = new Worker(workerUrl, { type: 'module' });
-            timeoutId = setTimeout(() => finish(new Error(absoluteMode
-                ? 'Absolute obfuscation timed out. Try High strength or reduce the script size.'
-                : 'Obfuscation timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
-            worker.addEventListener('message', event => {
-                const message = event.data;
-                if (!message || message.id !== jobId || message.type !== 'result') return;
-                if (message.result && message.result.ok && typeof message.result.output === 'string') {
-                    try {
-                        const intermediateBytes = getUtf8ByteLength(message.result.output);
-                        if (intermediateBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
-                            throw new Error('The obfuscator produced more than 32 MiB. Try a lower strength or a smaller source.');
-                        }
-                        // Patch the Prometheus-generated output to fix "attempt to get length of a
-                        // userdata value" crashes on executors whose table/string APIs return userdata
-                        // objects. The ConstantArray VM decoder emits bare `#VAR` length ops; we
-                        // prepend a tiny rawlen-or-select shim and rewrite those ops to use it.
-                        const patched = patchObfuscatedLengthOps(message.result.output);
-                        // Repack the Prometheus copy inside the VoidedX container so the delivered
-                        // script no longer carries Prometheus shapes (watermark statement, helper
-                        // names, plain `loadstring`-free layout). The inner VM is unchanged.
-                        const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
-                        // Firebase rejects the whole vault document past ~1 MiB, so the
-                        // container is built to fit what the document has left rather than
-                        // growing until the save fails. Sources above the readable limit are
-                        // stored compressed, so they cost the document far less.
-                        const storedSourceBytes = sourceBytes > MAX_READABLE_VAULT_SOURCE_BYTES
-                            ? sourceBytes * 0.45
-                            : sourceBytes;
-                        const armorBudget = MAX_STORED_ENCODED_OBFUSCATED_BYTES - storedSourceBytes - 48 * 1024;
-                        const output = armorVoidedxSource(patched, {
-                            level: armorLevel,
-                            layers: armorLayers || undefined,
-                            junk,
-                            comments,
-                            layout,
-                            budgetBytes: armorBudget > intermediateBytes * 1.25 ? Math.floor(armorBudget) : 0
-                        });
-                        const outputBytes = getUtf8ByteLength(output);
-                        if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
-                            throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
-                        }
-                        finish(null, output, outputBytes);
-                    } catch (error) {
-                        finish(error instanceof Error ? error : new Error(String(error)));
-                    }
+    return prometheusPipeline();
+
+    function prometheusPipeline() {
+        return new Promise((resolve, reject) => {
+            const workerUrl = new URL('./prometheus-engine/assets/prometheus.worker-CXYhVY6S.js', import.meta.url);
+            let worker;
+            let timeoutId;
+            let settled = false;
+            const jobId = `voidedx-${Date.now()}-${++nextJobId}`;
+            const timeoutPer10KiB = absoluteMode ? 12_000 : 8_000;
+            const timeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(MIN_JOB_TIMEOUT_MS, Math.ceil(sourceBytes / 10_240) * timeoutPer10KiB));
+
+            const finish = (error, output, outputBytes) => {
+                if (settled) return;
+                settled = true;
+                if (timeoutId !== undefined) clearTimeout(timeoutId);
+                try { worker?.terminate(); } catch {}
+                if (error) {
+                    reject(publicObfuscationError(error));
+                    return;
+                }
+                const finalBytes = Number.isFinite(outputBytes) ? outputBytes : getUtf8ByteLength(output);
+                if (finalBytes <= MAX_INLINE_OBFUSCATED_PREVIEW_BYTES) {
+                    lastSuccessfulObfuscation = {
+                        source, level, tamperCheck, vmProtection, expandedTransforms, fastMode, vmLayers,
+                        armorLayers, junk, comments, layout, output
+                    };
                 } else {
-                    finish(new Error(message.result?.error || 'The obfuscator could not process this script.'));
+                    lastSuccessfulObfuscation = null;
                 }
-            });
-            worker.addEventListener('error', event => {
-                finish(new Error(event.message || 'The obfuscation worker could not start.'));
-            }, { once: true });
-            worker.addEventListener('messageerror', () => {
-                finish(new Error('The obfuscation worker returned data the browser could not read.'));
-            }, { once: true });
+                resolve(output);
+            };
 
-            const seed = Math.floor(Math.random() * 2_147_483_646) + 1;
-            worker.postMessage({
-                id: jobId,
-                action: 'obfuscate',
-                options: {
-                    source,
-                    filename: 'vault.lua',
-                    preset,
-                    luaVersion: 'LuaU',
-                    tamperCheck,
-                    vmProtection,
-                    expandedTransforms,
-                    fastMode,
-                    vmLayers,
-                    prettyPrint: false,
-                    seed
-                }
-            });
-        } catch (error) {
-            finish(error instanceof Error ? error : new Error(String(error)));
-        }
-    });
+            try {
+                worker = new Worker(workerUrl, { type: 'module' });
+                timeoutId = setTimeout(() => finish(new Error(absoluteMode
+                    ? 'Absolute obfuscation timed out. Try High strength or reduce the script size.'
+                    : 'Obfuscation timed out. Large scripts can take several minutes; try Medium strength or reduce the script size.')), timeoutMs);
+                worker.addEventListener('message', event => {
+                    const message = event.data;
+                    if (!message || message.id !== jobId || message.type !== 'result') return;
+                    if (message.result && message.result.ok && typeof message.result.output === 'string') {
+                        try {
+                            const intermediateBytes = getUtf8ByteLength(message.result.output);
+                            if (intermediateBytes > MAX_PROMETHEUS_OUTPUT_BYTES) {
+                                throw new Error('The obfuscator produced more than 32 MiB. Try a lower strength or a smaller source.');
+                            }
+                            // Patch the Prometheus-generated output to fix "attempt to get length of a
+                            // userdata value" crashes on executors whose table/string APIs return userdata
+                            // objects. The ConstantArray VM decoder emits bare `#VAR` length ops; we
+                            // prepend a tiny rawlen-or-select shim and rewrite those ops to use it.
+                            const patched = patchObfuscatedLengthOps(message.result.output);
+                            // Repack the Prometheus copy inside the VoidedX container so the delivered
+                            // script no longer carries Prometheus shapes (watermark statement, helper
+                            // names, plain `loadstring`-free layout). The inner VM is unchanged.
+                            const armorLevel = ARMOR_LEVELS.includes(level) ? level : 'medium';
+                            // Firebase rejects the whole vault document past ~1 MiB, so the
+                            // container is built to fit what the document has left rather than
+                            // growing until the save fails. Sources above the readable limit are
+                            // stored compressed, so they cost the document far less.
+                            const storedSourceBytes = sourceBytes > MAX_READABLE_VAULT_SOURCE_BYTES
+                                ? sourceBytes * 0.45
+                                : sourceBytes;
+                            const armorBudget = MAX_STORED_ENCODED_OBFUSCATED_BYTES - storedSourceBytes - 48 * 1024;
+                            const output = armorVoidedxSource(patched, {
+                                level: armorLevel,
+                                layers: armorLayers || undefined,
+                                junk,
+                                comments,
+                                layout,
+                                budgetBytes: armorBudget > intermediateBytes * 1.25 ? Math.floor(armorBudget) : 0
+                            });
+                            const outputBytes = getUtf8ByteLength(output);
+                            if (outputBytes > MAX_OBFUSCATED_OUTPUT_BYTES) {
+                                throw new Error('The generated output exceeds the 32 MiB preview and download limit. Try fewer layers or reduce the source.');
+                            }
+                            finish(null, output, outputBytes);
+                        } catch (error) {
+                            finish(error instanceof Error ? error : new Error(String(error)));
+                        }
+                    } else {
+                        finish(new Error(message.result?.error || 'The obfuscator could not process this script.'));
+                    }
+                });
+                worker.addEventListener('error', event => {
+                    finish(new Error(event.message || 'The obfuscation worker could not start.'));
+                }, { once: true });
+                worker.addEventListener('messageerror', () => {
+                    finish(new Error('The obfuscation worker returned data the browser could not read.'));
+                }, { once: true });
+
+                const seed = Math.floor(Math.random() * 2_147_483_646) + 1;
+                worker.postMessage({
+                    id: jobId,
+                    action: 'obfuscate',
+                    options: {
+                        source,
+                        filename: 'vault.lua',
+                        preset,
+                        luaVersion: 'LuaU',
+                        tamperCheck,
+                        vmProtection,
+                        expandedTransforms,
+                        fastMode,
+                        vmLayers,
+                        prettyPrint: false,
+                        seed
+                    }
+                });
+            } catch (error) {
+                finish(error instanceof Error ? error : new Error(String(error)));
+            }
+        });
+    }
 }
 
 export async function encodeObfuscatedCode(source) {

@@ -435,5 +435,121 @@ LOADER_FETCH_GUARD=off|log|enforce.
 VALIDATED with the obfuscator applied to every build: 146 bootstrap checks, 152
 delivery-chain checks, four Luau interpreter variants, import graph 68 files / 0
 problems, 11 unit tests, 55 real-handler route checks - zero failures. Loader stamp is
-now --voidedx-loader-p30-b11.
+--voidedx-loader-p<b>-b<build>, and the profile half tracks OBFUSCATION_PROFILE_VERSION,
+so it now reads --voidedx-loader-p32-b11.
+
+OBFUSCATION PROFILE 32 - THE COPY STARTS FAST AND NO LONGER ABORTS SILENTLY
+
+Upload with the profile-31 files. lua-voidedx-armor.js and lua-medium.js are the only
+code changes; index.html and the READMEs are documentation.
+
+  lua-voidedx-armor.js        (replaced) profile 31 -> 32, calibrated slow-run check,
+                                  per-build local name fix
+  lua-medium.js               (replaced) one container round by default over engine
+                                  output, budget corrected from the measured expansion
+  index.html                  (replaced) the strength note says what the layers control
+                                  does now
+
+THE SILENT ABORT IS FIXED. The container refused any run whose decoder took longer than
+a 6-12 second budget taken from os.clock. That budget is a wall-clock reading on Windows
+hosts (a copy that legitimately spends 5-7 seconds decoding blows it when the machine is
+busy, and MSVC clock() counts elapsed time, not CPU), and when it fires the copy returns
+without an error - the player sees the script do nothing. Measured on the profile-31
+output: the same 559 KB copy printed nothing in 18 of 24 runs with 24 interpreters
+running at once, and 1 of 24 idle. The check now compares against a calibration loop
+that runs in the same process one statement earlier, so machine load slows the
+calibration and the decode together and the allowance is 20 + payload-size term + 2000x
+the measured calibration (capped at 400 s). Same copies, same load: 0 of 144 silent at
+48-way contention. A single-stepped trace still cannot afford the allowance, and the
+engine envelope, decoy and probes do not depend on timing at all.
+
+ONE CONTAINER ROUND BY DEFAULT. The container re-encodes its whole input per layer, and
+its input is now the engine output (100-500 KB), so nesting it 5-6 times was the cost
+the player felt. Measured on the same 0.5 KB sample script, one round:
+  fast      33 KB /   65 ms      low      55 KB /  163 ms     medium   83 KB /  305 ms
+  high     261 KB / 1.23 s       absolute 502 KB / 2.41 s
+Before, at the per-level defaults (2-6 rounds): medium 315 KB / 2.96 s, high 529 KB /
+7.43 s, absolute 543 KB / 2.81 s. Nothing is removed from a single round: the watermark,
+the load-bearing filler tripwire, the profile stamp, the host checks and the masked
+segments all still run - confirmed by the junk-strip harness, where a 1-round copy still
+aborts with the denial message when an automated pass deletes the filler blocks. Armor
+layers still goes up to 6 for anyone who asks for it.
+
+THE SIZE BUDGET CORRECTS ITSELF. The engine is handed a starting budget, and if the
+wrapped copy still overruns the vault document the engine is rebuilt once with the
+expansion ratio that build actually produced. The 209 KiB script that used to fail to
+save now stores at every strength: fast 88 KB, low 83 KB, medium 147 KB, high 427-596 KB,
+absolute 676 KB against a document allowance of about 778 KiB. A refusal only happens
+when even the lightest build does not fit, and it names both sizes.
+
+THE COPIES LOST A GIVEAWAY NAME. The timing check declared its counter as a local called
+undefined (the name was never registered with the per-build local factory, so the
+emitted text contained the literal word). Every copy carried the same identifier and it
+pointed straight at the slow-run check. It is drawn from the factory now, so the emitted
+loader has no fixed identifier in it; generated copies were re-checked for the string.
+
+THE LOADER GETS THE SAME CHECK, BECAUSE IT IS BUILT WITH THE SAME CONTAINER. The
+bootstrap moves from 136 KiB average to 140.5 KiB (min 136 / max 146.2) and server build
+time measures 402 ms per fetch, so it is still under the 491 ms of profile 31. Re-run
+after the change: 147 bootstrap checks and 152 delivery-chain checks, zero failures, plus
+11 unit tests, 55 real-handler route checks and an import graph of 103 files with 0
+problems (the checker walks vx-engine/ now and resolves dynamic imports too, which is how
+the on-demand engine import stays honest).
+
+OBFUSCATION PROFILE 31 - THE STORED COPY IS NOW COMPILED BY THE VOIDEDX CLYDE-FORK ENGINE
+
+Upload or replace these together. vx-engine/ must be complete: the engine is imported
+from it, and a partial folder means every build silently falls back to the old
+Prometheus worker.
+
+  lua-voidedx-clyde.js        (new) engine adapter: level -> preset, envelope settings,
+                                  budget-aware preset ladder
+  lua-medium.js               (replaced) stored copies now go through the engine; the
+                                  Prometheus worker stays reachable with { engine:
+                                  'prometheus' } and remains the fallback if the engine
+                                  throws, so a bad build never blocks a save silently.
+                                  The engine is imported on demand (first obfuscation),
+                                  not at module load - the editor, dashboard and admin
+                                  pages all import this file and the engine is 26
+                                  modules / ~680 KB. A copy that cannot fit the vault
+                                  document is refused by name; it is no longer swallowed
+                                  by the fallback path.
+  lua-voidedx-armor.js        (replaced) profile 30 -> 31
+  vx-engine/                  (new, 52 files) the VoidedX build of the Clyde pipeline
+  index.html, admin.html, i18n.js (replaced) the strength description now names the
+                                  engine; no page mentions the old engine
+
+WHAT THE ENGINE DOES THAT PROFILE 30 DID NOT: a register VM with control-flow
+flattening and an encrypted VM blob (S-Box + CBC + Base85), and an integrity envelope
+of N independently keyed copies of the payload - each with its own base64 alphabet,
+rolling key array, step, rotation and piece layout - plus a mutated decoy copy that
+must stay different and up to six differently written re-check probes. Flipping one
+character anywhere aborts with a code (0x21-0x2e) before the payload runs, and editing
+one copy into agreement is a different code than swapping the decoy in. Two builds of
+the same script share no opcode map, no names, no key and no layout.
+
+STRENGTH MAPPING (measured on the engine's own 4.5 KB hub sample, engine time only):
+  fast      light     no envelope            4 KB    27 ms
+  low       standard  stack VM              36 KB   153 ms
+  medium    standard  basic envelope         48 KB    75 ms
+  high      strong    register VM, mirror    218 KB   94 ms
+  absolute  strong    widest envelope        427 KB   71 ms
+Absolute does NOT use ultra. On a vararg-heavy script ultra emits a chunk that fails
+to compile ("Cannot use '...' outside of a vararg function") for some seeds - a build
+that only breaks on some seeds is not shippable. It stays reachable by asking for
+preset: 'ultra' on a call, and the site does not ask.
+
+SIZE IS NOW BUDGETED IN TWO PLACES. The engine is given about a seventh less than the
+vault document has left, so the container that wraps it has room; the container is
+always given the real remaining budget and stops nesting instead of growing past it.
+Before that, a 209 KiB script at Medium produced a 1034 KiB copy that Firestore
+refused at save time - the exact "cant save vault" failure, now measured:
+  fast 111 KB   low 500 KB   medium 450 KB   high 748 KB   absolute 676 KB
+and if a copy still cannot be made to fit, the save stops with the sizes in the
+message instead of a generic failure.
+
+The engine's own runtime gate is OFF by default (env: false). It refuses a host whose
+game is not a real Instance, which denies players on unusual executors - the same
+class of false denial the loader spent this session removing. protection.envChecks =
+true turns it on for a build that wants it.
 
